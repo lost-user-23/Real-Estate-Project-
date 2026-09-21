@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+:root {
+  --color-bg: #f5f6f6;
+  --color-surface: #ffffff;
+  --color-text: #14181b;
+  --color-text-muted: #52606a;
+  --color-border: #e2e5e6;
+
+  /* Deep teal primary (PRD §8). */
+  --color-primary: #0e7c7b;
+  --color-primary-dark: #0a5f5e;
+  --color-primary-light: #e3f1f1;
+
+  /* Warm amber accent. Reserved for accents/badges/large text per the
+     contrast note in §8 - never as small body text on --color-bg. */
+  --color-accent: #f2a541;
+  --color-accent-dark: #c97f22;
+  --color-accent-ink: #1a1206; /* near-black text on amber backgrounds, ~8:1 */
+
+  --color-success: #1f8a4c;
+  --color-danger: #c0392b;
+}
+
+@theme inline {
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-text);
+
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-text: var(--color-text);
+  --color-text-muted: var(--color-text-muted);
+  --color-border: var(--color-border);
+  --color-primary: var(--color-primary);
+  --color-primary-dark: var(--color-primary-dark);
+  --color-primary-light: var(--color-primary-light);
+  --color-accent: var(--color-accent);
+  --color-accent-dark: var(--color-accent-dark);
+  --color-accent-ink: var(--color-accent-ink);
+  --color-success: var(--color-success);
+  --color-danger: var(--color-danger);
+
+  --font-sans: var(--font-inter);
+  --font-heading: var(--font-jakarta);
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading);
+}
+
+/* Visible focus outline for every control (PRD §11). */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -3rem;
+  z-index: 100;
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-border);
+  transition: top 0.15s ease-out;
+}
+
+.skip-link:focus {
+  top: 1rem;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,114 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { useAuth } from "@/lib/auth-context";
+import { useLoginPrompt } from "@/lib/login-prompt-context";
+import { Container } from "@/components/ui/Container";
+import { PostPropertyButton } from "@/components/PostPropertyButton";
+import { CloseIcon, MenuIcon } from "@/components/icons";
+
+const NAV_LINKS = [
+  { href: "/search?intent=buy", label: "Buy" },
+  { href: "/search?intent=rent", label: "Rent" },
+  { href: "/post-property", label: "Sell" },
+  { href: "/search?propertyType=commercial", label: "Commercial" },
+  { href: "/#new-projects", label: "New Projects" },
+];
+
+export function Navbar() {
+  const { isLoggedIn, logout } = useAuth();
+  const { requestLogin } = useLoginPrompt();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  return (
+    <header className="sticky top-0 z-40 border-b border-border bg-surface/95 backdrop-blur">
+      <Container className="flex h-16 items-center justify-between gap-4">
+        <Link href="/" className="flex items-center gap-2 text-lg font-bold tracking-tight text-primary">
+          <span aria-hidden className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-white">
+            H
+          </span>
+          HomeNest
+        </Link>
+
+        <nav aria-label="Primary" className="hidden items-center gap-6 lg:flex">
+          {NAV_LINKS.map((link) => (
+            <Link key={link.label} href={link.href} className="text-sm font-medium text-text hover:text-primary">
+              {link.label}
+            </Link>
+          ))}
+        </nav>
+
+        <div className="hidden items-center gap-3 lg:flex">
+          {isLoggedIn ? (
+            <button type="button" onClick={logout} className="text-sm font-medium text-text hover:text-primary">
+              Log out
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => requestLogin()}
+              className="text-sm font-medium text-text hover:text-primary"
+            >
+              Login or Sign up
+            </button>
+          )}
+          <PostPropertyButton source="navbar" />
+        </div>
+
+        <button
+          type="button"
+          aria-label={mobileOpen ? "Close menu" : "Open menu"}
+          aria-expanded={mobileOpen}
+          onClick={() => setMobileOpen((v) => !v)}
+          className="rounded-lg p-2 text-text hover:bg-bg lg:hidden"
+        >
+          {mobileOpen ? <CloseIcon className="h-6 w-6" /> : <MenuIcon className="h-6 w-6" />}
+        </button>
+      </Container>
+
+      {mobileOpen ? (
+        <div className="border-t border-border bg-surface lg:hidden">
+          <Container className="flex flex-col gap-1 py-3">
+            {NAV_LINKS.map((link) => (
+              <Link
+                key={link.label}
+                href={link.href}
+                onClick={() => setMobileOpen(false)}
+                className="rounded-lg px-2 py-2.5 text-sm font-medium text-text hover:bg-bg"
+              >
+                {link.label}
+              </Link>
+            ))}
+            <div className="mt-2 flex flex-col gap-2 border-t border-border pt-3">
+              {isLoggedIn ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    logout();
+                    setMobileOpen(false);
+                  }}
+                  className="rounded-lg px-2 py-2.5 text-left text-sm font-medium text-text hover:bg-bg"
+                >
+                  Log out
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    requestLogin();
+                    setMobileOpen(false);
+                  }}
+                  className="rounded-lg px-2 py-2.5 text-left text-sm font-medium text-text hover:bg-bg"
+                >
+                  Login or Sign up
+                </button>
+              )}
+              <PostPropertyButton source="navbar" className="w-full" />
+            </div>
+          </Container>
+        </div>
+      ) : null}
+    </header>
+  );
+}
