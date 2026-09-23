@@ -93,7 +93,7 @@ export function Hero() {
   );
 
   return (
-    <section className="relative flex min-h-120 items-center overflow-hidden py-12 sm:min-h-150 sm:py-20">
+    <section className="relative -mt-16 flex min-h-120 items-center overflow-hidden pt-28 pb-12 sm:min-h-150 sm:pt-32 sm:pb-20">
       <HeroSlider />
 
       <div className="relative z-10 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">

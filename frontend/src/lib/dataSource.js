@@ -60,3 +60,23 @@ export async function fetchInsights(simulateError = false) {
     .slice(0, 3);
   return withSimulatedNetwork(published, simulateError);
 }
+
+// Builders/developers aren't their own record type yet - derived from
+// MOCK_PROJECTS (each project already carries a `developer` name) so a
+// builder directory doesn't need a new mock entity.
+export async function fetchBuilders(simulateError = false) {
+  const published = MOCK_PROJECTS.filter((p) => p.status === "published");
+  const byDeveloper = new Map();
+  for (const project of published) {
+    if (!byDeveloper.has(project.developer)) {
+      byDeveloper.set(project.developer, { name: project.developer, projects: [] });
+    }
+    byDeveloper.get(project.developer).projects.push(project);
+  }
+  const builders = [...byDeveloper.values()].map((builder) => ({
+    ...builder,
+    cities: [...new Set(builder.projects.map((p) => p.city))],
+    projectCount: builder.projects.length,
+  }));
+  return withSimulatedNetwork(builders, simulateError);
+}

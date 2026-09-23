@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { fetchNewProjects } from "@/lib/dataSource";
 import { useSectionData } from "@/lib/useSectionData";
+import { useCity } from "@/lib/city-context";
 import { formatPrice } from "@/lib/format";
 import { Section } from "@/components/ui/Section";
 import { SkeletonGrid } from "@/components/ui/SkeletonGrid";
@@ -13,19 +14,37 @@ import { SectionError } from "@/components/ui/SectionError";
 
 export function NewProjects() {
   const searchParams = useSearchParams();
+  const { city } = useCity();
   const simulateError = searchParams.get("debugError") === "projects";
   const fetcher = useCallback(() => fetchNewProjects(simulateError), [simulateError]);
   const { status, data, retry } = useSectionData(fetcher);
 
-  if (status === "success" && data && data.length === 0) return null;
+  const { shown, scopedToAll } = useMemo(() => {
+    if (!data) return { shown: [], scopedToAll: false };
+    if (!city) return { shown: data, scopedToAll: false };
+    const inCity = data.filter((p) => p.city === city);
+    if (inCity.length > 0) return { shown: inCity, scopedToAll: false };
+    return { shown: data, scopedToAll: true };
+  }, [data, city]);
+
+  if (status === "success" && shown.length === 0) return null;
 
   return (
-    <Section id="new-projects" title="New projects" subtitle="Recently launched developments worth a look." tone="surface">
+    <Section
+      id="new-projects"
+      title="New projects"
+      subtitle={
+        scopedToAll
+          ? `No new launches in ${city} yet — showing recent launches nationwide.`
+          : "Recently launched developments worth a look."
+      }
+      tone="surface"
+    >
       {status === "loading" && <SkeletonGrid count={4} />}
       {status === "error" && <SectionError onRetry={retry} />}
-      {status === "success" && data ? (
+      {status === "success" && shown.length ? (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {data.map((project) => (
+          {shown.map((project) => (
             <Link
               key={project.id}
               href={`/project/${project.id}`}

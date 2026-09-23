@@ -22,6 +22,13 @@ const FOOTER_GROUPS = [
     ],
   },
   {
+    title: "Tools",
+    links: [
+      { label: "EMI calculator", href: "/tools/emi-calculator" },
+      { label: "Property value estimator", href: "/tools/property-value-calculator" },
+    ],
+  },
+  {
     title: "Support",
     links: [
       { label: "Help centre", href: "/help" },
@@ -49,7 +56,7 @@ export function Footer() {
   return (
     <footer className="border-t border-border bg-surface">
       <Container className="py-12">
-        <div className="grid grid-cols-2 gap-8 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-8 sm:grid-cols-3 lg:grid-cols-7">
           <div className="col-span-2 sm:col-span-3 lg:col-span-2">
             <Link href="/" className="flex items-center gap-2 text-lg font-bold tracking-tight text-primary">
               <span aria-hidden className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-white">

@@ -1,0 +1,38 @@
+{
+  "name": "homenest-backend",
+  "version": "0.1.0",
+  "description": "HomeNest real-estate backend API (Express + Mongoose + MongoDB)",
+  "private": true,
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "lint": "eslint .",
+    "test": "jest --runInBand",
+    "seed": "node scripts/seed.js",
+    "db:setup": "node scripts/setup-db.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "overrides": {
+    "mongodb": "7.5.0"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^9.10.1",
+    "morgan": "^1.12.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0",
+    "jest": "^30.5.2",
+    "nodemon": "^3.1.14",
+    "supertest": "^7.2.2"
+  }
+}

@@ -103,11 +103,63 @@ export function MapPinIcon(props) {
   );
 }
 
+export function PlayIcon(props) {
+  return (
+    <svg {...base(props)} fill="currentColor" stroke="none">
+      <path d="M8 5.5v13l11-6.5-11-6.5Z" />
+    </svg>
+  );
+}
+
+export function PauseIcon(props) {
+  return (
+    <svg {...base(props)} fill="currentColor" stroke="none">
+      <path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" />
+    </svg>
+  );
+}
+
+export function CalculatorIcon(props) {
+  return (
+    <svg {...base(props)}>
+      <rect x="4" y="2.5" width="16" height="19" rx="2" />
+      <path d="M8 6.5h8M8 11h.01M12 11h.01M16 11h.01M8 14.5h.01M12 14.5h.01M16 14.5h.01M8 18h.01M12 18h.01M16 18h.01" />
+    </svg>
+  );
+}
+
+export function TrendingUpIcon(props) {
+  return (
+    <svg {...base(props)}>
+      <path d="m3 17 6-6 4 4 8-8" />
+      <path d="M15 7h6v6" />
+    </svg>
+  );
+}
+
 export function AlertIcon(props) {
   return (
     <svg {...base(props)}>
       <path d="M12 9v4M12 17h.01" />
       <path d="M10.3 3.9 1.9 18.1A2 2 0 0 0 3.6 21h16.8a2 2 0 0 0 1.7-2.9L14.7 3.9a2 2 0 0 0-3.4 0Z" />
+    </svg>
+  );
+}
+
+export function KeyIcon(props) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="8" cy="15" r="4.5" />
+      <path d="m11.2 11.8 8.3-8.3M17 4l2.5 2.5M14.3 6.7l2.3 2.3" />
+    </svg>
+  );
+}
+
+export function BuildingIcon(props) {
+  return (
+    <svg {...base(props)}>
+      <rect x="5" y="3" width="9" height="18" rx="1" />
+      <path d="M14 8.5h5v12.5h-5M8 7h1M11 7h1M8 10.5h1M11 10.5h1M8 14h1M11 14h1" />
     </svg>
   );
 }
