@@ -3,6 +3,7 @@ module.exports = {
   Property: require('./Property'),
   PropertyImage: require('./PropertyImage'),
   Location: require('./Location'),
+  Facility: require('./Facility'),
   Category: require('./Category'),
   Project: require('./Project'),
   Article: require('./Article'),
