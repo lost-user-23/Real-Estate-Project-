@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 
-// Admin has no backend yet (see admin-store.jsx) - edits persist to this
-// browser's localStorage only, so a refresh doesn't lose demo changes.
+// useState that persists to this browser's localStorage, for per-browser
+// preferences (e.g. the selected city). Not for data that must live server-side.
 export function useLocalStorageState(key, initial) {
   const [state, setState] = useState(initial);
   const [hydrated, setHydrated] = useState(false);

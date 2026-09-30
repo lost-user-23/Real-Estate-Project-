@@ -10,16 +10,21 @@
     "lint": "eslint .",
     "test": "jest --runInBand",
     "seed": "node scripts/seed.js",
-    "db:setup": "node scripts/setup-db.js"
+    "db:setup": "node scripts/setup-db.js",
+    "admin:create": "node scripts/create-admin.js"
   },
   "engines": {
     "node": ">=18"
+  },
+  "jest": {
+    "setupFiles": ["<rootDir>/tests/setup/jest.setup.js"]
   },
   "overrides": {
     "mongodb": "7.5.0"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
+    "cloudinary": "^2.11.0",
     "cors": "^2.8.6",
     "dotenv": "^18.0.2",
     "express": "^5.2.1",

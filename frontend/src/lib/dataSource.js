@@ -1,71 +1,101 @@
-import {
-  MOCK_ARTICLES,
-  MOCK_CATEGORIES,
-  MOCK_LOCATIONS,
-  MOCK_PROJECTS,
-  MOCK_PROPERTIES,
-} from "@/lib/mockData";
+import { apiRequest } from "@/lib/api-client";
 
 const MIN_ACTIVE_LISTINGS_FOR_POPULAR = 5;
 
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function placeholderImage(seed) {
+  return `https://picsum.photos/seed/${encodeURIComponent(seed)}/800/600`;
 }
 
-// Stands in for the real API described in PRD §10. Each function applies
-// the same selection/ordering logic (§4) the backend will eventually own,
-// so swapping this module out later is a data-source change, not a
-// component change. `simulateError` lets the loading/error UI (§11) be
-// exercised without a real backend, e.g. /?debugError=featured.
-async function withSimulatedNetwork(data, simulateError) {
-  await delay(500 + Math.random() * 400);
-  if (simulateError) {
-    throw new Error("Simulated network error");
-  }
-  return data;
+export function normalizeArticle(article) {
+  return {
+    ...article,
+    id: String(article.id ?? article._id),
+    image: {
+      src: article.imageUrl || placeholderImage(article.slug),
+      alt: article.imageAlt || article.title,
+    },
+  };
 }
 
+function normalizeProject(project) {
+  return {
+    ...project,
+    id: String(project._id),
+    image: {
+      src: project.imageUrl || placeholderImage(project._id),
+      alt: project.imageAlt || project.name,
+    },
+  };
+}
+
+function normalizeProperty(property) {
+  const first = property.images?.[0];
+  return {
+    ...property,
+    id: String(property.id ?? property._id),
+    image: {
+      src: first?.url || placeholderImage(property.id),
+      alt: first?.alt || property.title,
+    },
+  };
+}
+
+// Admin-flagged listings: explicit ranks first, then unranked by most recently published.
 export async function fetchFeaturedProperties(simulateError = false) {
-  const published = MOCK_PROPERTIES.filter((p) => p.status === "published");
-  const ranked = published
-    .filter((p) => p.featured && p.featuredRank !== null)
-    .sort((a, b) => a.featuredRank - b.featuredRank);
-  const unranked = published
-    .filter((p) => p.featured && p.featuredRank === null)
-    .sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1));
-  return withSimulatedNetwork([...ranked, ...unranked].slice(0, 8), simulateError);
+  if (simulateError) throw new Error("Simulated network error");
+
+  const { properties } = await apiRequest("/api/v1/properties?featured=true&limit=50");
+  const byRank = (a, b) => (a.featuredRank ?? Infinity) - (b.featuredRank ?? Infinity);
+  const byRecent = (a, b) => (a.publishedAt < b.publishedAt ? 1 : -1);
+  const ranked = properties.filter((p) => p.featuredRank != null).sort(byRank);
+  const unranked = properties.filter((p) => p.featuredRank == null).sort(byRecent);
+  return [...ranked, ...unranked].slice(0, 8).map(normalizeProperty);
 }
 
 export async function fetchPopularLocations(simulateError = false) {
-  const qualifying = MOCK_LOCATIONS.filter(
-    (l) => l.popular && l.activeListingCount >= MIN_ACTIVE_LISTINGS_FOR_POPULAR
-  ).sort((a, b) => (a.popularRank ?? Infinity) - (b.popularRank ?? Infinity));
-  return withSimulatedNetwork(qualifying.slice(0, 12), simulateError);
+  if (simulateError) throw new Error("Simulated network error");
+
+  const { locations } = await apiRequest("/api/v1/locations/popular");
+  return locations
+    .filter((location) => location.activeListingCount >= MIN_ACTIVE_LISTINGS_FOR_POPULAR)
+    .sort((a, b) => (a.popularRank ?? Infinity) - (b.popularRank ?? Infinity))
+    .map((location) => ({
+      ...location,
+      image: {
+        src: location.imageUrl || placeholderImage(location.city),
+        alt: location.imageAlt || location.city,
+      },
+    }));
 }
 
 export async function fetchCategories(simulateError = false) {
-  return withSimulatedNetwork(MOCK_CATEGORIES, simulateError);
+  if (simulateError) throw new Error("Simulated network error");
+
+  const { categories } = await apiRequest("/api/v1/categories");
+  return categories;
 }
 
 export async function fetchNewProjects(simulateError = false) {
-  const published = MOCK_PROJECTS.filter((p) => p.status === "published")
-    .sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1))
-    .slice(0, 4);
-  return withSimulatedNetwork(published, simulateError);
+  if (simulateError) throw new Error("Simulated network error");
+
+  const { projects } = await apiRequest("/api/v1/projects/new");
+  return projects.map(normalizeProject);
 }
 
 export async function fetchInsights(simulateError = false) {
-  const published = MOCK_ARTICLES.filter((a) => a.status === "published")
-    .sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1))
-    .slice(0, 3);
-  return withSimulatedNetwork(published, simulateError);
+  if (simulateError) throw new Error("Simulated network error");
+
+  const { articles } = await apiRequest("/api/v1/articles?limit=3");
+  return articles.map(normalizeArticle);
 }
 
-// Builders/developers aren't their own record type yet - derived from
-// MOCK_PROJECTS (each project already carries a `developer` name) so a
-// builder directory doesn't need a new mock entity.
+// Builders/developers aren't their own record type yet, so derive them from
+// the public project API.
 export async function fetchBuilders(simulateError = false) {
-  const published = MOCK_PROJECTS.filter((p) => p.status === "published");
+  if (simulateError) throw new Error("Simulated network error");
+
+  const { projects } = await apiRequest("/api/v1/projects?limit=50");
+  const published = projects.map(normalizeProject);
   const byDeveloper = new Map();
   for (const project of published) {
     if (!byDeveloper.has(project.developer)) {
@@ -78,5 +108,5 @@ export async function fetchBuilders(simulateError = false) {
     cities: [...new Set(builder.projects.map((p) => p.city))],
     projectCount: builder.projects.length,
   }));
-  return withSimulatedNetwork(builders, simulateError);
+  return builders;
 }

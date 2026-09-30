@@ -1,6 +1,8 @@
+const mongoose = require('mongoose');
 const Property = require('../models/Property');
 const { PROPERTY_INTENTS, PROPERTY_TYPES, PROPERTY_STATUSES } = Property;
 const propertyService = require('../services/property.service');
+const { BULK_UPDATABLE_FIELDS } = propertyService;
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
 const { serializeProperty, serializeProperties } = require('../utils/serializers/property.serializer');
@@ -15,6 +17,37 @@ function isNonEmptyString(value) {
 
 function isFiniteNonNegativeNumber(value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function validateImagesInput(images, minimumCount = 0) {
+  const errors = [];
+  if (images == null) {
+    if (minimumCount > 0) errors.push(`images must contain at least ${minimumCount} images`);
+    return errors;
+  }
+
+  if (!Array.isArray(images)) {
+    errors.push('images must be an array');
+    return errors;
+  }
+  if (images.length < minimumCount) {
+    errors.push(`images must contain at least ${minimumCount} images`);
+  }
+
+  images.forEach((image, index) => {
+    if (typeof image === 'string') {
+      if (!isNonEmptyString(image)) errors.push(`images[${index}] must be a non-empty URL string`);
+      return;
+    }
+    if (typeof image !== 'object' || image === null || !isNonEmptyString(image.url)) {
+      errors.push(`images[${index}].url must be a non-empty string`);
+    }
+    if (image != null && image.alt != null && typeof image.alt !== 'string') {
+      errors.push(`images[${index}].alt must be a string`);
+    }
+  });
+
+  return errors;
 }
 
 function validateCreateInput(body) {
@@ -57,17 +90,18 @@ function validateCreateInput(body) {
 }
 
 const createProperty = asyncHandler(async (req, res) => {
-  const errors = validateCreateInput(req.body || {});
+  const body = req.body || {};
+  const errors = [...validateCreateInput(body), ...validateImagesInput(body.images, 5)];
   if (errors.length > 0) {
     throw AppError.badRequest('Validation failed', errors);
   }
 
-  const property = await propertyService.createProperty({
+  const { property, images } = await propertyService.createProperty({
     ownerId: req.user._id,
-    input: req.body,
+    input: body,
   });
 
-  res.status(201).json({ property: serializeProperty(property) });
+  res.status(201).json({ property: serializeProperty(property, images) });
 });
 
 function parseListFilters(query) {
@@ -87,6 +121,14 @@ function parseListFilters(query) {
       errors.push(`propertyType must be one of: ${PROPERTY_TYPES.join(', ')}`);
     } else {
       filters.propertyType = query.propertyType;
+    }
+  }
+
+  if (query.featured != null) {
+    if (query.featured !== 'true' && query.featured !== 'false') {
+      errors.push('featured must be true or false');
+    } else {
+      filters.featured = query.featured === 'true';
     }
   }
 
@@ -141,9 +183,60 @@ const listProperties = asyncHandler(async (req, res) => {
   }
 
   const { properties, total, totalPages } = await propertyService.findProperties({ filters, page, limit });
+  const imagesByPropertyId = await propertyService.getImagesForProperties(properties.map((p) => p._id));
 
   res.status(200).json({
-    properties: serializeProperties(properties),
+    properties: serializeProperties(properties, imagesByPropertyId),
+    meta: { total, page, limit, totalPages },
+  });
+});
+
+const listMyProperties = asyncHandler(async (req, res) => {
+  const { page, limit, errors } = parsePagination(req.query || {});
+  if (errors.length > 0) {
+    throw AppError.badRequest('Validation failed', errors);
+  }
+
+  const { properties, total, totalPages } = await propertyService.findPropertiesByOwner({
+    ownerId: req.user._id,
+    page,
+    limit,
+  });
+  const imagesByPropertyId = await propertyService.getImagesForProperties(properties.map((p) => p._id));
+
+  res.status(200).json({
+    properties: serializeProperties(properties, imagesByPropertyId),
+    meta: { total, page, limit, totalPages },
+  });
+});
+
+const listAdminProperties = asyncHandler(async (req, res) => {
+  const query = req.query || {};
+  const { page, limit, errors: pageErrors } = parsePagination(query);
+  const errors = [...pageErrors];
+
+  let status;
+  if (query.status != null) {
+    if (!PROPERTY_STATUSES.includes(query.status)) {
+      errors.push(`status must be one of: ${PROPERTY_STATUSES.join(', ')}`);
+    } else {
+      status = query.status;
+    }
+  }
+
+  if (errors.length > 0) {
+    throw AppError.badRequest('Validation failed', errors);
+  }
+
+  const { properties, total, totalPages } = await propertyService.findProperties({
+    filters: { status, admin: true },
+    page,
+    limit,
+  });
+  const imagesByPropertyId = await propertyService.getImagesForProperties(properties.map((p) => p._id));
+
+  res.status(200).json({
+    properties: serializeProperties(properties, imagesByPropertyId),
     meta: { total, page, limit, totalPages },
   });
 });
@@ -153,7 +246,8 @@ const getPropertyBySlug = asyncHandler(async (req, res) => {
   if (!property) {
     throw AppError.notFound('Property not found');
   }
-  res.status(200).json({ property: serializeProperty(property) });
+  const images = await propertyService.getPropertyImages(property._id);
+  res.status(200).json({ property: serializeProperty(property, images) });
 });
 
 function validateUpdateInput(body, isAdmin) {
@@ -206,17 +300,19 @@ function validateUpdateInput(body, isAdmin) {
 
 const updateProperty = asyncHandler(async (req, res) => {
   const isAdmin = req.user.role === 'admin';
-  const { errors } = validateUpdateInput(req.body || {}, isAdmin);
+  const body = req.body || {};
+  const { errors } = validateUpdateInput(body, isAdmin);
+  errors.push(...validateImagesInput(body.images));
   if (errors.length > 0) {
     throw AppError.badRequest('Validation failed', errors);
   }
 
-  const result = await propertyService.updatePropertyById(req.params.id, req.body || {}, req.user);
+  const result = await propertyService.updatePropertyById(req.params.id, body, req.user);
 
   if (result.error === 'not_found') throw AppError.notFound('Property not found');
   if (result.error === 'forbidden') throw AppError.forbidden('You do not have permission to update this property');
 
-  res.status(200).json({ property: serializeProperty(result.property) });
+  res.status(200).json({ property: serializeProperty(result.property, result.images) });
 });
 
 const deleteProperty = asyncHandler(async (req, res) => {
@@ -228,10 +324,95 @@ const deleteProperty = asyncHandler(async (req, res) => {
   res.status(204).send();
 });
 
+function validateBulkIds(ids) {
+  const errors = [];
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    errors.push('ids must be a non-empty array');
+    return errors;
+  }
+
+  const invalidIds = ids.filter((id) => typeof id !== 'string' || !mongoose.isValidObjectId(id));
+  if (invalidIds.length > 0) {
+    errors.push(`ids contains invalid identifiers: ${invalidIds.join(', ')}`);
+  }
+
+  return errors;
+}
+
+function validateBulkUpdates(updates) {
+  const errors = [];
+
+  if (updates == null || typeof updates !== 'object' || Array.isArray(updates)) {
+    errors.push('updates must be an object');
+    return errors;
+  }
+
+  const unknownFields = Object.keys(updates).filter((field) => !BULK_UPDATABLE_FIELDS.includes(field));
+  if (unknownFields.length > 0) {
+    errors.push(`updates contains unsupported fields: ${unknownFields.join(', ')}`);
+  }
+  if (Object.keys(updates).length === 0) {
+    errors.push('updates must include at least one field');
+  }
+
+  if (updates.status != null && !PROPERTY_STATUSES.includes(updates.status)) {
+    errors.push(`status must be one of: ${PROPERTY_STATUSES.join(', ')}`);
+  }
+  if (updates.verified != null && typeof updates.verified !== 'boolean') {
+    errors.push('verified must be a boolean');
+  }
+  if (updates.featured != null && typeof updates.featured !== 'boolean') {
+    errors.push('featured must be a boolean');
+  }
+  if (updates.featuredRank != null && !isFiniteNonNegativeNumber(updates.featuredRank)) {
+    errors.push('featuredRank must be a non-negative number');
+  }
+  if (updates.city != null && !isNonEmptyString(updates.city)) {
+    errors.push('city must be a non-empty string');
+  }
+  if (updates.intent != null && !PROPERTY_INTENTS.includes(updates.intent)) {
+    errors.push(`intent must be one of: ${PROPERTY_INTENTS.join(', ')}`);
+  }
+  if (updates.propertyType != null && !PROPERTY_TYPES.includes(updates.propertyType)) {
+    errors.push(`propertyType must be one of: ${PROPERTY_TYPES.join(', ')}`);
+  }
+
+  return errors;
+}
+
+const bulkUpdateProperties = asyncHandler(async (req, res) => {
+  const body = req.body || {};
+  const errors = [...validateBulkIds(body.ids), ...validateBulkUpdates(body.updates)];
+  if (errors.length > 0) {
+    throw AppError.badRequest('Validation failed', errors);
+  }
+
+  const { matchedCount, modifiedCount } = await propertyService.bulkUpdatePropertiesByIds(body.ids, body.updates);
+
+  res.status(200).json({ matchedCount, modifiedCount, ids: body.ids });
+});
+
+const bulkDeleteProperties = asyncHandler(async (req, res) => {
+  const body = req.body || {};
+  const errors = validateBulkIds(body.ids);
+  if (errors.length > 0) {
+    throw AppError.badRequest('Validation failed', errors);
+  }
+
+  const { deletedCount } = await propertyService.bulkDeletePropertiesByIds(body.ids);
+
+  res.status(200).json({ deletedCount, ids: body.ids });
+});
+
 module.exports = {
   createProperty,
   listProperties,
+  listMyProperties,
+  listAdminProperties,
   getPropertyBySlug,
   updateProperty,
   deleteProperty,
+  bulkUpdateProperties,
+  bulkDeleteProperties,
 };

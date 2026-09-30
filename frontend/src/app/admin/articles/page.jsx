@@ -1,20 +1,40 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAdminStore } from "@/lib/admin-store";
+import { attempt } from "@/lib/attempt";
 import { formatDate } from "@/lib/format";
+import { Pagination } from "@/components/admin/Pagination";
 import { StatusPill } from "@/components/admin/StatusPill";
 import { Modal } from "@/components/admin/Modal";
 import { AddArticleForm } from "@/components/admin/forms/AddArticleForm";
 
-export default function AdminArticlesPage() {
-  const { articles, setArticleStatus, deleteArticle } = useAdminStore();
-  const [showAdd, setShowAdd] = useState(false);
+const PAGE_SIZE = 20;
 
-  const handleDelete = (article) => {
-    if (window.confirm(`Delete "${article.title}"? This can't be undone.`)) {
-      deleteArticle(article.id);
-    }
+export default function AdminArticlesPage() {
+  const { articles, articlesMeta, articlesLoading, articlesError, loadArticles, setArticleStatus, deleteArticle } =
+    useAdminStore();
+  const [showAdd, setShowAdd] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [page, setPage] = useState(1);
+
+  const reload = useCallback(() => loadArticles({ page, limit: PAGE_SIZE }), [loadArticles, page]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const handleStatusChange = async (article, status) => {
+    const res = await attempt(() => setArticleStatus(article.id, status));
+    if (res.ok) reload();
+  };
+
+  const handleDelete = async (article) => {
+    if (!window.confirm(`Delete "${article.title}"? This can't be undone.`)) return;
+    const res = await attempt(() => deleteArticle(article.id));
+    if (!res.ok) return;
+    if (articles.length <= 1 && page > 1) setPage((p) => p - 1);
+    else reload();
   };
 
   return (
@@ -35,6 +55,15 @@ export default function AdminArticlesPage() {
         </button>
       </div>
 
+      {articlesError ? (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-danger px-4 py-3 text-sm text-danger">
+          <span>Could not load articles: {articlesError}</span>
+          <button type="button" onClick={reload} className="font-medium underline">
+            Retry
+          </button>
+        </div>
+      ) : null}
+
       <div className="overflow-x-auto rounded-2xl border border-border bg-surface">
         <table className="w-full min-w-160 border-collapse text-sm">
           <thead>
@@ -54,13 +83,13 @@ export default function AdminArticlesPage() {
                   <p className="font-medium">{article.title}</p>
                   <p className="text-xs text-text-muted">{article.excerpt}</p>
                 </td>
-                <td className="px-4 py-3 text-text-muted">{formatDate(article.publishedAt)}</td>
+                <td className="px-4 py-3 text-text-muted">{article.publishedAt ? formatDate(article.publishedAt) : "—"}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <StatusPill status={article.status} />
                     <select
                       value={article.status}
-                      onChange={(e) => setArticleStatus(article.id, e.target.value)}
+                      onChange={(e) => handleStatusChange(article, e.target.value)}
                       aria-label={`Status for ${article.title}`}
                       className="rounded-lg border border-border bg-surface px-2 py-1 text-xs"
                     >
@@ -71,17 +100,33 @@ export default function AdminArticlesPage() {
                   </div>
                 </td>
                 <td className="px-4 py-3">
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(article)}
-                    className="text-xs font-medium text-danger hover:underline"
-                  >
-                    Delete
-                  </button>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setEditing(article)}
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(article)}
+                      className="text-xs font-medium text-danger hover:underline"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
-            {articles.length === 0 ? (
+            {articlesLoading && articles.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="px-4 py-8 text-center text-text-muted">
+                  Loading articles…
+                </td>
+              </tr>
+            ) : null}
+            {!articlesLoading && !articlesError && articles.length === 0 ? (
               <tr>
                 <td colSpan={4} className="px-4 py-8 text-center text-text-muted">
                   No articles yet.
@@ -92,9 +137,29 @@ export default function AdminArticlesPage() {
         </table>
       </div>
 
+      <Pagination meta={articlesMeta} label="articles" loading={articlesLoading} page={page} onPageChange={setPage} />
+
       {showAdd ? (
         <Modal title="Add article" onClose={() => setShowAdd(false)}>
-          <AddArticleForm onDone={() => setShowAdd(false)} />
+          <AddArticleForm
+            onDone={() => {
+              setShowAdd(false);
+              if (page === 1) reload();
+              else setPage(1);
+            }}
+          />
+        </Modal>
+      ) : null}
+
+      {editing ? (
+        <Modal title="Edit article" onClose={() => setEditing(null)}>
+          <AddArticleForm
+            item={editing}
+            onDone={() => {
+              setEditing(null);
+              reload();
+            }}
+          />
         </Modal>
       ) : null}
     </div>

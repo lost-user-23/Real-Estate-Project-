@@ -6,6 +6,7 @@ const createApp = require('../src/app');
 const { connectToDatabase, disconnectFromDatabase } = require('../src/db/connection');
 const User = require('../src/models/User');
 const Property = require('../src/models/Property');
+const PropertyImage = require('../src/models/PropertyImage');
 
 const app = createApp();
 
@@ -18,6 +19,9 @@ const validPayload = {
   city: 'Bengaluru',
   locality: 'Koramangala',
 };
+const validImages = Array.from({ length: 5 }, (_, index) => ({
+  url: `https://res.cloudinary.com/demo/image/upload/v1/property-images/${index}.jpg`,
+}));
 
 async function registerUser(overrides = {}) {
   const email = overrides.email || `property-${new mongoose.Types.ObjectId()}@example.com`;
@@ -53,7 +57,7 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
-  await Promise.all([User.deleteMany({}), Property.deleteMany({})]);
+  await Promise.all([User.deleteMany({}), Property.deleteMany({}), PropertyImage.deleteMany({})]);
 });
 
 afterAll(async () => {
@@ -67,17 +71,46 @@ describe('POST /api/v1/properties', () => {
     expect(response.status).toBe(401);
   });
 
-  it('creates a draft property owned by the authenticated user', async () => {
+  it('rejects submissions with fewer than five images', async () => {
+    const { token } = await registerUser();
+    const response = await request(app)
+      .post('/api/v1/properties')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ...validPayload, images: validImages.slice(0, 4) });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.details).toContain('images must contain at least 5 images');
+  });
+
+  it('creates an owned draft and links all submitted images even when published status is requested', async () => {
     const { token, user } = await registerUser();
     const response = await request(app)
       .post('/api/v1/properties')
       .set('Authorization', `Bearer ${token}`)
-      .send(validPayload);
+      .send({ ...validPayload, status: 'published', images: validImages });
 
     expect(response.status).toBe(201);
     expect(response.body.property.ownerId).toBe(user.id);
     expect(response.body.property.status).toBe('draft');
     expect(response.body.property.slug).toEqual(expect.any(String));
+    expect(response.body.property.images).toHaveLength(5);
+
+    const stored = await PropertyImage.find({ propertyId: response.body.property._id });
+    expect(stored).toHaveLength(5);
+    expect(stored.every((image) => String(image.propertyId) === response.body.property._id)).toBe(true);
+    expect(stored.map((image) => image.url).sort()).toEqual(validImages.map((image) => image.url).sort());
+  });
+
+  it('rejects malformed image entries', async () => {
+    const { token } = await registerUser();
+    const response = await request(app)
+      .post('/api/v1/properties')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ...validPayload, images: [{ alt: 'missing url' }, ...validImages.slice(1)] });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.message).toBe('Validation failed');
+    expect(response.body.error.details).toContain('images[0].url must be a non-empty string');
   });
 
   it.each([
@@ -92,7 +125,7 @@ describe('POST /api/v1/properties', () => {
     const response = await request(app)
       .post('/api/v1/properties')
       .set('Authorization', `Bearer ${token}`)
-      .send({ ...validPayload, ...override });
+      .send({ ...validPayload, ...override, images: validImages });
 
     expect(response.status).toBe(400);
     expect(response.body.error.message).toBe('Validation failed');
@@ -201,6 +234,18 @@ describe('GET /api/v1/properties', () => {
     expect(response.body.properties).toEqual([]);
     expect(response.body.meta).toMatchObject({ total: 0, totalPages: 1 });
   });
+
+  it('never returns draft or archived properties even when ?status=draft is requested', async () => {
+    const { user } = await registerUser();
+    await createProperty({ ownerId: user.id, slug: 'still-draft', status: 'draft' });
+    await createProperty({ ownerId: user.id, slug: 'still-archived', status: 'archived' });
+    await createProperty({ ownerId: user.id, slug: 'still-published', status: 'published' });
+
+    const response = await request(app).get('/api/v1/properties').query({ status: 'draft' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.properties.map((property) => property.slug)).toEqual(['still-published']);
+  });
 });
 
 describe('GET /api/v1/properties/:slug', () => {
@@ -210,6 +255,22 @@ describe('GET /api/v1/properties/:slug', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.property.slug).toBe(property.slug);
+  });
+
+  it('includes uploaded images ordered by displayOrder', async () => {
+    const property = await createProperty({ slug: 'with-images' });
+    await PropertyImage.create([
+      { propertyId: property._id, url: 'https://res.cloudinary.com/demo/second.jpg', displayOrder: 1 },
+      { propertyId: property._id, url: 'https://res.cloudinary.com/demo/first.jpg', displayOrder: 0 },
+    ]);
+
+    const response = await request(app).get(`/api/v1/properties/${property.slug}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.property.images.map((image) => image.url)).toEqual([
+      'https://res.cloudinary.com/demo/first.jpg',
+      'https://res.cloudinary.com/demo/second.jpg',
+    ]);
   });
 
   it.each(['missing-property', 'draft-property', 'archived-property'])('does not return %s', async (slug) => {
@@ -234,6 +295,27 @@ describe('PATCH /api/v1/properties/:id', () => {
     expect(response.status).toBe(200);
     expect(response.body.property.title).toBe('Updated Property');
     expect(response.body.property.priceInRupees).toBe(2000000);
+  });
+
+  it('lets an owner replace their property images', async () => {
+    const { token, user } = await registerUser();
+    const property = await createProperty({ ownerId: user.id, status: 'draft' });
+    await PropertyImage.create({ propertyId: property._id, url: 'https://res.cloudinary.com/demo/old.jpg', displayOrder: 0 });
+
+    const newUrl = 'https://res.cloudinary.com/demo/image/upload/v1/property-images/new.jpg';
+    const response = await request(app)
+      .patch(`/api/v1/properties/${property._id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ images: [{ url: newUrl, alt: 'Front view' }] });
+
+    expect(response.status).toBe(200);
+    expect(response.body.property.images).toEqual([
+      expect.objectContaining({ url: newUrl, alt: 'Front view', displayOrder: 0 }),
+    ]);
+
+    const stored = await PropertyImage.find({ propertyId: property._id });
+    expect(stored).toHaveLength(1);
+    expect(stored[0].url).toBe(newUrl);
   });
 
   it('ignores admin-only fields from non-admin owners', async () => {
@@ -273,6 +355,19 @@ describe('PATCH /api/v1/properties/:id', () => {
 });
 
 describe('DELETE /api/v1/properties/:id', () => {
+  it('deletes associated image records along with the property', async () => {
+    const { token, user } = await registerUser();
+    const property = await createProperty({ ownerId: user.id, status: 'draft' });
+    await PropertyImage.create({ propertyId: property._id, url: 'https://res.cloudinary.com/demo/a.jpg' });
+
+    const response = await request(app)
+      .delete(`/api/v1/properties/${property._id}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(204);
+    expect(await PropertyImage.find({ propertyId: property._id })).toHaveLength(0);
+  });
+
   it('allows an owner to delete a draft', async () => {
     const { token, user } = await registerUser();
     const property = await createProperty({ ownerId: user.id, status: 'draft' });
@@ -325,5 +420,84 @@ describe('DELETE /api/v1/properties/:id', () => {
       .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(404);
+  });
+});
+
+describe('GET /api/v1/admin/properties', () => {
+  it('rejects a non-admin user with 403', async () => {
+    const { token } = await registerUser();
+    const response = await request(app)
+      .get('/api/v1/admin/properties')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects an unauthenticated request with 401', async () => {
+    const response = await request(app).get('/api/v1/admin/properties');
+    expect(response.status).toBe(401);
+  });
+
+  it('lets an admin see draft and archived listings alongside published ones', async () => {
+    const { token, user } = await registerUser();
+    await promoteToAdmin(user.id);
+    await createProperty({ slug: 'draft-one', status: 'draft', publishedAt: null });
+    await createProperty({ slug: 'archived-one', status: 'archived' });
+    await createProperty({ slug: 'published-one', status: 'published' });
+
+    const response = await request(app)
+      .get('/api/v1/admin/properties')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.properties.map((property) => property.slug).sort()).toEqual(
+      ['archived-one', 'draft-one', 'published-one'].sort()
+    );
+    expect(response.body.meta).toMatchObject({ total: 3 });
+  });
+
+  it('narrows results with ?status= for an admin', async () => {
+    const { token, user } = await registerUser();
+    await promoteToAdmin(user.id);
+    await createProperty({ slug: 'draft-two', status: 'draft', publishedAt: null });
+    await createProperty({ slug: 'published-two', status: 'published' });
+
+    const response = await request(app)
+      .get('/api/v1/admin/properties')
+      .query({ status: 'draft' })
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.properties.map((property) => property.slug)).toEqual(['draft-two']);
+  });
+
+  it('rejects an invalid ?status= with 400', async () => {
+    const { token, user } = await registerUser();
+    await promoteToAdmin(user.id);
+
+    const response = await request(app)
+      .get('/api/v1/admin/properties')
+      .query({ status: 'not-a-status' })
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(400);
+  });
+
+  it('paginates newest first with accurate meta', async () => {
+    const { token, user } = await registerUser();
+    await promoteToAdmin(user.id);
+    await createProperty({ slug: 'admin-page-a' });
+    await createProperty({ slug: 'admin-page-b' });
+    await createProperty({ slug: 'admin-page-c' });
+
+    const response = await request(app)
+      .get('/api/v1/admin/properties')
+      .query({ page: 1, limit: 2 })
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.properties).toHaveLength(2);
+    expect(response.body.properties.map((p) => p.slug)).toEqual(['admin-page-c', 'admin-page-b']);
+    expect(response.body.meta).toMatchObject({ total: 3, page: 1, limit: 2, totalPages: 2 });
   });
 });

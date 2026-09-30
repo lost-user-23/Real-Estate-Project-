@@ -83,15 +83,25 @@ export function Navbar() {
 
         <div className="hidden items-center gap-3 lg:flex">
           {isLoggedIn ? (
-            <button
-              type="button"
-              onClick={logout}
-              className={`text-sm font-medium transition-colors ${
-                transparent ? "text-white/90 hover:text-white" : "text-text hover:text-primary"
-              }`}
-            >
-              Log out
-            </button>
+            <>
+              <Link
+                href="/profile"
+                className={`text-sm font-medium transition-colors ${
+                  transparent ? "text-white/90 hover:text-white" : "text-text hover:text-primary"
+                }`}
+              >
+                Profile
+              </Link>
+              <button
+                type="button"
+                onClick={logout}
+                className={`text-sm font-medium transition-colors ${
+                  transparent ? "text-white/90 hover:text-white" : "text-text hover:text-primary"
+                }`}
+              >
+                Log out
+              </button>
+            </>
           ) : (
             <button
               type="button"
@@ -134,16 +144,25 @@ export function Navbar() {
             ))}
             <div className="mt-2 flex flex-col gap-2 border-t border-border pt-3">
               {isLoggedIn ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    logout();
-                    setMobileOpen(false);
-                  }}
-                  className="rounded-lg px-2 py-2.5 text-left text-sm font-medium text-text hover:bg-bg"
-                >
-                  Log out
-                </button>
+                <>
+                  <Link
+                    href="/profile"
+                    onClick={() => setMobileOpen(false)}
+                    className="rounded-lg px-2 py-2.5 text-sm font-medium text-text hover:bg-bg"
+                  >
+                    Profile
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      logout();
+                      setMobileOpen(false);
+                    }}
+                    className="rounded-lg px-2 py-2.5 text-left text-sm font-medium text-text hover:bg-bg"
+                  >
+                    Log out
+                  </button>
+                </>
               ) : (
                 <button
                   type="button"

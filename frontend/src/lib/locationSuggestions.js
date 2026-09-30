@@ -1,20 +1,17 @@
-import { MOCK_LOCALITIES } from "@/lib/mockData";
+import { apiRequest } from "@/lib/api-client";
 
 const MAX_SUGGESTIONS = 6;
 
 // Grouped City-then-Locality, capped at 6 (PRD §5 autocomplete contract).
-export function getLocationSuggestions(query) {
-  const normalized = query.trim().toLowerCase();
-  if (normalized.length < 2) return [];
+export async function getLocationSuggestions(query, { signal } = {}) {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) return [];
 
-  const matches = MOCK_LOCALITIES.filter(
-    (entry) =>
-      entry.city.toLowerCase().includes(normalized) ||
-      (entry.locality?.toLowerCase().includes(normalized) ?? false)
-  );
+  const params = new URLSearchParams({ q: trimmed });
+  const { locations } = await apiRequest(`/api/v1/locations/suggestions?${params.toString()}`, { signal });
 
-  const cityMatches = matches.filter((m) => m.locality === null);
-  const localityMatches = matches.filter((m) => m.locality !== null);
+  const cityMatches = locations.filter((l) => l.locality === null);
+  const localityMatches = locations.filter((l) => l.locality !== null);
 
   return [...cityMatches, ...localityMatches].slice(0, MAX_SUGGESTIONS);
 }

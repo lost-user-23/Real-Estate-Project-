@@ -4,11 +4,14 @@ import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useLoginPrompt } from "@/lib/login-prompt-context";
+import { api } from "@/lib/api";
 import { AMENITY_PRIORITY } from "@/lib/amenities";
+import { formatPrice } from "@/lib/format";
 import { PROPERTY_TYPE_LABELS, PROPERTY_TYPE_OPTIONS_BY_INTENT } from "@/lib/propertyTypes";
 
 const INITIAL_FORM = {
   intent: "buy",
+  title: "",
   propertyType: "apartment",
   city: "",
   locality: "",
@@ -32,6 +35,8 @@ export function PostPropertyForm() {
   }));
   const [submitted, setSubmitted] = useState(null);
   const [imageError, setImageError] = useState("");
+  const [submitError, setSubmitError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const update = (patch) => setForm((prev) => ({ ...prev, ...patch }));
 
@@ -55,6 +60,7 @@ export function PostPropertyForm() {
         ...validImages.map((file) => ({
           id: `${file.name}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
           name: file.name,
+            file,
           url: URL.createObjectURL(file),
         })),
       ],
@@ -64,6 +70,8 @@ export function PostPropertyForm() {
   };
 
   const removeImage = (imageId) => {
+    const removedImage = form.images.find((image) => image.id === imageId);
+    if (removedImage?.url.startsWith("blob:")) URL.revokeObjectURL(removedImage.url);
     setForm((prev) => ({
       ...prev,
       images: prev.images.filter((image) => image.id !== imageId),
@@ -79,30 +87,77 @@ export function PostPropertyForm() {
     }));
   };
 
+  const submitListing = async () => {
+    setSubmitError("");
+    setIsSubmitting(true);
+    try {
+      const uploadedImages = await Promise.all(
+        form.images.map(async (image, index) => {
+          const signature = await api.post("/api/v1/uploads/signature", { resourceType: "image" });
+          const uploadData = new FormData();
+          uploadData.append("file", image.file);
+          uploadData.append("api_key", signature.apiKey);
+          uploadData.append("timestamp", String(signature.timestamp));
+          uploadData.append("folder", signature.folder);
+          uploadData.append("signature", signature.signature);
+
+          const uploadResponse = await fetch(signature.uploadUrl, { method: "POST", body: uploadData });
+          const uploadResult = await uploadResponse.json().catch(() => ({}));
+          if (!uploadResponse.ok || !uploadResult.secure_url) {
+            throw new Error(uploadResult.error?.message || `Photo ${index + 1} could not be uploaded.`);
+          }
+          return { url: uploadResult.secure_url, alt: image.name, displayOrder: index };
+        })
+      );
+
+      const payload = {
+        title: form.title.trim(),
+        intent: form.intent,
+        propertyType: form.propertyType,
+        city: form.city.trim(),
+        locality: form.locality.trim(),
+        bhk: form.bhk === "" ? null : Number(form.bhk),
+        areaSqft: Number(form.areaSqft),
+        priceInRupees: Number(form.price),
+        amenities: form.amenities,
+        description: form.description.trim(),
+        contactNumber: form.contactNumber.trim(),
+        images: uploadedImages,
+      };
+      const result = await api.post("/api/v1/properties", payload);
+      setSubmitted(result.property);
+    } catch (error) {
+      setSubmitError(error.message || "Your listing could not be submitted. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleSubmit = (event) => {
     event.preventDefault();
-
     if (!hasMinimumImages) {
       setImageError("Please upload at least 5 photos before submitting your property listing.");
       return;
     }
 
     if (!isLoggedIn) {
-      requestLogin();
+      // login stores the token in the shared session before this runs
+      requestLogin(() => submitListing());
       return;
     }
-    setSubmitted(form);
+    submitListing();
   };
 
   if (submitted) {
     return (
       <div className="rounded-2xl border border-border bg-surface p-8 text-center">
-        <p className="text-lg font-semibold">Listing details captured</p>
+        <p className="text-lg font-semibold">Listing submitted for review</p>
         <p className="mt-2 text-sm text-text-muted">
-          There&apos;s no backend connected yet, so nothing was actually saved or published. In the live product,
-          this listing would now go to admin review before appearing on the site.
+          Your listing has been saved as a draft. It will need admin approval before appearing on the site.
         </p>
         <dl className="mx-auto mt-6 grid max-w-sm grid-cols-2 gap-x-4 gap-y-2 text-left text-sm">
+          <dt className="text-text-muted">Listing</dt>
+          <dd>{submitted.title}</dd>
           <dt className="text-text-muted">Type</dt>
           <dd>
             {submitted.intent === "rent" ? "For rent" : "For sale"} &middot; {PROPERTY_TYPE_LABELS[submitted.propertyType]}
@@ -113,7 +168,7 @@ export function PostPropertyForm() {
             {submitted.city || "—"}
           </dd>
           <dt className="text-text-muted">Price</dt>
-          <dd>{submitted.price ? `₹${Number(submitted.price).toLocaleString("en-IN")}` : "—"}</dd>
+          <dd>{submitted.priceInRupees != null ? formatPrice(submitted.priceInRupees) : "—"}</dd>
           <dt className="text-text-muted">Area</dt>
           <dd>{submitted.areaSqft ? `${submitted.areaSqft} sq.ft` : "—"}</dd>
           <dt className="text-text-muted">Photos</dt>
@@ -121,7 +176,10 @@ export function PostPropertyForm() {
         </dl>
         <button
           type="button"
-          onClick={() => setSubmitted(null)}
+          onClick={() => {
+            setSubmitted(null);
+            setForm({ ...INITIAL_FORM, city: searchParams.get("city") ?? "", propertyType: searchParams.get("propertyType") ?? INITIAL_FORM.propertyType });
+          }}
           className="mt-6 inline-flex items-center justify-center rounded-full border border-primary px-5 py-2 text-sm font-semibold text-primary hover:bg-primary hover:text-white"
         >
           Post another
@@ -139,6 +197,8 @@ export function PostPropertyForm() {
           You can fill this in, but you&apos;ll need to log in before it submits.
         </div>
       ) : null}
+
+      {submitError ? <p role="alert" className="text-sm text-danger">{submitError}</p> : null}
 
       <div role="radiogroup" aria-label="Listing intent" className="flex gap-2">
         {["buy", "rent"].map((option) => (
@@ -197,6 +257,17 @@ export function PostPropertyForm() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field label="Listing title" required>
+          <input
+            type="text"
+            required
+            maxLength={200}
+            value={form.title}
+            onChange={(e) => update({ title: e.target.value })}
+            className="w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm outline-none focus:border-primary"
+          />
+        </Field>
+
         <Field label="Property type">
           <select
             value={form.propertyType}
@@ -306,14 +377,14 @@ export function PostPropertyForm() {
 
       <button
         type="submit"
-        disabled={!hasMinimumImages}
+        disabled={!hasMinimumImages || isSubmitting}
         className={`self-start rounded-full px-6 py-2.5 text-sm font-semibold transition-colors ${
-          hasMinimumImages
+          hasMinimumImages && !isSubmitting
             ? "bg-primary text-white hover:bg-primary-dark"
             : "cursor-not-allowed bg-border text-text-muted"
         }`}
       >
-        {isLoggedIn ? "Submit listing" : "Log in to submit"}
+        {isSubmitting ? "Uploading photos and submitting…" : isLoggedIn ? "Submit listing" : "Log in to submit"}
       </button>
     </form>
   );

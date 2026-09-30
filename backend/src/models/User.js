@@ -26,6 +26,16 @@ const userSchema = new Schema(
       type: String,
       trim: true,
     },
+    phone: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    // Set whenever the password changes; tokens issued before this are rejected
+    // by the protect middleware.
+    passwordChangedAt: {
+      type: Date,
+    },
     role: {
       type: String,
       enum: USER_ROLES,

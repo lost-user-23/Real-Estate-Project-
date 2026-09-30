@@ -1,37 +1,72 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useAdminStore } from "@/lib/admin-store";
+import { api } from "@/lib/api";
 import { useAdminAuth } from "@/lib/admin-auth-context";
 import { StatCard } from "@/components/admin/StatCard";
 
 export default function AdminDashboardPage() {
-  const { properties, locations, projects, articles } = useAdminStore();
-  const { profile } = useAdminAuth();
+  const { user } = useAdminAuth();
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [attempt, setAttempt] = useState(0);
 
-  const publishedProperties = properties.filter((p) => p.status === "published");
-  const featuredCount = publishedProperties.filter((p) => p.featured).length;
-  const unverifiedCount = publishedProperties.filter((p) => !p.verified).length;
-  const popularLocationsCount = locations.filter((l) => l.popular && l.activeListingCount >= 5).length;
-  const publishedProjects = projects.filter((p) => p.status === "published").length;
-  const publishedArticles = articles.filter((a) => a.status === "published").length;
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get("/api/v1/admin/dashboard")
+      .then((data) => {
+        if (!cancelled) setStats(data.stats);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [attempt]);
+
+  const retry = () => {
+    setLoading(true);
+    setError(null);
+    setAttempt((n) => n + 1);
+  };
+
+  const firstName = user?.name?.split(" ")[0] ?? "admin";
+
+  // Show a dash instead of a misleading 0 while loading or after a failed load.
+  const stat = (key) => (stats ? stats[key] : loading ? "…" : "-");
 
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Welcome back, {profile.name.split(" ")[0]}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Welcome back, {firstName}</h1>
         <p className="mt-1 text-sm text-text-muted">
           What&apos;s currently driving the home page sections.
         </p>
       </div>
 
+      {error ? (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-danger px-4 py-3 text-sm text-danger">
+          <span>Could not load dashboard stats: {error}</span>
+          <button type="button" onClick={retry} className="font-medium underline">
+            Retry
+          </button>
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Published listings" value={publishedProperties.length} />
-        <StatCard label="Featured on home page" value={featuredCount} hint="Up to 8 shown" />
-        <StatCard label="Awaiting verification" value={unverifiedCount} />
-        <StatCard label="Popular locations" value={popularLocationsCount} hint="Needs 5+ active listings" />
-        <StatCard label="Published projects" value={publishedProjects} hint="Up to 4 shown, most recent first" />
-        <StatCard label="Published insights" value={publishedArticles} hint="Up to 3 shown, most recent first" />
+        <StatCard label="Published listings" value={stat("publishedListings")} />
+        <StatCard label="Featured on home page" value={stat("featuredListings")} hint="Up to 8 shown" />
+        <StatCard label="Awaiting verification" value={stat("awaitingVerification")} />
+        <StatCard label="Popular locations" value={stat("popularLocations")} hint="Needs 5+ active listings" />
+        <StatCard label="Published projects" value={stat("publishedProjects")} hint="Up to 4 shown, most recent first" />
+        <StatCard label="Published insights" value={stat("publishedArticles")} hint="Up to 3 shown, most recent first" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

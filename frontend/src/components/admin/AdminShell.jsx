@@ -4,14 +4,17 @@ import Link from "next/link";
 import { AdminStoreProvider } from "@/lib/admin-store";
 import { AdminAuthProvider, useAdminAuth } from "@/lib/admin-auth-context";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
-import { NoBackendBanner } from "@/components/admin/NoBackendBanner";
 import { AdminLoginGate } from "@/components/admin/AdminLoginGate";
 import { AdminProfileMenu } from "@/components/admin/AdminProfileMenu";
 
 function AdminShellInner({ children }) {
-  const { isLoggedIn } = useAdminAuth();
+  const { isAuthenticated, loading } = useAdminAuth();
 
-  if (!isLoggedIn) {
+  // Avoid flashing the login gate while the session is still being restored
+  // from localStorage.
+  if (loading) return <div className="p-8 text-sm text-text-muted">Loading…</div>;
+
+  if (!isAuthenticated) {
     return <AdminLoginGate />;
   }
 
@@ -29,7 +32,6 @@ function AdminShellInner({ children }) {
             <AdminProfileMenu />
           </div>
         </header>
-        <NoBackendBanner />
         <div className="flex flex-1 flex-col lg:flex-row">
           <aside className="border-b border-border bg-surface lg:w-56 lg:shrink-0 lg:border-b-0 lg:border-r">
             <AdminSidebar />

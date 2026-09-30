@@ -31,12 +31,10 @@ const propertyImageSchema = new Schema(
   { timestamps: { createdAt: true, updatedAt: false } }
 );
 
-propertyImageSchema.pre('validate', function validateStorageReference(next) {
+propertyImageSchema.pre('validate', function validateStorageReference() {
   if (!this.storageKey && !this.url) {
-    next(new Error('PropertyImage requires either storageKey or url.'));
-    return;
+    throw new Error('PropertyImage requires either storageKey or url.');
   }
-  next();
 });
 
 propertyImageSchema.index({ propertyId: 1, displayOrder: 1 });

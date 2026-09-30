@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import { getLocationSuggestions } from "@/lib/locationSuggestions";
 import { MapPinIcon } from "@/components/icons";
@@ -17,7 +17,25 @@ export function LocationInput({ value, onSelect }) {
   const listboxId = useId();
   const containerRef = useRef(null);
 
-  const suggestions = useMemo(() => getLocationSuggestions(debouncedQuery), [debouncedQuery]);
+  const [suggestions, setSuggestions] = useState([]);
+
+  useEffect(() => {
+    const trimmed = debouncedQuery.trim();
+    if (trimmed.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    getLocationSuggestions(debouncedQuery, { signal: controller.signal })
+      .then(setSuggestions)
+      .catch((error) => {
+        if (error.name === "AbortError") return;
+        setSuggestions([]);
+      });
+
+    return () => controller.abort();
+  }, [debouncedQuery]);
 
   useEffect(() => {
     function handleClickOutside(event) {

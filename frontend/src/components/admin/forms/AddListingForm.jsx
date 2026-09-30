@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useAdminStore } from "@/lib/admin-store";
 import { AMENITY_PRIORITY } from "@/lib/amenities";
 import { PROPERTY_TYPE_LABELS, PROPERTY_TYPE_OPTIONS_BY_INTENT } from "@/lib/propertyTypes";
-import { slugify, randomSlugSuffix } from "@/lib/slugify";
 import { AdminField, adminFieldInputClass } from "@/components/admin/AdminField";
 
 const INITIAL = {
@@ -16,13 +15,20 @@ const INITIAL = {
   locality: "",
   areaSqft: "",
   price: "",
+  description: "",
+  contactNumber: "",
   amenities: [],
   status: "draft",
 };
 
+const MIN_PHOTOS = 5;
+
 export function AddListingForm({ onDone }) {
   const { addProperty } = useAdminStore();
   const [form, setForm] = useState(INITIAL);
+  const [files, setFiles] = useState([]);
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const update = (patch) => setForm((prev) => ({ ...prev, ...patch }));
 
@@ -35,35 +41,45 @@ export function AddListingForm({ onDone }) {
     }));
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    const id = crypto.randomUUID();
-    addProperty({
-      id,
-      slug: `${slugify(form.title)}-${randomSlugSuffix()}`,
-      title: form.title,
-      intent: form.intent,
-      propertyType: form.propertyType,
-      bhk: form.bhk ? Number(form.bhk) : null,
-      priceInRupees: Number(form.price),
-      areaSqft: Number(form.areaSqft),
-      city: form.city,
-      locality: form.locality,
-      amenities: form.amenities,
-      image: { src: `https://picsum.photos/seed/${id}/800/600`, alt: form.title },
-      verified: false,
-      featured: false,
-      featuredRank: null,
-      publishedAt: new Date().toISOString().slice(0, 10),
-      status: form.status,
-    });
-    onDone();
+    if (files.length < MIN_PHOTOS) {
+      setError(`Please add at least ${MIN_PHOTOS} photos.`);
+      return;
+    }
+    setError("");
+    setSubmitting(true);
+    try {
+      const { publishError } = await addProperty({
+        title: form.title,
+        intent: form.intent,
+        propertyType: form.propertyType,
+        bhk: form.bhk ? Number(form.bhk) : null,
+        priceInRupees: Number(form.price),
+        areaSqft: Number(form.areaSqft),
+        city: form.city,
+        locality: form.locality.trim() || null,
+        description: form.description,
+        contactNumber: form.contactNumber.trim() || undefined,
+        amenities: form.amenities,
+        status: form.status,
+        files,
+      });
+      if (publishError) {
+        window.alert(`The listing was saved as a draft, but publishing it failed: ${publishError}. Publish it from the listings table.`);
+      }
+      onDone();
+    } catch (e) {
+      setError(e?.message || "Could not create the listing. Please try again.");
+      setSubmitting(false);
+    }
   };
 
   const propertyTypeOptions = PROPERTY_TYPE_OPTIONS_BY_INTENT[form.intent];
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
       <AdminField label="Title" required>
         <input
           required
@@ -73,7 +89,7 @@ export function AddListingForm({ onDone }) {
         />
       </AdminField>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <AdminField label="Listing type">
           <select
             value={form.intent}
@@ -154,6 +170,31 @@ export function AddListingForm({ onDone }) {
         </AdminField>
       </div>
 
+      <AdminField label="Description">
+        <textarea
+          rows={3}
+          value={form.description}
+          onChange={(e) => update({ description: e.target.value })}
+          className={adminFieldInputClass}
+        />
+      </AdminField>
+      <AdminField label="Contact number">
+        <input
+          value={form.contactNumber}
+          onChange={(e) => update({ contactNumber: e.target.value })}
+          className={adminFieldInputClass}
+        />
+      </AdminField>
+      <AdminField label={`Photos (${files.length} selected, minimum ${MIN_PHOTOS})`} required>
+        <input
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={(e) => setFiles(Array.from(e.target.files || []).filter((f) => f.type.startsWith("image/")))}
+          className={adminFieldInputClass}
+        />
+      </AdminField>
+
       <fieldset>
         <legend className="mb-2 text-sm font-medium">Amenities</legend>
         <div className="flex flex-wrap gap-2">
@@ -178,9 +219,10 @@ export function AddListingForm({ onDone }) {
 
       <button
         type="submit"
-        className="self-start rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-dark"
+        disabled={submitting}
+        className="self-start rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
       >
-        Add listing
+        {submitting ? "Uploading and saving…" : "Add listing"}
       </button>
     </form>
   );

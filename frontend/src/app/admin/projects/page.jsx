@@ -1,20 +1,40 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAdminStore } from "@/lib/admin-store";
-import { formatPrice } from "@/lib/format";
+import { attempt } from "@/lib/attempt";
+import { formatDate, formatPrice } from "@/lib/format";
+import { Pagination } from "@/components/admin/Pagination";
 import { StatusPill } from "@/components/admin/StatusPill";
 import { Modal } from "@/components/admin/Modal";
 import { AddProjectForm } from "@/components/admin/forms/AddProjectForm";
 
-export default function AdminProjectsPage() {
-  const { projects, setProjectStatus, deleteProject } = useAdminStore();
-  const [showAdd, setShowAdd] = useState(false);
+const PAGE_SIZE = 20;
 
-  const handleDelete = (project) => {
-    if (window.confirm(`Delete "${project.name}"? This can't be undone.`)) {
-      deleteProject(project.id);
-    }
+export default function AdminProjectsPage() {
+  const { projects, projectsMeta, projectsLoading, projectsError, loadProjects, setProjectStatus, deleteProject } =
+    useAdminStore();
+  const [showAdd, setShowAdd] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [page, setPage] = useState(1);
+
+  const reload = useCallback(() => loadProjects({ page, limit: PAGE_SIZE }), [loadProjects, page]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const handleStatusChange = async (project, status) => {
+    const res = await attempt(() => setProjectStatus(project.id, status));
+    if (res.ok) reload();
+  };
+
+  const handleDelete = async (project) => {
+    if (!window.confirm(`Delete "${project.name}"? This can't be undone.`)) return;
+    const res = await attempt(() => deleteProject(project.id));
+    if (!res.ok) return;
+    if (projects.length <= 1 && page > 1) setPage((p) => p - 1);
+    else reload();
   };
 
   return (
@@ -34,6 +54,15 @@ export default function AdminProjectsPage() {
           Add project
         </button>
       </div>
+
+      {projectsError ? (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-danger px-4 py-3 text-sm text-danger">
+          <span>Could not load projects: {projectsError}</span>
+          <button type="button" onClick={reload} className="font-medium underline">
+            Retry
+          </button>
+        </div>
+      ) : null}
 
       <div className="overflow-x-auto rounded-2xl border border-border bg-surface">
         <table className="w-full min-w-180 border-collapse text-sm">
@@ -55,18 +84,18 @@ export default function AdminProjectsPage() {
                 <td className="px-4 py-3">
                   <p className="font-medium">{project.name}</p>
                   <p className="text-xs text-text-muted">
-                    {project.locality}, {project.city}
+                    {[project.locality, project.city].filter(Boolean).join(", ")}
                   </p>
                 </td>
                 <td className="px-4 py-3 text-text-muted">{project.developer}</td>
                 <td className="px-4 py-3">{formatPrice(project.startingPriceInRupees)}</td>
-                <td className="px-4 py-3 text-text-muted">{project.publishedAt}</td>
+                <td className="px-4 py-3 text-text-muted">{project.publishedAt ? formatDate(project.publishedAt) : "—"}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <StatusPill status={project.status} />
                     <select
                       value={project.status}
-                      onChange={(e) => setProjectStatus(project.id, e.target.value)}
+                      onChange={(e) => handleStatusChange(project, e.target.value)}
                       aria-label={`Status for ${project.name}`}
                       className="rounded-lg border border-border bg-surface px-2 py-1 text-xs"
                     >
@@ -77,17 +106,33 @@ export default function AdminProjectsPage() {
                   </div>
                 </td>
                 <td className="px-4 py-3">
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(project)}
-                    className="text-xs font-medium text-danger hover:underline"
-                  >
-                    Delete
-                  </button>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setEditing(project)}
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(project)}
+                      className="text-xs font-medium text-danger hover:underline"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
-            {projects.length === 0 ? (
+            {projectsLoading && projects.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-text-muted">
+                  Loading projects…
+                </td>
+              </tr>
+            ) : null}
+            {!projectsLoading && !projectsError && projects.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-text-muted">
                   No projects yet.
@@ -98,9 +143,29 @@ export default function AdminProjectsPage() {
         </table>
       </div>
 
+      <Pagination meta={projectsMeta} label="projects" loading={projectsLoading} page={page} onPageChange={setPage} />
+
       {showAdd ? (
         <Modal title="Add project" onClose={() => setShowAdd(false)}>
-          <AddProjectForm onDone={() => setShowAdd(false)} />
+          <AddProjectForm
+            onDone={() => {
+              setShowAdd(false);
+              if (page === 1) reload();
+              else setPage(1);
+            }}
+          />
+        </Modal>
+      ) : null}
+
+      {editing ? (
+        <Modal title="Edit project" onClose={() => setEditing(null)}>
+          <AddProjectForm
+            item={editing}
+            onDone={() => {
+              setEditing(null);
+              reload();
+            }}
+          />
         </Modal>
       ) : null}
     </div>

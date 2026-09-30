@@ -2,34 +2,42 @@
 
 import { useState } from "react";
 import { useAdminStore } from "@/lib/admin-store";
-import { slugify } from "@/lib/slugify";
 import { AdminField, adminFieldInputClass } from "@/components/admin/AdminField";
 
-const INITIAL = { title: "", excerpt: "", status: "draft" };
+const INITIAL = { title: "", excerpt: "", content: "", status: "draft" };
 
-export function AddArticleForm({ onDone }) {
-  const { addArticle } = useAdminStore();
-  const [form, setForm] = useState(INITIAL);
+export function AddArticleForm({ onDone, item = null }) {
+  const { addArticle, updateArticle } = useAdminStore();
+  const [form, setForm] = useState(
+    item ? { title: item.title, excerpt: item.excerpt ?? "", content: item.content ?? "", status: item.status } : INITIAL
+  );
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const update = (patch) => setForm((prev) => ({ ...prev, ...patch }));
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    const id = crypto.randomUUID();
-    addArticle({
-      id,
-      title: form.title,
-      excerpt: form.excerpt,
-      image: { src: `https://picsum.photos/seed/${id}/800/450`, alt: form.title },
-      publishedAt: new Date().toISOString().slice(0, 10),
-      slug: slugify(form.title),
-      status: form.status,
-    });
-    onDone();
+    setError("");
+    setSubmitting(true);
+    try {
+      // The backend generates the slug and stamps publishedAt when created as published.
+      if (item) {
+        // Status changes go through the table's status select so publishing stamps publishedAt.
+        await updateArticle(item.id, { title: form.title, excerpt: form.excerpt, content: form.content });
+      } else {
+        await addArticle({ title: form.title, excerpt: form.excerpt, content: form.content, status: form.status });
+      }
+      onDone();
+    } catch (e) {
+      setError(e?.message || "Could not create the article. Please try again.");
+      setSubmitting(false);
+    }
   };
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
       <AdminField label="Title" required>
         <input
           required
@@ -47,18 +55,29 @@ export function AddArticleForm({ onDone }) {
           className={adminFieldInputClass}
         />
       </AdminField>
-      <AdminField label="Status">
-        <select value={form.status} onChange={(e) => update({ status: e.target.value })} className={adminFieldInputClass}>
-          <option value="draft">Draft</option>
-          <option value="published">Published</option>
-        </select>
+      <AdminField label="Content">
+        <textarea
+          rows={8}
+          value={form.content}
+          onChange={(e) => update({ content: e.target.value })}
+          className={adminFieldInputClass}
+        />
       </AdminField>
+      {item ? null : (
+        <AdminField label="Status">
+          <select value={form.status} onChange={(e) => update({ status: e.target.value })} className={adminFieldInputClass}>
+            <option value="draft">Draft</option>
+            <option value="published">Published</option>
+          </select>
+        </AdminField>
+      )}
 
       <button
         type="submit"
-        className="self-start rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-dark"
+        disabled={submitting}
+        className="self-start rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
       >
-        Add article
+        {submitting ? "Saving…" : item ? "Save changes" : "Add article"}
       </button>
     </form>
   );

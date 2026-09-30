@@ -4,8 +4,8 @@ const { getPopularLocations, getLocationSuggestions } = require('../controllers/
 const { getFacilitiesByLocation } = require('../controllers/facility.controller');
 
 const locationSuggestionsLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    limit: 10,
+    windowMs: 60 * 1000,
+    limit: 60,
     standardHeaders: true,
     legacyHeaders: false,
     skip: () => process.env.NODE_ENV === 'test',

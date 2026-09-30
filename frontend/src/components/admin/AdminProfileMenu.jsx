@@ -6,9 +6,9 @@ import { useAdminAuth } from "@/lib/admin-auth-context";
 import { ChevronDownIcon } from "@/components/icons";
 
 export function AdminProfileMenu() {
-  const { profile, logout } = useAdminAuth();
+  const { user, logout } = useAdminAuth();
   const [open, setOpen] = useState(false);
-  const initial = profile.name?.trim()?.[0]?.toUpperCase() ?? "A";
+  const initial = user?.name?.trim()?.[0]?.toUpperCase() ?? "A";
 
   return (
     <div className="relative">
@@ -22,7 +22,7 @@ export function AdminProfileMenu() {
         <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-white">
           {initial}
         </span>
-        <span className="hidden font-medium sm:inline">{profile.name}</span>
+        <span className="hidden font-medium sm:inline">{user?.name}</span>
         <ChevronDownIcon className="h-4 w-4 text-text-muted" />
       </button>
 
@@ -39,8 +39,8 @@ export function AdminProfileMenu() {
             className="absolute right-0 z-50 mt-2 w-52 rounded-xl border border-border bg-surface py-1 shadow-lg"
           >
             <div className="border-b border-border px-3 py-2">
-              <p className="truncate text-sm font-medium">{profile.name}</p>
-              <p className="truncate text-xs text-text-muted">{profile.email || "admin@homenest.example"}</p>
+              <p className="truncate text-sm font-medium">{user?.name}</p>
+              <p className="truncate text-xs text-text-muted">{user?.email}</p>
             </div>
             <Link
               href="/admin/profile"
@@ -48,7 +48,7 @@ export function AdminProfileMenu() {
               onClick={() => setOpen(false)}
               className="block px-3 py-2 text-sm hover:bg-bg"
             >
-              Profile settings
+              Profile
             </Link>
             <button
               type="button"

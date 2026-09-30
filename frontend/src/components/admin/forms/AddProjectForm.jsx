@@ -14,32 +14,55 @@ const INITIAL = {
   status: "draft",
 };
 
-export function AddProjectForm({ onDone }) {
-  const { addProject } = useAdminStore();
-  const [form, setForm] = useState(INITIAL);
+export function AddProjectForm({ onDone, item = null }) {
+  const { addProject, updateProject } = useAdminStore();
+  const [form, setForm] = useState(
+    item
+      ? {
+          name: item.name,
+          developer: item.developer,
+          city: item.city,
+          locality: item.locality ?? "",
+          startingPrice: String(item.startingPriceInRupees ?? ""),
+          possessionLabel: item.possessionLabel ?? "",
+          status: item.status,
+        }
+      : INITIAL
+  );
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const update = (patch) => setForm((prev) => ({ ...prev, ...patch }));
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    const id = crypto.randomUUID();
-    addProject({
-      id,
-      name: form.name,
-      developer: form.developer,
-      city: form.city,
-      locality: form.locality,
-      image: { src: `https://picsum.photos/seed/${id}/800/600`, alt: form.name },
-      startingPriceInRupees: Number(form.startingPrice),
-      possessionLabel: form.possessionLabel,
-      publishedAt: new Date().toISOString().slice(0, 10),
-      status: form.status,
-    });
-    onDone();
+    setError("");
+    setSubmitting(true);
+    try {
+      const fields = {
+        name: form.name,
+        developer: form.developer,
+        city: form.city,
+        locality: form.locality.trim() || null,
+        startingPriceInRupees: Number(form.startingPrice),
+        possessionLabel: form.possessionLabel,
+      };
+      if (item) {
+        // Status changes go through the table's status select so publishing stamps publishedAt.
+        await updateProject(item.id, fields);
+      } else {
+        await addProject({ ...fields, status: form.status });
+      }
+      onDone();
+    } catch (e) {
+      setError(e?.message || "Could not create the project. Please try again.");
+      setSubmitting(false);
+    }
   };
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
       <AdminField label="Project name" required>
         <input
           required
@@ -91,19 +114,22 @@ export function AddProjectForm({ onDone }) {
             className={adminFieldInputClass}
           />
         </AdminField>
-        <AdminField label="Status">
-          <select value={form.status} onChange={(e) => update({ status: e.target.value })} className={adminFieldInputClass}>
-            <option value="draft">Draft</option>
-            <option value="published">Published</option>
-          </select>
-        </AdminField>
+        {item ? null : (
+          <AdminField label="Status">
+            <select value={form.status} onChange={(e) => update({ status: e.target.value })} className={adminFieldInputClass}>
+              <option value="draft">Draft</option>
+              <option value="published">Published</option>
+            </select>
+          </AdminField>
+        )}
       </div>
 
       <button
         type="submit"
-        className="self-start rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-dark"
+        disabled={submitting}
+        className="self-start rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
       >
-        Add project
+        {submitting ? "Saving…" : item ? "Save changes" : "Add project"}
       </button>
     </form>
   );

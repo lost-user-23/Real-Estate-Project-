@@ -1,6 +1,6 @@
 export function AdminField({ label, required = false, children }) {
   return (
-    <label className="block text-sm">
+    <label className="block min-w-0 text-sm">
       <span className="mb-1.5 block text-xs font-medium text-text-muted">
         {label}
         {required ? " *" : ""}

@@ -12,6 +12,32 @@ function escapeRegExp(value) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+const MAX_LIMIT = 50;
+const DEFAULT_LIMIT = 20;
+
+// Admin-only: every location (popular or not) with its listing count, busiest first.
+const listAdminLocations = asyncHandler(async (req, res) => {
+    const query = req.query || {};
+    const errors = [];
+    let page = query.page != null ? Number(query.page) : 1;
+    let limit = query.limit != null ? Number(query.limit) : DEFAULT_LIMIT;
+
+    if (!Number.isInteger(page) || page < 1) errors.push('page must be a positive integer');
+    if (!Number.isInteger(limit) || limit < 1) errors.push('limit must be a positive integer');
+    if (errors.length > 0) throw AppError.badRequest('Validation failed', errors);
+    limit = Math.min(limit, MAX_LIMIT);
+
+    const [locations, total] = await Promise.all([
+        Location.find().sort({ activeListingCount: -1, city: 1, locality: 1 }).skip((page - 1) * limit).limit(limit),
+        Location.countDocuments(),
+    ]);
+
+    res.json({
+        locations: locations.map(serializeLocation),
+        meta: { total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) },
+    });
+});
+
 const getLocationSuggestions = asyncHandler(async (req, res) => {
     const { q } = req.query;
     if (!q || typeof q !== 'string' || q.trim().length === 0) {
@@ -95,4 +121,4 @@ const updateLocation = asyncHandler(async (req, res) => {
     res.json({ location: serializeLocation(location) });
 });
 
-module.exports = {getPopularLocations, getLocationSuggestions, updateLocation};
+module.exports = {getPopularLocations, getLocationSuggestions, updateLocation, listAdminLocations};

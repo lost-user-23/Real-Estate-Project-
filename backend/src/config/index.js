@@ -10,6 +10,10 @@ const config = {
   mongodbDbName: process.env.MONGODB_DB_NAME || 'homenest',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   jwtSecret: process.env.JWT_SECRET || '',
+  cloudinaryCloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
+  cloudinaryApiKey: process.env.CLOUDINARY_API_KEY || '',
+  cloudinaryApiSecret: process.env.CLOUDINARY_API_SECRET || '',
+  cloudinaryFolder: process.env.CLOUDINARY_FOLDER || 'property-images',
 };
 
 if (config.env === 'production') {

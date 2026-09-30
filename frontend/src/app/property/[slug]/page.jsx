@@ -1,7 +1,8 @@
+import { cache } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { MOCK_PROPERTIES } from "@/lib/mockData";
+import { apiRequest } from "@/lib/api-client";
 import { formatArea, formatPrice } from "@/lib/format";
 import { PROPERTY_TYPE_LABELS } from "@/lib/propertyTypes";
 import { PageShell } from "@/components/layout/PageShell";
@@ -10,29 +11,35 @@ import { ContactOwnerCard } from "@/components/property/ContactOwnerCard";
 import { SaveButton } from "@/components/property/SaveButton";
 import { CheckBadgeIcon, MapPinIcon, StarIcon } from "@/components/icons";
 
-function getProperty(slug) {
-  return MOCK_PROPERTIES.find((p) => p.slug === slug && p.status === "published");
-}
-
-export function generateStaticParams() {
-  return MOCK_PROPERTIES.filter((p) => p.status === "published").map((p) => ({ slug: p.slug }));
-}
+const getProperty = cache(async (slug) => {
+  try {
+    const result = await apiRequest(`/api/v1/properties/${encodeURIComponent(slug)}`);
+    return result.property ?? null;
+  } catch (error) {
+    if (error.status === 404) return null;
+    throw error;
+  }
+});
 
 export async function generateMetadata({ params }) {
   const { slug } = await params;
-  const property = getProperty(slug);
+  const property = await getProperty(slug);
   if (!property) return { title: "Property not found" };
+  const location = property.locality ? `${property.locality}, ${property.city}` : property.city;
   return {
     title: property.title,
-    description: `${property.title} in ${property.locality}, ${property.city}. ${formatArea(property.areaSqft)}, ${formatPrice(property.priceInRupees)}${property.intent === "rent" ? "/mo" : ""}.`,
+    description: `${property.title} in ${location}. ${formatArea(property.areaSqft)}, ${formatPrice(property.priceInRupees)}${property.intent === "rent" ? "/mo" : ""}.`,
   };
 }
 
 export default async function PropertyDetailPage({ params }) {
   const { slug } = await params;
-  const property = getProperty(slug);
+  const property = await getProperty(slug);
   if (!property) notFound();
 
+  const propertyId = String(property._id);
+  const heroImage = property.images?.find((image) => image.url);
+  const location = property.locality ? `${property.locality}, ${property.city}` : property.city;
   const typeLabel = property.bhk
     ? `${property.bhk} BHK ${PROPERTY_TYPE_LABELS[property.propertyType]}`
     : PROPERTY_TYPE_LABELS[property.propertyType];
@@ -54,14 +61,20 @@ export default async function PropertyDetailPage({ params }) {
           <div className="mt-4 grid grid-cols-1 gap-8 lg:grid-cols-3">
             <div className="lg:col-span-2">
               <div className="relative aspect-4/3 w-full overflow-hidden rounded-2xl bg-bg sm:aspect-16/9">
-                <Image
-                  src={property.image.src}
-                  alt={property.image.alt}
-                  fill
-                  sizes="(max-width: 1024px) 100vw, 66vw"
-                  priority
-                  className="object-cover"
-                />
+                {heroImage ? (
+                  <Image
+                    src={heroImage.url}
+                    alt={heroImage.alt || property.title}
+                    fill
+                    sizes="(max-width: 1024px) 100vw, 66vw"
+                    priority
+                    className="object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-sm text-text-muted">
+                    No property photo available
+                  </div>
+                )}
                 <div className="absolute left-3 top-3 flex items-center gap-1.5">
                   {property.featured ? (
                     <span className="flex items-center gap-1 rounded-full bg-accent px-2.5 py-1 text-xs font-semibold text-accent-ink">
@@ -83,10 +96,10 @@ export default async function PropertyDetailPage({ params }) {
                   <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{property.title}</h1>
                   <p className="mt-1 flex items-center gap-1 text-text-muted">
                     <MapPinIcon className="h-4 w-4 shrink-0" />
-                    {property.locality}, {property.city}
+                    {location}
                   </p>
                 </div>
-                <SaveButton propertyId={property.id} />
+                  <SaveButton propertyId={propertyId} />
               </div>
 
               <p className="mt-4 text-2xl font-semibold">
@@ -113,7 +126,7 @@ export default async function PropertyDetailPage({ params }) {
                 </div>
               </dl>
 
-              {property.amenities.length ? (
+              {property.amenities?.length ? (
                 <div className="mt-6">
                   <h2 className="text-lg font-semibold">Amenities</h2>
                   <ul className="mt-3 flex flex-wrap gap-2">
@@ -129,17 +142,13 @@ export default async function PropertyDetailPage({ params }) {
               <div className="mt-6">
                 <h2 className="text-lg font-semibold">About this property</h2>
                 <p className="mt-2 text-text-muted">
-                  This {typeLabel.toLowerCase()} in {property.locality}, {property.city} spans{" "}
-                  {formatArea(property.areaSqft)}
-                  {property.verified
-                    ? ". Details, photos, and the address have passed our admin review checklist."
-                    : ". This listing is awaiting admin review."}
+                  {property.description || `No description provided for this listing. ${typeLabel} in ${location}, covering ${formatArea(property.areaSqft)}.`}
                 </p>
               </div>
             </div>
 
             <div className="flex flex-col gap-4">
-              <ContactOwnerCard propertyId={property.id} />
+              <ContactOwnerCard />
               <p className="text-xs text-text-muted">
                 Verified confirms the listing passed our review checklist. It does not confirm ownership or title.
               </p>

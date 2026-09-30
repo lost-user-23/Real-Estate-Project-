@@ -9,10 +9,20 @@ export function AdminLoginGate() {
   const { login } = useAdminAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    login(email);
+    setError("");
+    setSubmitting(true);
+    try {
+      await login(email, password);
+    } catch (e) {
+      setError(e?.message || "Login failed. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -22,9 +32,9 @@ export function AdminLoginGate() {
           HomeNest Admin
         </Link>
         <h1 className="mt-2 text-xl font-semibold">Log in</h1>
-        <p className="mt-1 text-sm text-text-muted">
-          Demo mode — there&apos;s no backend yet, so any email and password will get you in.
-        </p>
+        <p className="mt-1 text-sm text-text-muted">Sign in with your admin account.</p>
+
+        {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
 
         <form onSubmit={handleSubmit} className="mt-5 flex flex-col gap-4">
           <AdminField label="Email" required>
@@ -47,9 +57,10 @@ export function AdminLoginGate() {
           </AdminField>
           <button
             type="submit"
-            className="rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-dark"
+            disabled={submitting}
+            className="rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Log in
+            {submitting ? "Logging in…" : "Log in"}
           </button>
         </form>
       </div>

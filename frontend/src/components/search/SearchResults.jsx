@@ -1,13 +1,15 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { MOCK_PROPERTIES } from "@/lib/mockData";
+import { apiRequest } from "@/lib/api-client";
 import { PROPERTY_TYPE_LABELS } from "@/lib/propertyTypes";
 import { formatPrice } from "@/lib/format";
 import { PropertyCard } from "@/components/home/PropertyCard";
 import { Container } from "@/components/ui/Container";
+
+const PAGE_SIZE = 12;
 
 export function SearchResults() {
   const searchParams = useSearchParams();
@@ -17,19 +19,54 @@ export function SearchResults() {
   const propertyType = searchParams.get("propertyType");
   const minPrice = searchParams.get("minPrice");
   const maxPrice = searchParams.get("maxPrice");
+  const requestedPage = Number(searchParams.get("page")) || 1;
+  const page = Number.isInteger(requestedPage) ? Math.max(1, requestedPage) : 1;
+  const queryString = useMemo(() => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries({ intent, city, locality, propertyType, minPrice, maxPrice })) {
+      if (value) params.set(key, value);
+    }
+    params.set("page", String(page));
+    params.set("limit", String(PAGE_SIZE));
+    return params.toString();
+  }, [intent, city, locality, propertyType, minPrice, maxPrice, page]);
+  const [state, setState] = useState({ status: "loading", properties: [], meta: null, error: "" });
+  const [retryCount, setRetryCount] = useState(0);
+  const requestKey = `${queryString}:${retryCount}`;
+  const visibleState = state.requestKey === requestKey
+    ? state
+    : { status: "loading", properties: [], meta: null, error: "" };
 
-  const results = useMemo(() => {
-    return MOCK_PROPERTIES.filter((p) => {
-      if (p.status !== "published") return false;
-      if (intent && p.intent !== intent) return false;
-      if (city && p.city.toLowerCase() !== city.toLowerCase()) return false;
-      if (locality && p.locality.toLowerCase() !== locality.toLowerCase()) return false;
-      if (propertyType && p.propertyType !== propertyType) return false;
-      if (minPrice && p.priceInRupees < Number(minPrice)) return false;
-      if (maxPrice && p.priceInRupees > Number(maxPrice)) return false;
-      return true;
-    });
-  }, [intent, city, locality, propertyType, minPrice, maxPrice]);
+  useEffect(() => {
+    const controller = new AbortController();
+
+    apiRequest(`/api/v1/properties?${queryString}`, { signal: controller.signal })
+      .then((result) => {
+        const properties = (result.properties ?? []).map((property) => ({
+          ...property,
+          id: String(property._id),
+          image: property.images?.[0]
+            ? { src: property.images[0].url, alt: property.images[0].alt || property.title }
+            : {
+                src: `https://picsum.photos/seed/${encodeURIComponent(property.slug)}/800/600`,
+                alt: property.title,
+              },
+        }));
+        setState({ status: "success", properties, meta: result.meta, error: "", requestKey });
+      })
+      .catch((error) => {
+        if (error.name === "AbortError") return;
+        setState({ status: "error", properties: [], meta: null, error: error.message, requestKey });
+      });
+
+    return () => controller.abort();
+  }, [queryString, retryCount, requestKey]);
+
+  const pageHref = (nextPage) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", String(nextPage));
+    return `/search?${params.toString()}`;
+  };
 
   const locationLabel = locality || city;
   const heading = [
@@ -41,6 +78,7 @@ export function SearchResults() {
     .join(" ");
 
   const activeFilters = [
+    intent ? { label: intent === "rent" ? "For rent" : "For sale", param: "intent" } : null,
     city ? { label: locality ? `${locality}, ${city}` : city, param: "city" } : null,
     propertyType ? { label: PROPERTY_TYPE_LABELS[propertyType] ?? propertyType, param: "propertyType" } : null,
     minPrice || maxPrice
@@ -59,7 +97,9 @@ export function SearchResults() {
         <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{heading || "All properties"}</h1>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <p className="text-sm text-text-muted">
-            {results.length} result{results.length === 1 ? "" : "s"}
+            {visibleState.status === "success"
+              ? `${visibleState.meta?.total ?? visibleState.properties.length} result${visibleState.meta?.total === 1 ? "" : "s"}`
+              : "Search results"}
           </p>
           {activeFilters.map((filter) => (
             <span
@@ -69,14 +109,32 @@ export function SearchResults() {
               {filter.label}
             </span>
           ))}
-          {activeFilters.length > 0 || intent ? (
+          {activeFilters.length > 0 ? (
             <Link href="/search" className="text-xs font-medium text-primary hover:underline">
               Clear filters
             </Link>
           ) : null}
         </div>
 
-        {results.length === 0 ? (
+        {visibleState.status === "loading" ? (
+          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Loading properties">
+            {Array.from({ length: 6 }, (_, index) => (
+              <div key={index} className="h-80 animate-pulse rounded-2xl border border-border bg-surface" />
+            ))}
+          </div>
+        ) : visibleState.status === "error" ? (
+          <div role="alert" className="mt-10 rounded-2xl border border-danger/30 bg-surface p-10 text-center">
+            <p className="font-medium">We couldn&apos;t load properties.</p>
+            <p className="mt-1 text-sm text-text-muted">{visibleState.error}</p>
+            <button
+              type="button"
+              onClick={() => setRetryCount((count) => count + 1)}
+              className="mt-4 rounded-full bg-primary px-5 py-2 text-sm font-semibold text-white hover:bg-primary-dark"
+            >
+              Try again
+            </button>
+          </div>
+        ) : visibleState.properties.length === 0 ? (
           <div className="mt-10 rounded-2xl border border-border bg-surface p-10 text-center">
             <p className="font-medium">No properties match these filters.</p>
             <p className="mt-1 text-sm text-text-muted">Try a different location, or clear a filter above.</p>
@@ -88,11 +146,30 @@ export function SearchResults() {
             </Link>
           </div>
         ) : (
-          <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {results.map((property) => (
-              <PropertyCard key={property.id} property={property} fluid />
-            ))}
-          </div>
+          <>
+            <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {visibleState.properties.map((property) => (
+                <PropertyCard key={property.id} property={property} fluid />
+              ))}
+            </div>
+            {visibleState.meta?.totalPages > 1 ? (
+              <nav aria-label="Search result pages" className="mt-8 flex items-center justify-center gap-4">
+                {page > 1 ? (
+                  <Link href={pageHref(page - 1)} className="rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-surface">
+                    Previous
+                  </Link>
+                ) : null}
+                <span className="text-sm text-text-muted">
+                  Page {page} of {visibleState.meta.totalPages}
+                </span>
+                {page < visibleState.meta.totalPages ? (
+                  <Link href={pageHref(page + 1)} className="rounded-full border border-border px-4 py-2 text-sm font-medium hover:bg-surface">
+                    Next
+                  </Link>
+                ) : null}
+              </nav>
+            ) : null}
+          </>
         )}
       </Container>
     </div>
