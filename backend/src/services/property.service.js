@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { Property, PropertyImage } = require('../models');
+const AppError = require('../utils/AppError');
 
 const EDITABLE_FIELDS = [
   'title',
@@ -31,15 +32,26 @@ function slugify(title) {
     .replace(/^-+|-+$/g, '');
 }
 
+// Retries after a duplicate-key error on the slug, before giving up with a 409.
+const SLUG_COLLISION_RETRIES = 3;
+
+function slugWithSuffix(base) {
+  return `${base}-${crypto.randomBytes(3).toString('hex')}`;
+}
+
 async function generateUniqueSlug(title) {
   const base = slugify(title) || 'property';
   let slug = base;
 
   while (await Property.exists({ slug })) {
-    slug = `${base}-${crypto.randomBytes(3).toString('hex')}`;
+    slug = slugWithSuffix(base);
   }
 
   return slug;
+}
+
+function isSlugCollision(err) {
+  return err?.code === 11000 && Boolean(err.keyPattern?.slug || err.keyValue?.slug);
 }
 
 function normalizeImageInput(images) {
@@ -84,10 +96,36 @@ async function getImagesForProperties(propertyIds) {
   return imagesByPropertyId;
 }
 
+// The exists() check in generateUniqueSlug can race with a concurrent create
+// of the same title, so a duplicate-key error on the slug is retried with a
+// fresh suffix. Existing slugs are never changed.
 async function createProperty({ ownerId, input }) {
-  const slug = await generateUniqueSlug(input.title);
+  const base = slugify(input.title) || 'property';
+  let slug = await generateUniqueSlug(input.title);
+  let property;
 
-  const property = await Property.create({
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      property = await insertProperty({ ownerId, input, slug });
+      break;
+    } catch (err) {
+      if (!isSlugCollision(err)) throw err;
+      if (attempt >= SLUG_COLLISION_RETRIES) {
+        throw AppError.conflict('Could not create a unique link for this listing. Please try again.');
+      }
+      slug = slugWithSuffix(base);
+    }
+  }
+
+  const images = input.images && input.images.length > 0
+    ? await replacePropertyImages(property._id, input.images)
+    : [];
+
+  return { property, images };
+}
+
+function insertProperty({ ownerId, input, slug }) {
+  return Property.create({
     ownerId,
     slug,
     title: input.title,
@@ -106,12 +144,6 @@ async function createProperty({ ownerId, input }) {
     featured: false,
     featuredRank: null,
   });
-
-  const images = input.images && input.images.length > 0
-    ? await replacePropertyImages(property._id, input.images)
-    : [];
-
-  return { property, images };
 }
 
 function buildListFilter({ intent, city, locality, propertyType, minPrice, maxPrice, status, admin, featured }) {
@@ -158,11 +190,13 @@ async function findProperties({ filters, page, limit }) {
   };
 }
 
-// Owner's own listings in every status (drafts included), newest first.
+// Owner's own listings in every status (drafts included), newest first. The
+// contact number is selected because the caller is the owner.
 async function findPropertiesByOwner({ ownerId, page, limit }) {
   const filter = { ownerId };
   const [properties, total] = await Promise.all([
     Property.find(filter)
+      .select('+contactNumber')
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit),
@@ -178,6 +212,16 @@ async function findPropertiesByOwner({ ownerId, page, limit }) {
 
 async function findPublishedBySlug(slug) {
   return Property.findOne({ slug, status: 'published' });
+}
+
+// Contact number of a published listing, or null when there is no published
+// listing with this id. `found` separates "no listing" from "no number".
+async function findPublishedContactById(id) {
+  const property = await Property.findOne({ _id: id, status: 'published' })
+    .select('+contactNumber')
+    .lean();
+  if (!property) return { found: false };
+  return { found: true, contactNumber: property.contactNumber || null };
 }
 
 async function findById(id) {
@@ -267,6 +311,7 @@ module.exports = {
   findProperties,
   findPropertiesByOwner,
   findPublishedBySlug,
+  findPublishedContactById,
   findById,
   updatePropertyById,
   deletePropertyById,

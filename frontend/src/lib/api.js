@@ -1,5 +1,6 @@
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'auth_token';
+const NETWORK_ERROR_MESSAGE = "Could not reach the server. Check your connection and try again.";
 
 export class ApiError extends Error {
     constructor(message,status, data){
@@ -42,15 +43,23 @@ export async function request(
 ) {
   const token = auth ? tokenStore.get() : null;
 
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method,
-    headers: {
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...headers,
-    },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      method,
+      headers: {
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...headers,
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    // fetch only rejects when no response arrived (server down, offline, CORS).
+    // Browsers word that differently ("Failed to fetch", "Load failed"), so
+    // callers get one readable message and status 0 instead.
+    throw new ApiError(NETWORK_ERROR_MESSAGE, 0, null);
+  }
 
   let data = null;
   try {
@@ -68,11 +77,12 @@ export async function request(
     // Auth endpoints (register/login) respond with a flat { message }; property
     // and admin endpoints go through the shared error handler, which nests it
     // as { error: { message, details } }. Handle both shapes.
-    throw new ApiError(
-      data?.error?.message || data?.message || `Request failed (${res.status})`,
-      res.status,
-      data?.error?.details ?? data
-    );
+    const message = data?.error?.message || data?.message || `Request failed (${res.status})`;
+    const details = data?.error?.details;
+    // Validation errors carry the reasons in details; "Validation failed" alone
+    // gives the user nothing to fix.
+    const detailText = Array.isArray(details) ? details.filter((d) => typeof d === "string").join("; ") : "";
+    throw new ApiError(detailText ? `${message}: ${detailText}` : message, res.status, details ?? data);
   }
 
   return data;

@@ -113,6 +113,27 @@ describe('admin reports', () => {
     expect(response.body.meta).toMatchObject({ page: 1, limit: 20, total: 2, totalPages: 1 });
   });
 
+  it('shows a report submitted through the public endpoint', async () => {
+    const token = await createAdmin();
+    const submitted = await request(app)
+      .post('/api/v1/reports')
+      .send({ listingUrlOrId: '/property/sunny-flat', reason: 'Suspected duplicate listing', details: 'Same photos' });
+    expect(submitted.status).toBe(201);
+
+    const response = await request(app)
+      .get('/api/v1/admin/reports')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.reports).toHaveLength(1);
+    expect(response.body.reports[0]).toMatchObject({
+      listingUrlOrId: '/property/sunny-flat',
+      reason: 'Suspected duplicate listing',
+      details: 'Same photos',
+      status: 'open',
+    });
+  });
+
   it('updates only the status field', async () => {
     const token = await createAdmin();
     const report = await createReport();

@@ -28,12 +28,40 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   // True until the stored session (if any) has been checked against /me.
   const [loading, setLoading] = useState(true);
+  // Set when a stored token could not be checked because /me failed for a
+  // reason other than 401 (backend down, 500). The token is kept, user stays
+  // null, and screens that need the user can offer verifySession as a retry.
+  const [sessionError, setSessionError] = useState(null);
 
   const clearSession = useCallback(() => {
     tokenStore.clear();
     removeLegacySessionKeys();
     setToken(null);
     setUser(null);
+    setSessionError(null);
+  }, []);
+
+  const verifySession = useCallback(() => {
+    const storedToken = tokenStore.get();
+    if (!storedToken) {
+      setLoading(false);
+      return;
+    }
+
+    // Optimistic: treat the stored token as valid while /me is in flight so
+    // the UI doesn't flash logged-out. A 401 clears it via the unauthorized
+    // handler; a network failure keeps the session so a flaky connection
+    // doesn't log the user out.
+    setToken(storedToken);
+    setLoading(true);
+    setSessionError(null);
+    api
+      .get("/api/auth/me")
+      .then(({ user: currentUser }) => setUser(currentUser))
+      .catch((error) => {
+        if (error?.status !== 401) setSessionError(error?.message || "Could not verify your session.");
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -44,25 +72,8 @@ export function AuthProvider({ children }) {
 
     // Deferred a tick so the state updates don't run synchronously in the
     // effect body (react-hooks/set-state-in-effect).
-    Promise.resolve().then(() => {
-      const storedToken = tokenStore.get();
-      if (!storedToken) {
-        setLoading(false);
-        return;
-      }
-
-      // Optimistic: treat the stored token as valid while /me is in flight so
-      // the UI doesn't flash logged-out. A 401 clears it via the handler above;
-      // a network failure keeps the session so a flaky connection doesn't log
-      // the user out.
-      setToken(storedToken);
-      api
-        .get("/api/auth/me")
-        .then(({ user: currentUser }) => setUser(currentUser))
-        .catch(() => {})
-        .finally(() => setLoading(false));
-    });
-  }, [clearSession]);
+    Promise.resolve().then(verifySession);
+  }, [clearSession, verifySession]);
 
   const value = useMemo(
     () => ({
@@ -70,6 +81,8 @@ export function AuthProvider({ children }) {
       loading,
       token,
       user,
+      sessionError,
+      verifySession,
       login: async ({ email, password, name, mode }) => {
         const isRegister = mode === "register";
         const result = await api.post(
@@ -80,6 +93,7 @@ export function AuthProvider({ children }) {
         tokenStore.set(result.token);
         setToken(result.token);
         setUser(result.user);
+        setSessionError(null);
         return result;
       },
       logout: clearSession,
@@ -93,7 +107,7 @@ export function AuthProvider({ children }) {
         setUser(nextUser);
       },
     }),
-    [token, user, loading, clearSession]
+    [token, user, loading, sessionError, verifySession, clearSession]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

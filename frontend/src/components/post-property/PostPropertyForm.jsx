@@ -238,6 +238,7 @@ export function PostPropertyForm() {
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
             {form.images.map((image) => (
               <div key={image.id} className="relative overflow-hidden rounded-xl border border-border bg-bg">
+                {/* eslint-disable-next-line @next/next/no-img-element -- local blob: preview, not a remote image next/image could optimise */}
                 <img src={image.url} alt={image.name} className="h-28 w-full object-cover" />
                 <button
                   type="button"

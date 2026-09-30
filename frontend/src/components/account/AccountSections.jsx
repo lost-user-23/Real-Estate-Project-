@@ -236,7 +236,7 @@ export function DeleteAccountSection({ redirectTo = "/" }) {
   const handleSubmit = async (event) => {
     event.preventDefault();
     const { ok } = await action.run(
-      // api.delete takes no body, so call the shared request() directly.
+      // The DELETE carries the password in its JSON body (api.delete accepts one too, via opts.body).
       () => request("/api/auth/me", { method: "DELETE", body: { password } }),
       "Account deleted."
     );

@@ -157,3 +157,33 @@ describe('GET /api/auth/me', () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe('unexpected errors in register and login', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('register passes a database failure to the error handler as a generic 500', async () => {
+    jest.spyOn(User, 'findOne').mockRejectedValueOnce(new Error('db exploded: secret detail'));
+    const res = await request(app).post('/api/auth/register').send(creds);
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: { message: 'Internal server error' } });
+  });
+
+  it('login passes a database failure to the error handler as a generic 500', async () => {
+    jest.spyOn(User, 'findOne').mockImplementationOnce(() => {
+      throw new Error('db exploded: secret detail');
+    });
+    const res = await request(app).post('/api/auth/login').send(creds);
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: { message: 'Internal server error' } });
+  });
+
+  it('register still reports a duplicate-key race as "User already exists"', async () => {
+    const duplicate = Object.assign(new Error('E11000 duplicate key'), { code: 11000 });
+    jest.spyOn(User, 'create').mockRejectedValueOnce(duplicate);
+    const res = await request(app).post('/api/auth/register').send(creds);
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('User already exists');
+  });
+});

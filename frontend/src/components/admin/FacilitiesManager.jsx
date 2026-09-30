@@ -78,7 +78,14 @@ export function FacilitiesManager({ location }) {
 
   return (
     <div className="flex flex-col gap-4">
-      {error ? <p className="text-sm text-danger">Could not load facilities: {error}</p> : null}
+      {error ? (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-danger px-4 py-3 text-sm text-danger">
+          <span>Could not load facilities: {error}</span>
+          <button type="button" onClick={load} className="font-medium underline">
+            Retry
+          </button>
+        </div>
+      ) : null}
 
       <ul className="flex flex-col divide-y divide-border rounded-xl border border-border text-sm">
         {facilities.map((facility) => (

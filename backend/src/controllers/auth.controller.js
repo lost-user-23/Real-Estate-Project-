@@ -38,7 +38,7 @@ function serializeUser(user) {
   };
 }
 
-async function register(req, res) {
+async function register(req, res, next) {
   try {
     const { name, email, password } = req.body;
     const normalizedEmail = normalizeEmail(email);
@@ -73,14 +73,15 @@ async function register(req, res) {
     const token = generateToken(user);
     return res.status(201).json({ token, user: serializeUser(user) });
   } catch (err) {
+    // Two concurrent registrations can both pass the findOne check above.
     if (err?.code === 11000) {
       return res.status(400).json({ message: USER_EXISTS_MESSAGE });
     }
-    return res.status(500).json({ message: "Registration failed" });
+    return next(err);
   }
 }
 
-async function login(req, res) {
+async function login(req, res, next) {
   try {
     const { email, password } = req.body;
     const normalizedEmail = normalizeEmail(email);
@@ -106,8 +107,8 @@ async function login(req, res) {
 
     const token = generateToken(user);
     return res.status(200).json({ token, user: serializeUser(user) });
-  } catch {
-    return res.status(500).json({ message: "Login failed" });
+  } catch (err) {
+    return next(err);
   }
 }
 

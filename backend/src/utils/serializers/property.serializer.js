@@ -11,17 +11,22 @@ function serializeImage(image) {
 // `contactNumber` has `select: false` in the schema, which only affects
 // queries that don't explicitly re-select it. A document built or modified
 // in-memory (create, update) still holds the field, so it must be stripped
-// here before any property ever reaches a JSON response.
-function serializeProperty(property, images = []) {
+// here before any property ever reaches a JSON response. Only the owner's own
+// list (GET /properties/mine) passes includeContactNumber.
+function serializeProperty(property, images = [], { includeContactNumber = false } = {}) {
   const obj = typeof property.toObject === 'function' ? property.toObject() : { ...property };
-  delete obj.contactNumber;
+  if (includeContactNumber) {
+    obj.contactNumber = obj.contactNumber ?? null;
+  } else {
+    delete obj.contactNumber;
+  }
   obj.images = images.map(serializeImage);
   return obj;
 }
 
-function serializeProperties(properties, imagesByPropertyId = new Map()) {
+function serializeProperties(properties, imagesByPropertyId = new Map(), options = {}) {
   return properties.map((property) =>
-    serializeProperty(property, imagesByPropertyId.get(String(property._id)) || [])
+    serializeProperty(property, imagesByPropertyId.get(String(property._id)) || [], options)
   );
 }
 

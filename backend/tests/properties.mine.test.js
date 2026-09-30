@@ -54,7 +54,7 @@ describe('GET /api/v1/properties/mine', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns only the caller\'s properties in every status, with images, and no contact number', async () => {
+  it('returns only the caller\'s properties in every status, with images and the owner\'s contact number', async () => {
     const me = await registerUser('me@example.com');
     const other = await registerUser('other@example.com');
     await createListing(me.id, 'draft');
@@ -68,7 +68,7 @@ describe('GET /api/v1/properties/mine', () => {
     res.body.properties.forEach((p) => {
       expect(String(p.ownerId)).toBe(me.id);
       expect(p.images).toHaveLength(1);
-      expect(p.contactNumber).toBeUndefined();
+      expect(p.contactNumber).toBe('9999999999');
     });
   });
 

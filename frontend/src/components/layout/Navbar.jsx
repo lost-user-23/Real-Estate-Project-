@@ -21,8 +21,17 @@ const NAV_LINKS = [
 
 const SCROLL_THRESHOLD = 24;
 
+function AdminBadge() {
+  return (
+    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
+      admin
+    </span>
+  );
+}
+
 export function Navbar() {
-  const { isLoggedIn, logout } = useAuth();
+  const { isLoggedIn, logout, user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const { requestLogin } = useLoginPrompt();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -84,6 +93,14 @@ export function Navbar() {
         <div className="hidden items-center gap-3 lg:flex">
           {isLoggedIn ? (
             <>
+              {user?.name ? (
+                <span
+                  className={`flex items-center gap-1.5 text-sm font-medium ${transparent ? "text-white" : "text-text"}`}
+                >
+                  <span className="max-w-32 truncate">{user.name}</span>
+                  {isAdmin ? <AdminBadge /> : null}
+                </span>
+              ) : null}
               <Link
                 href="/profile"
                 className={`text-sm font-medium transition-colors ${
@@ -145,6 +162,12 @@ export function Navbar() {
             <div className="mt-2 flex flex-col gap-2 border-t border-border pt-3">
               {isLoggedIn ? (
                 <>
+                  {user?.name ? (
+                    <p className="flex items-center gap-1.5 px-2 py-1 text-sm font-medium text-text">
+                      <span className="truncate">{user.name}</span>
+                      {isAdmin ? <AdminBadge /> : null}
+                    </p>
+                  ) : null}
                   <Link
                     href="/profile"
                     onClick={() => setMobileOpen(false)}

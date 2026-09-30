@@ -177,6 +177,9 @@ export function MyListings() {
                   {listing.locality ? ` · ${listing.locality}` : ""}
                   {listing.city ? `, ${listing.city}` : ""}
                 </p>
+                <p className="mt-1 text-sm text-text-muted">
+                  Contact number: {listing.contactNumber || "not provided"}
+                </p>
                 {listing.status === "published" ? (
                   <Link href={`/property/${listing.slug}`} className="mt-1 inline-block text-sm text-primary hover:underline">
                     View listing
@@ -212,7 +215,11 @@ export function MyListings() {
           listing={editing}
           onClose={() => setEditing(null)}
           onSaved={(updated) => {
-            setListings((current) => current.map((l) => (l.id === updated.id ? updated : l)));
+            // PATCH responses never carry contactNumber (only /mine does) and this
+            // modal does not edit it, so keep the value already shown.
+            setListings((current) =>
+              current.map((l) => (l.id === updated.id ? { ...updated, contactNumber: l.contactNumber } : l))
+            );
             setEditing(null);
           }}
         />

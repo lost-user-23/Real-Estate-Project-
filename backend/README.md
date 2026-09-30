@@ -6,20 +6,11 @@ against.
 
 ## Status
 
-This is the initial setup pass, plus a seed script:
-
-- App/server scaffolding, config, DB connection, middleware.
-- `GET /health`.
-- Mongoose schemas for all documented collections (fields, enums, timestamps,
-  references, and the indexes listed in the architecture doc).
-- `scripts/setup-db.js`, which creates/syncs those indexes in MongoDB (see
-  "Setting up database indexes" below).
-- `scripts/seed.js`, which loads `frontend/src/lib/mockData.js` and writes it
-  into MongoDB (see "Seeding the database" below).
-
-No authentication, admin CRUD, file uploads, or public read endpoints (e.g.
-`/api/v1/properties/featured`) are implemented yet. The `/api/v1` router is
-mounted and empty, ready for those routes.
+Implemented: health check, JWT authentication with account management,
+public read APIs (properties, locations, categories, projects, articles),
+authenticated property submission and owner management, Cloudinary upload
+signatures, listing reports, an owner contact-number endpoint for logged-in
+users, and an admin API. See "API overview" below.
 
 ## Setup
 
@@ -51,14 +42,48 @@ curl http://localhost:4000/health
 
 ## Scripts
 
-- `npm run dev` — start with nodemon (auto-restart).
-- `npm start` — start once, for production/process managers.
-- `npm run lint` — ESLint over the backend source.
-- `npm test` — Jest + Supertest.
-- `npm run db:setup` — create/sync MongoDB indexes for every model. See
-  "Setting up database indexes" below.
-- `npm run seed` — load `frontend/src/lib/mockData.js` into MongoDB. See
-  "Seeding the database" below.
+- `npm run dev` - start with nodemon (auto-restart).
+- `npm start` - start once, for production/process managers.
+- `npm run lint` - ESLint over the backend source.
+- `npm test` - Jest + Supertest (needs a reachable MongoDB).
+- `npm run db:setup` - create/sync MongoDB indexes for every model.
+- `npm run seed` - load `frontend/src/lib/mockData.js` into MongoDB.
+- `npm run admin:create` - create an admin account (see `scripts/create-admin.js`).
+
+## API overview
+
+Auth routes live under `/api/auth`; everything else under `/api/v1`.
+Protected routes need `Authorization: Bearer <token>`.
+
+| Area | Routes |
+|---|---|
+| Health | `GET /health` |
+| Auth | `POST /api/auth/register`, `POST /api/auth/login` (10 attempts per 15 minutes per IP); `GET/PATCH/DELETE /api/auth/me`; `POST /api/auth/change-password`, `PATCH /api/auth/change-email` (delete, change-password and change-email: 10 attempts per 15 minutes per user, current password required) |
+| Properties | `GET /properties`, `GET /properties/:slug` (published only, public); `GET /properties/mine` (owner, any status, includes the owner's `contactNumber`); `GET /properties/:id/contact` (auth, 20 per hour per user, see below); `POST /properties` (created as draft, at least 5 images); `PATCH/DELETE /properties/:id` (owner or admin) |
+| Locations | `GET /locations/popular`, `GET /locations/suggestions`, `GET /locations/:locationId/facilities` |
+| Categories | `GET /categories`; admin `POST/PATCH/DELETE` |
+| Projects, articles | Public `GET /projects`, `/projects/new`, `/projects/:id`, `/articles`, `/articles/:slug` |
+| Reports | `POST /reports` (optional auth) |
+| Uploads | `POST /uploads/signature` (auth; the server signs `<CLOUDINARY_FOLDER>/<userId>` and ignores any `folder` in the body) |
+| Admin (role `admin`) | `/admin/dashboard`, `/admin/properties` (+ `/bulk`), `/admin/locations`, `/admin/facilities`, `/admin/projects`, `/admin/articles`, `/admin/reports` |
+
+Authentication is one JWT (7 days) shared by the public site and the admin
+area; admin access is the `role` on the user. A password change re-issues the
+token and invalidates every earlier one. Slugs for new properties come from the
+title, with a random hex suffix added when the slug is already taken. If two
+creates race and the insert still hits a duplicate slug, it is retried with a
+new suffix up to 3 times, then answered with 409. Existing slugs never change.
+
+### Contact numbers
+
+`contactNumber` is private. Every property response strips it except two:
+
+- `GET /api/v1/properties/:id/contact` returns `{ "contactNumber": "..." }`
+  (or `null` if the owner gave none) to any logged-in user, for published
+  listings only. Drafts, archived and unknown ids are `404`; anonymous callers
+  get `401`; more than 20 lookups per hour by one user get `429`. The response
+  is `Cache-Control: private, no-store` and the number is never logged.
+- `GET /api/v1/properties/mine` includes it on the caller's own listings.
 
 ## Setting up database indexes
 
@@ -148,14 +173,7 @@ offending record and exits non-zero without touching MongoDB.
 
 ### Dev admin user
 
-The `User` schema has `role` (`user`/`admin`) and an optional `passwordHash`,
-but there's no authentication or password-hashing flow yet, so there is no
-real hash to store. The script seeds exactly one admin user
-(`dev-admin@homenest.local`) with `passwordHash` set to a random value
-prefixed `unusable-seed-placeholder:` — this is **not a valid hash for any
-algorithm** and cannot ever match a real password check. This account cannot
-log in until authentication is implemented and a real credential is set for
-it through that flow.
+The script seeds one admin user (`dev-admin@homenest.local`) with a `passwordHash` set to a random value prefixed `unusable-seed-placeholder:`. That is not a valid hash for any algorithm, so this account cannot log in. To get a working admin, run `npm run admin:create`.
 
 ### Rerunning safely
 
@@ -193,22 +211,45 @@ or partially writing data.
 src/
   server.js       entry point: starts HTTP server, connects Mongo, graceful shutdown
   app.js          Express app: middleware, routes, error handling
-  config/         env var loading + validation
+  config/         env var loading + validation, Cloudinary config
   db/             Mongoose connection lifecycle
   models/         Mongoose schemas for each collection
-  routes/         Express routers (health, versioned /api/v1 aggregator)
+  routes/         Express routers (auth, /api/v1 feature routers, admin)
   controllers/    route handler functions
-  middleware/     request logging, 404, centralized error handler
+  middleware/     auth (protect, restrictTo, optionalAuth), request logging, 404, error handler
   services/       business logic used by controllers
-scripts/          DB setup (index sync) and seed scripts
+  utils/          AppError, asyncHandler, response serializers
+scripts/          DB setup (index sync), seed and create-admin scripts
 tests/            Jest test suites
 ```
 
 ## Environment variables
 
-See `.env.example`. `MONGODB_URI`, `SESSION_SECRET`, and `CORS_ORIGIN` are
-required in production (`NODE_ENV=production`); in development, missing
-values fall back to local defaults so the server still starts.
+See `.env.example`.
+
+- `JWT_SECRET` is required in every environment. `src/services/auth.service.js`
+  throws when it is empty, so the server will not start without it. Use a long
+  random value (for example `openssl rand -hex 64`).
+- With `NODE_ENV=production`, `MONGODB_URI`, `JWT_SECRET` and `CORS_ORIGIN`
+  must all be set or the process refuses to start.
+- `MONGODB_URI`, `MONGODB_DB_NAME`, `PORT` and `CORS_ORIGIN` fall back to local
+  defaults in development.
+- `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` and
+  `CLOUDINARY_FOLDER` are needed for photo uploads.
+- `TRUST_PROXY_HOPS` (default `0`) is the number of reverse proxies in front of
+  the server. It is passed to Express `trust proxy` as a hop count; anything
+  that is not a positive whole number (including `true`) is treated as `0`.
+
+## Deploy notes
+
+- Run with `NODE_ENV=production` and set `JWT_SECRET`, `MONGODB_URI` and
+  `CORS_ORIGIN`.
+- The login rate limiter keys on the client IP. Behind a reverse proxy or load
+  balancer, set `TRUST_PROXY_HOPS` to the number of proxies (usually `1`), or
+  every request appears to come from the proxy and all users share one budget.
+  Do not set it higher than the real hop count: clients could then spoof their
+  IP through `X-Forwarded-For`.
+- Serve over HTTPS; the frontend keeps the session token in localStorage.
 
 ## Architectural decisions made during this setup
 
@@ -282,9 +323,7 @@ level needed to write code. Decisions made here, to be revisited if wrong:
     line regex-based rewrite. Revisit if `mockData.js` grows imports of its
     own (this approach assumes the file is self-contained).
 
-## Follow-up work (not in this pass)
+## Follow-up work
 
-- `GET /api/v1/properties/featured` and the rest of the public read API.
-- Authentication (sessions/tokens) and admin authorization.
-- Object storage integration for `PropertyImage`.
-- Connecting `frontend/src/lib/dataSource.js` to the real API.
+- Email verification before `change-email` takes effect (see the TODO in
+  `auth.controller.js`).

@@ -8,11 +8,29 @@ import { AdminLoginGate } from "@/components/admin/AdminLoginGate";
 import { AdminProfileMenu } from "@/components/admin/AdminProfileMenu";
 
 function AdminShellInner({ children }) {
-  const { isAuthenticated, loading } = useAdminAuth();
+  const { isAuthenticated, loading, sessionError, retrySession, logout } = useAdminAuth();
 
   // Avoid flashing the login gate while the session is still being restored
   // from localStorage.
   if (loading) return <div className="p-8 text-sm text-text-muted">Loading…</div>;
+
+  if (sessionError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-bg px-4">
+        <div className="flex w-full max-w-md flex-col gap-3 rounded-2xl border border-danger bg-surface px-4 py-3 text-sm text-danger">
+          <span>Could not verify your admin session: {sessionError}</span>
+          <div className="flex gap-4">
+            <button type="button" onClick={retrySession} className="font-medium underline">
+              Retry
+            </button>
+            <button type="button" onClick={logout} className="font-medium text-text-muted underline">
+              Log out
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return <AdminLoginGate />;

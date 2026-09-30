@@ -17,25 +17,25 @@ export function LocationInput({ value, onSelect }) {
   const listboxId = useId();
   const containerRef = useRef(null);
 
-  const [suggestions, setSuggestions] = useState([]);
+  const [fetchedSuggestions, setFetchedSuggestions] = useState([]);
+  const hasSearchableQuery = debouncedQuery.trim().length >= 2;
+  // Derived rather than cleared from the effect: a query that is too short
+  // shows nothing, whatever the last fetch returned.
+  const suggestions = hasSearchableQuery ? fetchedSuggestions : [];
 
   useEffect(() => {
-    const trimmed = debouncedQuery.trim();
-    if (trimmed.length < 2) {
-      setSuggestions([]);
-      return;
-    }
+    if (!hasSearchableQuery) return;
 
     const controller = new AbortController();
     getLocationSuggestions(debouncedQuery, { signal: controller.signal })
-      .then(setSuggestions)
+      .then(setFetchedSuggestions)
       .catch((error) => {
         if (error.name === "AbortError") return;
-        setSuggestions([]);
+        setFetchedSuggestions([]);
       });
 
     return () => controller.abort();
-  }, [debouncedQuery]);
+  }, [debouncedQuery, hasSearchableQuery]);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -87,7 +87,7 @@ export function LocationInput({ value, onSelect }) {
     }
   };
 
-  const showEmptyState = isOpen && debouncedQuery.trim().length >= 2 && suggestions.length === 0;
+  const showEmptyState = isOpen && hasSearchableQuery && suggestions.length === 0;
 
   return (
     <div ref={containerRef} className="relative flex-1">

@@ -1,5 +1,4 @@
 import { cache } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { apiRequest } from "@/lib/api-client";
@@ -8,7 +7,9 @@ import { PROPERTY_TYPE_LABELS } from "@/lib/propertyTypes";
 import { PageShell } from "@/components/layout/PageShell";
 import { Container } from "@/components/ui/Container";
 import { ContactOwnerCard } from "@/components/property/ContactOwnerCard";
+import { PropertyGallery } from "@/components/property/PropertyGallery";
 import { SaveButton } from "@/components/property/SaveButton";
+import { DEFAULT_OG_IMAGE, SITE_NAME, SITE_URL } from "@/lib/site";
 import { CheckBadgeIcon, MapPinIcon, StarIcon } from "@/components/icons";
 
 const getProperty = cache(async (slug) => {
@@ -21,14 +22,51 @@ const getProperty = cache(async (slug) => {
   }
 });
 
+const META_DESCRIPTION_MAX = 160;
+
+function buildDescription(property, location) {
+  const summary = `${property.title} in ${location}. ${formatArea(property.areaSqft)}, ${formatPrice(property.priceInRupees)}${property.intent === "rent" ? "/mo" : ""}.`;
+  const detail = property.description?.trim();
+  if (!detail) return summary;
+  const combined = `${summary} ${detail}`;
+  return combined.length > META_DESCRIPTION_MAX ? `${combined.slice(0, META_DESCRIPTION_MAX - 1).trimEnd()}…` : combined;
+}
+
 export async function generateMetadata({ params }) {
   const { slug } = await params;
-  const property = await getProperty(slug);
-  if (!property) return { title: "Property not found" };
+  let property = null;
+  try {
+    property = await getProperty(slug);
+  } catch {
+    // Backend unreachable: fall back to the site defaults rather than failing the head.
+    return {};
+  }
+  if (!property) return { title: "Property not found", robots: { index: false } };
+
   const location = property.locality ? `${property.locality}, ${property.city}` : property.city;
+  const description = buildDescription(property, location);
+  const url = `${SITE_URL}/property/${encodeURIComponent(property.slug || slug)}`;
+  const photo = property.images?.find((image) => image.url);
+  const images = photo ? [{ url: photo.url, alt: `${property.title}, photo 1` }] : [DEFAULT_OG_IMAGE];
+
   return {
     title: property.title,
-    description: `${property.title} in ${location}. ${formatArea(property.areaSqft)}, ${formatPrice(property.priceInRupees)}${property.intent === "rent" ? "/mo" : ""}.`,
+    description,
+    alternates: { canonical: url },
+    openGraph: {
+      title: property.title,
+      description,
+      url,
+      siteName: SITE_NAME,
+      type: "website",
+      images,
+    },
+    twitter: {
+      card: photo ? "summary_large_image" : "summary",
+      title: property.title,
+      description,
+      images: images.map((image) => image.url),
+    },
   };
 }
 
@@ -38,7 +76,7 @@ export default async function PropertyDetailPage({ params }) {
   if (!property) notFound();
 
   const propertyId = String(property._id);
-  const heroImage = property.images?.find((image) => image.url);
+  const galleryImages = (property.images ?? []).filter((image) => image.url);
   const location = property.locality ? `${property.locality}, ${property.city}` : property.city;
   const typeLabel = property.bhk
     ? `${property.bhk} BHK ${PROPERTY_TYPE_LABELS[property.propertyType]}`
@@ -60,36 +98,26 @@ export default async function PropertyDetailPage({ params }) {
 
           <div className="mt-4 grid grid-cols-1 gap-8 lg:grid-cols-3">
             <div className="lg:col-span-2">
-              <div className="relative aspect-4/3 w-full overflow-hidden rounded-2xl bg-bg sm:aspect-16/9">
-                {heroImage ? (
-                  <Image
-                    src={heroImage.url}
-                    alt={heroImage.alt || property.title}
-                    fill
-                    sizes="(max-width: 1024px) 100vw, 66vw"
-                    priority
-                    className="object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center text-sm text-text-muted">
-                    No property photo available
-                  </div>
-                )}
-                <div className="absolute left-3 top-3 flex items-center gap-1.5">
-                  {property.featured ? (
-                    <span className="flex items-center gap-1 rounded-full bg-accent px-2.5 py-1 text-xs font-semibold text-accent-ink">
-                      <StarIcon className="h-3.5 w-3.5" />
-                      Featured
-                    </span>
-                  ) : null}
-                  {property.verified ? (
-                    <span className="flex items-center gap-1 rounded-full bg-primary px-2.5 py-1 text-xs font-semibold text-white">
-                      <CheckBadgeIcon className="h-3.5 w-3.5" />
-                      Verified
-                    </span>
-                  ) : null}
-                </div>
-              </div>
+              <PropertyGallery
+                title={property.title}
+                images={galleryImages}
+                badges={
+                  <>
+                    {property.featured ? (
+                      <span className="flex items-center gap-1 rounded-full bg-accent px-2.5 py-1 text-xs font-semibold text-accent-ink">
+                        <StarIcon className="h-3.5 w-3.5" />
+                        Featured
+                      </span>
+                    ) : null}
+                    {property.verified ? (
+                      <span className="flex items-center gap-1 rounded-full bg-primary px-2.5 py-1 text-xs font-semibold text-white">
+                        <CheckBadgeIcon className="h-3.5 w-3.5" />
+                        Verified
+                      </span>
+                    ) : null}
+                  </>
+                }
+              />
 
               <div className="mt-6 flex flex-wrap items-start justify-between gap-4">
                 <div>
@@ -148,7 +176,7 @@ export default async function PropertyDetailPage({ params }) {
             </div>
 
             <div className="flex flex-col gap-4">
-              <ContactOwnerCard />
+              <ContactOwnerCard propertyId={propertyId} />
               <p className="text-xs text-text-muted">
                 Verified confirms the listing passed our review checklist. It does not confirm ownership or title.
               </p>

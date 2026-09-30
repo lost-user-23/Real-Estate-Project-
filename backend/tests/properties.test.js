@@ -101,6 +101,98 @@ describe('POST /api/v1/properties', () => {
     expect(stored.map((image) => image.url).sort()).toEqual(validImages.map((image) => image.url).sort());
   });
 
+  it('gives listings with the same title distinct slugs and leaves existing slugs unchanged', async () => {
+    const { token } = await registerUser();
+    const submit = () =>
+      request(app)
+        .post('/api/v1/properties')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...validPayload, images: validImages });
+
+    const first = await submit();
+    const second = await submit();
+    const third = await submit();
+
+    expect([first.status, second.status, third.status]).toEqual([201, 201, 201]);
+    expect(first.body.property.slug).toBe('sunny-2bhk-apartment');
+    const slugs = [first, second, third].map((res) => res.body.property.slug);
+    expect(new Set(slugs).size).toBe(3);
+    expect(second.body.property.slug).toMatch(/^sunny-2bhk-apartment-[0-9a-f]{6}$/);
+
+    const stored = await Property.findById(first.body.property._id);
+    expect(stored.slug).toBe('sunny-2bhk-apartment');
+  });
+
+  describe('slug duplicate-key race', () => {
+    function slugCollision(slug) {
+      return Object.assign(new Error(`E11000 duplicate key error: slug "${slug}"`), {
+        code: 11000,
+        keyPattern: { slug: 1 },
+        keyValue: { slug },
+      });
+    }
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    it('retries with a new suffix when the insert collides on the slug', async () => {
+      const { token } = await registerUser();
+      const realCreate = Property.create.bind(Property);
+      const attemptedSlugs = [];
+      jest.spyOn(Property, 'create').mockImplementation(async (doc) => {
+        attemptedSlugs.push(doc.slug);
+        // Simulates another request inserting the same slug between the
+        // exists() check and this insert.
+        if (attemptedSlugs.length === 1) throw slugCollision(doc.slug);
+        return realCreate(doc);
+      });
+
+      const response = await request(app)
+        .post('/api/v1/properties')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...validPayload, images: validImages });
+
+      expect(response.status).toBe(201);
+      expect(attemptedSlugs).toHaveLength(2);
+      expect(attemptedSlugs[0]).toBe('sunny-2bhk-apartment');
+      expect(attemptedSlugs[1]).toMatch(/^sunny-2bhk-apartment-[0-9a-f]{6}$/);
+      expect(response.body.property.slug).toBe(attemptedSlugs[1]);
+      expect(await PropertyImage.countDocuments({ propertyId: response.body.property._id })).toBe(5);
+    });
+
+    it('returns 409 after 3 retries all collide, and stores nothing', async () => {
+      const { token } = await registerUser();
+      const spy = jest.spyOn(Property, 'create').mockImplementation(async (doc) => {
+        throw slugCollision(doc.slug);
+      });
+
+      const response = await request(app)
+        .post('/api/v1/properties')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...validPayload, images: validImages });
+
+      expect(response.status).toBe(409);
+      expect(response.body.error.message).toMatch(/unique link/);
+      expect(spy).toHaveBeenCalledTimes(4);
+      expect(await PropertyImage.countDocuments({})).toBe(0);
+    });
+
+    it('does not retry a duplicate-key error on another field', async () => {
+      const { token } = await registerUser();
+      const other = Object.assign(new Error('E11000'), { code: 11000, keyPattern: { other: 1 }, keyValue: { other: 'x' } });
+      const spy = jest.spyOn(Property, 'create').mockRejectedValue(other);
+
+      const response = await request(app)
+        .post('/api/v1/properties')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...validPayload, images: validImages });
+
+      expect(response.status).toBe(409);
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('rejects malformed image entries', async () => {
     const { token } = await registerUser();
     const response = await request(app)

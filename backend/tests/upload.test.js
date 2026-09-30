@@ -9,6 +9,7 @@ const mongoose = require('mongoose');
 const createApp = require('../src/app');
 const { connectToDatabase, disconnectFromDatabase } = require('../src/db/connection');
 const User = require('../src/models/User');
+const cloudinary = require('../src/config/cloudinary');
 
 const app = createApp();
 
@@ -34,16 +35,44 @@ describe('POST /api/v1/uploads/signature', () => {
     const res = await request(app)
       .post('/api/v1/uploads/signature')
       .set('Authorization', `Bearer ${registerRes.body.token}`)
-      .send({ folder: 'property-images', filename: 'demo.jpg', resourceType: 'image' });
+      .send({ filename: 'demo.jpg' });
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       cloudName: 'demo',
       apiKey: '123456789012345',
-      folder: 'property-images',
+      folder: `property-images/${registerRes.body.user.id}`,
+      resourceType: 'image',
       uploadUrl: expect.stringContaining('api.cloudinary.com'),
     });
     expect(res.body.signature).toEqual(expect.any(String));
     expect(res.body.timestamp).toEqual(expect.any(Number));
+  });
+
+  it('ignores a client-supplied folder and signs the server-chosen one', async () => {
+    const registerRes = await request(app).post('/api/auth/register').send(creds);
+    const expectedFolder = `property-images/${registerRes.body.user.id}`;
+
+    const res = await request(app)
+      .post('/api/v1/uploads/signature')
+      .set('Authorization', `Bearer ${registerRes.body.token}`)
+      .send({ folder: 'someone-else/../admin', resourceType: 'raw' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.folder).toBe(expectedFolder);
+    expect(res.body.resourceType).toBe('image');
+    // The signature must cover the server folder, not the one the client sent.
+    const expectedSignature = cloudinary.utils.api_sign_request(
+      { timestamp: res.body.timestamp, folder: expectedFolder },
+      'test-secret'
+    );
+    expect(res.body.signature).toBe(expectedSignature);
+  });
+
+  it('rejects an unauthenticated request', async () => {
+    const res = await request(app).post('/api/v1/uploads/signature').send({ folder: 'anything' });
+
+    expect(res.status).toBe(401);
+    expect(res.body.signature).toBeUndefined();
   });
 });

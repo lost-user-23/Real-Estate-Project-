@@ -205,7 +205,7 @@ const listMyProperties = asyncHandler(async (req, res) => {
   const imagesByPropertyId = await propertyService.getImagesForProperties(properties.map((p) => p._id));
 
   res.status(200).json({
-    properties: serializeProperties(properties, imagesByPropertyId),
+    properties: serializeProperties(properties, imagesByPropertyId, { includeContactNumber: true }),
     meta: { total, page, limit, totalPages },
   });
 });
@@ -248,6 +248,21 @@ const getPropertyBySlug = asyncHandler(async (req, res) => {
   }
   const images = await propertyService.getPropertyImages(property._id);
   res.status(200).json({ property: serializeProperty(property, images) });
+});
+
+// Logged-in users only (protect + contactLimiter in the router). Drafts,
+// archived listings and unknown ids are all a plain 404 so the response never
+// reveals that an unpublished listing exists. The number is never logged.
+const getPropertyContact = asyncHandler(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) {
+    throw AppError.notFound('Property not found');
+  }
+  const result = await propertyService.findPublishedContactById(req.params.id);
+  if (!result.found) {
+    throw AppError.notFound('Property not found');
+  }
+  res.set('Cache-Control', 'private, no-store');
+  res.status(200).json({ contactNumber: result.contactNumber });
 });
 
 function validateUpdateInput(body, isAdmin) {
@@ -411,6 +426,7 @@ module.exports = {
   listMyProperties,
   listAdminProperties,
   getPropertyBySlug,
+  getPropertyContact,
   updateProperty,
   deleteProperty,
   bulkUpdateProperties,
