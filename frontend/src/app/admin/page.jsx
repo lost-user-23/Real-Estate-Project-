@@ -47,7 +47,7 @@ export default function AdminDashboardPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Welcome back, {firstName}</h1>
         <p className="mt-1 text-sm text-text-muted">
-          What&apos;s currently driving the home page sections.
+          Live counts for the site and what needs your attention.
         </p>
       </div>
 
@@ -67,6 +67,7 @@ export default function AdminDashboardPage() {
         <StatCard label="Popular locations" value={stat("popularLocations")} hint="Needs 5+ active listings" />
         <StatCard label="Published projects" value={stat("publishedProjects")} hint="Up to 4 shown, most recent first" />
         <StatCard label="Published insights" value={stat("publishedArticles")} hint="Up to 3 shown, most recent first" />
+        <StatCard label="Open reports" value={stat("openReports")} hint="Flagged listings to review" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -74,6 +75,7 @@ export default function AdminDashboardPage() {
         <QuickLink href="/admin/locations" label="Manage locations" description="Flag popular cities" />
         <QuickLink href="/admin/projects" label="Manage projects" description="Publish or unpublish" />
         <QuickLink href="/admin/articles" label="Manage insights" description="Publish or unpublish" />
+        <QuickLink href="/admin/reports" label="Review reports" description="Flagged listings" />
       </div>
     </div>
   );

@@ -127,7 +127,15 @@ export default async function PropertyDetailPage({ params }) {
                     {location}
                   </p>
                 </div>
+                <div className="flex flex-wrap items-center gap-3">
                   <SaveButton propertyId={propertyId} />
+                  <Link
+                    href={`/report?listing=${encodeURIComponent(`/property/${property.slug || slug}`)}&propertyId=${encodeURIComponent(propertyId)}`}
+                    className="text-sm text-text-muted underline underline-offset-2 hover:text-primary"
+                  >
+                    Report this listing
+                  </Link>
+                </div>
               </div>
 
               <p className="mt-4 text-2xl font-semibold">

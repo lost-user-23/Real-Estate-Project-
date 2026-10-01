@@ -8,6 +8,7 @@ const { connectToDatabase, disconnectFromDatabase } = require('../src/db/connect
 const config = require('../src/config');
 const User = require('../src/models/User');
 const Report = require('../src/models/Report');
+const Property = require('../src/models/Property');
 
 const app = createApp();
 
@@ -29,6 +30,24 @@ async function createAdmin() {
   return credentials.token;
 }
 
+async function createProperty(overrides = {}) {
+  const id = new mongoose.Types.ObjectId();
+  return Property.create({
+    _id: id,
+    slug: `report-flat-${id}`,
+    title: 'Report Test Flat',
+    intent: 'rent',
+    propertyType: 'apartment',
+    areaSqft: 900,
+    priceInRupees: 30000,
+    city: 'Pune',
+    locality: 'Baner',
+    status: 'published',
+    publishedAt: new Date(),
+    ...overrides,
+  });
+}
+
 async function createReport(overrides = {}) {
   return Report.create({
     listingUrlOrId: 'listing-123',
@@ -42,7 +61,7 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
-  await Promise.all([User.deleteMany({}), Report.deleteMany({})]);
+  await Promise.all([User.deleteMany({}), Report.deleteMany({}), Property.deleteMany({})]);
 });
 
 afterAll(async () => {
@@ -170,5 +189,157 @@ describe('admin reports', () => {
       .send({ status: 'not-a-status' });
 
     expect(response.status).toBe(400);
+  });
+});
+
+
+describe('report to listing resolution', () => {
+  const post = (body) => request(app).post('/api/v1/reports').send({ reason: 'Spam listing', ...body });
+
+  it('keeps a valid propertyId that exists', async () => {
+    const property = await createProperty();
+    const res = await post({ listingUrlOrId: 'anything', propertyId: String(property._id) });
+
+    expect(res.status).toBe(201);
+    expect(res.body.report.propertyId).toBe(String(property._id));
+  });
+
+  it('stores null for a propertyId that does not exist', async () => {
+    const res = await post({ listingUrlOrId: 'anything', propertyId: String(new mongoose.Types.ObjectId()) });
+
+    expect(res.status).toBe(201);
+    expect(res.body.report.propertyId).toBeNull();
+  });
+
+  it('rejects a malformed propertyId', async () => {
+    const res = await post({ listingUrlOrId: 'anything', propertyId: 'abcdefghijkl' });
+    expect(res.status).toBe(400);
+  });
+
+  it('resolves a /property/<slug> path', async () => {
+    const property = await createProperty();
+    const res = await post({ listingUrlOrId: `/property/${property.slug}` });
+
+    expect(res.body.report.propertyId).toBe(String(property._id));
+    expect(res.body.report.listingUrlOrId).toBe(`/property/${property.slug}`);
+  });
+
+  it('resolves a full https URL with a query string and hash', async () => {
+    const property = await createProperty();
+    const text = `https://homenest.example/property/${property.slug}?utm=x#photos`;
+    const res = await post({ listingUrlOrId: text });
+
+    expect(res.body.report.propertyId).toBe(String(property._id));
+    expect(res.body.report.listingUrlOrId).toBe(text);
+  });
+
+  it('resolves a 24 character hex id', async () => {
+    const property = await createProperty();
+    const res = await post({ listingUrlOrId: String(property._id) });
+
+    expect(res.body.report.propertyId).toBe(String(property._id));
+  });
+
+  it.each([
+    'listing-abc',
+    '/property/',
+    '/property/Not_A_Slug!',
+    '/property/%E0%A4%A',
+    '/property/no-such-property-anywhere',
+    'ftp://homenest.example/property/some-slug',
+    '/other/some-slug',
+  ])('leaves propertyId null for %s', async (text) => {
+    const res = await post({ listingUrlOrId: text });
+
+    expect(res.status).toBe(201);
+    expect(res.body.report.propertyId).toBeNull();
+    expect(res.body.report.listingUrlOrId).toBe(text);
+  });
+
+  it('does not include the property object in the public response', async () => {
+    const property = await createProperty();
+    const res = await post({ listingUrlOrId: `/property/${property.slug}` });
+
+    expect(res.body.report).not.toHaveProperty('property');
+    expect(JSON.stringify(res.body)).not.toContain(property.title);
+  });
+});
+
+describe('admin reports with property', () => {
+  it('returns the property summary on list, detail and status update', async () => {
+    const token = await createAdmin();
+    const property = await createProperty({ status: 'archived' });
+    const report = await createReport({ propertyId: property._id });
+    const headers = { Authorization: `Bearer ${token}` };
+    const expected = {
+      id: String(property._id),
+      slug: property.slug,
+      title: 'Report Test Flat',
+      city: 'Pune',
+      locality: 'Baner',
+      status: 'archived',
+    };
+
+    const list = await request(app).get('/api/v1/admin/reports').set(headers);
+    const detail = await request(app).get(`/api/v1/admin/reports/${report._id}`).set(headers);
+    const update = await request(app).patch(`/api/v1/admin/reports/${report._id}`).set(headers).send({ status: 'reviewing' });
+
+    expect(list.body.reports[0].property).toEqual(expected);
+    expect(list.body.reports[0].propertyId).toBe(String(property._id));
+    expect(detail.body.report.property).toEqual(expected);
+    expect(update.body.report.property).toEqual(expected);
+  });
+
+  it('returns property null when the property was deleted, and when none was linked', async () => {
+    const token = await createAdmin();
+    const property = await createProperty();
+    const deleted = await createReport({ propertyId: property._id });
+    const unlinked = await createReport({ listingUrlOrId: 'nothing' });
+    await Property.deleteOne({ _id: property._id });
+
+    const res = await request(app).get('/api/v1/admin/reports').set('Authorization', `Bearer ${token}`);
+    const byId = Object.fromEntries(res.body.reports.map((r) => [r._id, r]));
+
+    expect(byId[String(deleted._id)].property).toBeNull();
+    expect(byId[String(deleted._id)].propertyId).toBe(String(property._id));
+    expect(byId[String(unlinked._id)].property).toBeNull();
+  });
+});
+
+describe('report validation caps', () => {
+  const post = (body) => request(app).post('/api/v1/reports').send({ listingUrlOrId: 'x', reason: 'Spam', ...body });
+
+  it.each([
+    ['listingUrlOrId', 500],
+    ['reason', 200],
+    ['details', 2000],
+  ])('accepts %s at %i characters and rejects one more', async (field, max) => {
+    const ok = await post({ [field]: 'a'.repeat(max) });
+    const tooLong = await post({ [field]: 'a'.repeat(max + 1) });
+
+    expect(ok.status).toBe(201);
+    expect(tooLong.status).toBe(400);
+    expect(JSON.stringify(tooLong.body)).toContain(field);
+  });
+});
+
+describe('report rate limit (limiter active)', () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+
+  afterEach(() => {
+    process.env.NODE_ENV = originalNodeEnv;
+  });
+
+  it('allows 10 reports per hour per IP, then returns 429', async () => {
+    process.env.NODE_ENV = 'development';
+    const send = () => request(app).post('/api/v1/reports').send({ listingUrlOrId: 'x', reason: 'Spam' });
+
+    const statuses = [];
+    for (let i = 0; i < 10; i += 1) statuses.push((await send()).status);
+    const limited = await send();
+
+    expect(statuses.every((status) => status === 201)).toBe(true);
+    expect(limited.status).toBe(429);
+    expect(limited.body).toEqual({ message: 'Too many reports. Please try again later.' });
   });
 });

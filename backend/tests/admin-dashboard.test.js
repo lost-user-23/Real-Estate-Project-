@@ -9,6 +9,7 @@ const Property = require('../src/models/Property');
 const Location = require('../src/models/Location');
 const Project = require('../src/models/Project');
 const Article = require('../src/models/Article');
+const Report = require('../src/models/Report');
 
 const app = createApp();
 
@@ -74,6 +75,7 @@ afterEach(async () => {
     Location.deleteMany({}),
     Project.deleteMany({}),
     Article.deleteMany({}),
+    Report.deleteMany({}),
   ]);
 });
 
@@ -110,6 +112,7 @@ describe('GET /api/v1/admin/dashboard', () => {
       popularLocations: 0,
       publishedProjects: 0,
       publishedArticles: 0,
+      openReports: 0,
     });
   });
 
@@ -138,6 +141,12 @@ describe('GET /api/v1/admin/dashboard', () => {
 
       makeArticle(),
       makeArticle({ status: 'draft' }),
+
+      // only open reports count; reviewed ones are done
+      Report.create({ listingUrlOrId: 'a', reason: 'r' }),
+      Report.create({ listingUrlOrId: 'b', reason: 'r' }),
+      Report.create({ listingUrlOrId: 'c', reason: 'r', status: 'resolved' }),
+      Report.create({ listingUrlOrId: 'd', reason: 'r', status: 'reviewing' }),
     ]);
 
     const response = await request(app)
@@ -152,6 +161,7 @@ describe('GET /api/v1/admin/dashboard', () => {
       popularLocations: 1,
       publishedProjects: 2,
       publishedArticles: 1,
+      openReports: 2,
     });
   });
 });

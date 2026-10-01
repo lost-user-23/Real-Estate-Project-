@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { PageShell } from "@/components/layout/PageShell";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Container } from "@/components/ui/Container";
@@ -18,7 +19,9 @@ export default function ReportPage() {
       />
       <div className="py-10 sm:py-14">
         <Container className="max-w-2xl">
-          <ReportListingForm />
+          <Suspense fallback={null}>
+            <ReportListingForm />
+          </Suspense>
         </Container>
       </div>
     </PageShell>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 
 const REASONS = [
@@ -12,9 +13,23 @@ const REASONS = [
 ];
 
 const INITIAL = { listingUrl: "", reason: REASONS[0], details: "" };
+const OBJECT_ID = /^[a-f0-9]{24}$/i;
 
+// Keyed on the query string so navigating from a pre-filled /report link to
+// plain /report (same page, form stays mounted) starts from a fresh form.
 export function ReportListingForm() {
-  const [form, setForm] = useState(INITIAL);
+  const searchParams = useSearchParams();
+  return <ReportForm key={searchParams.toString()} searchParams={searchParams} />;
+}
+
+function ReportForm({ searchParams }) {
+  // What the "Report this listing" link pre-filled. The id is only trusted
+  // while the field still holds this exact text.
+  const [linked, setLinked] = useState(() => ({
+    listing: searchParams.get("listing") ?? "",
+    propertyId: searchParams.get("propertyId") ?? "",
+  }));
+  const [form, setForm] = useState(() => ({ ...INITIAL, listingUrl: linked.listing }));
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -24,10 +39,13 @@ export function ReportListingForm() {
     setError("");
     setIsSubmitting(true);
     try {
+      const listingUrlOrId = form.listingUrl.trim();
+      const keepPropertyId = OBJECT_ID.test(linked.propertyId) && listingUrlOrId === linked.listing.trim();
       await api.post("/api/v1/reports", {
-        listingUrlOrId: form.listingUrl.trim(),
+        listingUrlOrId,
         reason: form.reason,
         details: form.details.trim(),
+        ...(keepPropertyId ? { propertyId: linked.propertyId } : {}),
       });
       setSubmitted(true);
     } catch (requestError) {
@@ -48,6 +66,7 @@ export function ReportListingForm() {
           type="button"
           onClick={() => {
             setForm(INITIAL);
+            setLinked({ listing: "", propertyId: "" });
             setSubmitted(false);
           }}
           className="mt-4 inline-flex items-center justify-center rounded-full border border-primary px-5 py-2 text-sm font-semibold text-primary hover:bg-primary hover:text-white"
@@ -65,6 +84,7 @@ export function ReportListingForm() {
         <input
           type="text"
           required
+          maxLength={500}
           placeholder="/property/2-bhk-apartment-for-rent-koramangala-bengaluru-x7k2"
           value={form.listingUrl}
           onChange={(e) => setForm((prev) => ({ ...prev, listingUrl: e.target.value }))}
@@ -89,6 +109,7 @@ export function ReportListingForm() {
         <span className="mb-1.5 block text-xs font-medium text-text-muted">Details</span>
         <textarea
           rows={4}
+          maxLength={2000}
           value={form.details}
           onChange={(e) => setForm((prev) => ({ ...prev, details: e.target.value }))}
           className="w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm outline-none focus:border-primary"

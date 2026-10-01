@@ -2,6 +2,7 @@ const Property = require('../models/Property');
 const Location = require('../models/Location');
 const Project = require('../models/Project');
 const Article = require('../models/Article');
+const Report = require('../models/Report');
 const asyncHandler = require('../utils/asyncHandler');
 
 // A location only counts as popular for the dashboard once it has this many
@@ -16,6 +17,7 @@ const getDashboard = asyncHandler(async (req, res) => {
     popularLocations,
     publishedProjects,
     publishedArticles,
+    openReports,
   ] = await Promise.all([
     Property.countDocuments({ status: 'published' }),
     Property.countDocuments({ status: 'published', featured: true }),
@@ -23,6 +25,7 @@ const getDashboard = asyncHandler(async (req, res) => {
     Location.countDocuments({ popular: true, activeListingCount: { $gte: MIN_ACTIVE_LISTINGS_FOR_POPULAR } }),
     Project.countDocuments({ status: 'published' }),
     Article.countDocuments({ status: 'published' }),
+    Report.countDocuments({ status: 'open' }),
   ]);
 
   res.status(200).json({
@@ -33,6 +36,7 @@ const getDashboard = asyncHandler(async (req, res) => {
       popularLocations,
       publishedProjects,
       publishedArticles,
+      openReports,
     },
   });
 });

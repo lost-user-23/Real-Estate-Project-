@@ -1,12 +1,15 @@
-const mongoose = require('mongoose');
 const { REPORT_STATUSES } = require('../models/Report');
 const reportService = require('../services/report.service');
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
-const { serializeReport, serializeReports } = require('../utils/serializers/report.serializer');
+const { serializeReport, serializeAdminReport } = require('../utils/serializers/report.serializer');
 
 const MAX_LIMIT = 50;
 const DEFAULT_LIMIT = 20;
+const MAX_LISTING_LENGTH = 500;
+const MAX_REASON_LENGTH = 200;
+const MAX_DETAILS_LENGTH = 2000;
+const OBJECT_ID = /^[a-f0-9]{24}$/i;
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -17,15 +20,21 @@ function validateCreateFields(body) {
 
   if (!isNonEmptyString(body.listingUrlOrId)) {
     errors.push('listingUrlOrId must be a non-empty string');
+  } else if (body.listingUrlOrId.trim().length > MAX_LISTING_LENGTH) {
+    errors.push(`listingUrlOrId must be at most ${MAX_LISTING_LENGTH} characters`);
   }
   if (!isNonEmptyString(body.reason)) {
     errors.push('reason must be a non-empty string');
+  } else if (body.reason.trim().length > MAX_REASON_LENGTH) {
+    errors.push(`reason must be at most ${MAX_REASON_LENGTH} characters`);
   }
   if (body.details !== undefined && typeof body.details !== 'string') {
     errors.push('details must be a string');
+  } else if (body.details !== undefined && body.details.length > MAX_DETAILS_LENGTH) {
+    errors.push(`details must be at most ${MAX_DETAILS_LENGTH} characters`);
   }
   if (body.propertyId !== undefined && body.propertyId !== null) {
-    if (!mongoose.Types.ObjectId.isValid(body.propertyId)) {
+    if (typeof body.propertyId !== 'string' || !OBJECT_ID.test(body.propertyId)) {
       errors.push('propertyId must be a valid ObjectId');
     }
   }
@@ -98,21 +107,21 @@ const listAdminReports = asyncHandler(async (req, res) => {
   const pagination = validateAndBuildPagination(req.query || {});
   validateStatusFilter(req.query?.status);
 
-  const { reports, total, totalPages } = await reportService.listReports({
+  const { reports, properties, total, totalPages } = await reportService.listReports({
     ...pagination,
     status: req.query?.status,
   });
 
   res.status(200).json({
-    reports: serializeReports(reports),
+    reports: reports.map((report) => serializeAdminReport(report, properties)),
     meta: { total, ...pagination, totalPages },
   });
 });
 
 const getAdminReportById = asyncHandler(async (req, res) => {
-  const report = await reportService.findById(req.params.id);
-  if (!report) throw AppError.notFound('Report not found');
-  res.status(200).json({ report: serializeReport(report) });
+  const found = await reportService.findById(req.params.id);
+  if (!found) throw AppError.notFound('Report not found');
+  res.status(200).json({ report: serializeAdminReport(found.report, found.properties) });
 });
 
 const updateAdminReportStatus = asyncHandler(async (req, res) => {
@@ -120,9 +129,9 @@ const updateAdminReportStatus = asyncHandler(async (req, res) => {
   const errors = validateStatusUpdate(body);
   if (errors.length > 0) throw AppError.badRequest('Validation failed', errors);
 
-  const report = await reportService.updateStatusById(req.params.id, body.status);
-  if (!report) throw AppError.notFound('Report not found');
-  res.status(200).json({ report: serializeReport(report) });
+  const updated = await reportService.updateStatusById(req.params.id, body.status);
+  if (!updated) throw AppError.notFound('Report not found');
+  res.status(200).json({ report: serializeAdminReport(updated.report, updated.properties) });
 });
 
 module.exports = {
