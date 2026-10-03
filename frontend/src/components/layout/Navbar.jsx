@@ -102,6 +102,14 @@ export function Navbar() {
                 </span>
               ) : null}
               <Link
+                href="/saved"
+                className={`text-sm font-medium transition-colors ${
+                  transparent ? "text-white/90 hover:text-white" : "text-text hover:text-primary"
+                }`}
+              >
+                Saved
+              </Link>
+              <Link
                 href="/profile"
                 className={`text-sm font-medium transition-colors ${
                   transparent ? "text-white/90 hover:text-white" : "text-text hover:text-primary"
@@ -168,6 +176,13 @@ export function Navbar() {
                       {isAdmin ? <AdminBadge /> : null}
                     </p>
                   ) : null}
+                  <Link
+                    href="/saved"
+                    onClick={() => setMobileOpen(false)}
+                    className="rounded-lg px-2 py-2.5 text-sm font-medium text-text hover:bg-bg"
+                  >
+                    Saved
+                  </Link>
                   <Link
                     href="/profile"
                     onClick={() => setMobileOpen(false)}

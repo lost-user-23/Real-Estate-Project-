@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { Property, PropertyImage } = require('../models');
+const { Property, PropertyImage, SavedProperty } = require('../models');
 const AppError = require('../utils/AppError');
 
 const EDITABLE_FIELDS = [
@@ -275,6 +275,7 @@ async function deletePropertyById(id, actor) {
 
   await property.deleteOne();
   await PropertyImage.deleteMany({ propertyId: id });
+  await SavedProperty.deleteMany({ propertyId: id });
   return {};
 }
 
@@ -299,6 +300,7 @@ async function bulkUpdatePropertiesByIds(ids, updates) {
 async function bulkDeletePropertiesByIds(ids) {
   const result = await Property.deleteMany({ _id: { $in: ids } });
   await PropertyImage.deleteMany({ propertyId: { $in: ids } });
+  await SavedProperty.deleteMany({ propertyId: { $in: ids } });
   return { deletedCount: result.deletedCount };
 }
 

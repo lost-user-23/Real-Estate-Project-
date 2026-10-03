@@ -21,7 +21,7 @@ The backend is mounted at `http://localhost:4000` by default. The frontend API c
 | Create an account or log in | The login prompt calls `POST /api/auth/register` or `POST /api/auth/login`. The JWT is stored under one localStorage key (`auth_token`) and checked through `GET /api/auth/me` on reload. Logging out, or any 401 on a request that carried a token, clears it. The navbar shows the signed-in user's name (plus an `admin` label for admins), Profile and Log out. |
 | Submit a property | The Post Property form requires login and at least five images. It requests signed Cloudinary upload parameters, uploads the files, then calls `POST /api/v1/properties`. The backend creates the listing as a `draft`; it is not automatically public. |
 | Manage account and listings | `/profile` (login required) lets a user edit name and phone, change password (the server re-issues a token, which replaces the session), change email, delete the account, and list their own listings from `GET /api/v1/properties/mine` with edit and delete through `PATCH`/`DELETE /api/v1/properties/:id`. |
-| Save a property | Users can toggle a favorite and are prompted to log in first. Saved IDs only live in React memory: they are not sent to an API, do not survive a refresh, and there is no saved-properties page. |
+| Save a property | Users can toggle a favorite and are prompted to log in first. Saves are persisted per account through `/api/v1/saved-properties` and survive refresh and new sessions. `/saved` (login required) lists the user's saved properties 20 at a time with a Load more button; un-hearting a card there keeps it on the page until the next load. Saves are removed automatically when a property or the saving account is deleted. |
 | View owner contact | Contact numbers are shown to logged-in users only. Logged out, `ContactOwnerCard` shows "Log in to view contact details", opens the login prompt and reveals the number after a successful login. Logged in, "Show contact number" calls `GET /api/v1/properties/:id/contact` through `api.js`. Rate limiting (429), missing listings (404) and other errors show a message in the card. The number is hidden again on logout. Owners also see their own numbers under My listings on `/profile`. |
 | Report a listing | `/report` submits `{ listingUrlOrId, reason, details }` to `POST /api/v1/reports` (the reporter is attached when logged in). The button is disabled while sending, server errors are shown, and success appears only after the request succeeds. Reports appear on the admin Reports page. |
 | Contact HomeNest | The contact form displays a local confirmation only; no support-message backend is connected. |
@@ -201,6 +201,7 @@ Backend checks: `npm test` and `npm run lint` from `backend/`. Frontend checks: 
 | `backend/src/models/Project.js` | Development project schema and publication metadata. |
 | `backend/src/models/Property.js` | Listing schema, enums, private contact field, and property search indexes. |
 | `backend/src/models/PropertyImage.js` | Per-property image records, order, URL/storage key, and relationship index. |
+| `backend/src/models/SavedProperty.js` | Saved-property link (`userId`, `propertyId`) with a unique `(userId, propertyId)` index and a `(userId, createdAt)` index for listing. |
 | `backend/src/models/Report.js` | Listing report schema and report status values. |
 | `backend/src/models/User.js` | User identity, password hash, and `user`/`admin` roles. |
 | `backend/src/routes/admin-article.routes.js` | Admin article list/detail/create/update/publish/delete route declarations. |
@@ -366,7 +367,7 @@ Backend checks: `npm test` and `npm run lint` from `backend/`. Frontend checks: 
 | `frontend/src/components/post-property/PostPropertyForm.jsx` | Authenticated property submission and Cloudinary upload flow. |
 | `frontend/src/components/property/ContactOwnerCard.jsx` | Login-gated contact number reveal backed by `GET /api/v1/properties/:id/contact`. |
 | `frontend/src/components/property/PropertyGallery.jsx` | Client gallery: large photo, thumbnails, wrapping previous/next buttons and arrow keys; placeholder for no photos, no controls for one. |
-| `frontend/src/components/property/SaveButton.jsx` | Property save toggle using in-memory saved-property state. |
+| `frontend/src/components/property/SaveButton.jsx` | Property save toggle backed by the saved-properties context (persisted via the API). |
 | `frontend/src/components/report/ReportListingForm.jsx` | Report form that submits to `POST /api/v1/reports`. |
 | `frontend/src/components/search/SearchResults.jsx` | URL filter parsing, API search, card normalization, states, and pagination. |
 | `frontend/src/components/tools/EmiCalculator.jsx` | Browser-side loan EMI calculator. |
@@ -398,7 +399,8 @@ Backend checks: `npm test` and `npm run lint` from `backend/`. Frontend checks: 
 | `frontend/src/lib/mockData.js` | Shared sample properties, locations, categories, projects, and articles used by UI and seed script. |
 | `frontend/src/lib/propertyTypes.js` | Property type labels/options by intent. |
 | `frontend/src/lib/recentSearches.js` | Adds/reads up to five recent searches in browser localStorage. |
-| `frontend/src/lib/saved-properties-context.jsx` | In-memory saved-property set and login prompt; no persistence/API integration. |
+| `frontend/src/lib/saved-properties-context.jsx` | Saved-property ID set loaded from `GET /api/v1/saved-properties/ids`, toggled through `POST`/`DELETE /api/v1/saved-properties/:propertyId`, plus the login prompt. |
+| `frontend/src/app/saved/page.jsx` | `/saved` page: paginated (20 per page, Load more) list of the user's saved properties. |
 | `frontend/src/lib/slugify.js` | Slug and random suffix helpers. |
 | `frontend/src/lib/toast-context.jsx` | Shared toast notification state and presentation. |
 | `frontend/src/lib/trackEvent.js` | Analytics event payload wrapper; currently console-only in development. |
@@ -418,4 +420,4 @@ Backend checks: `npm test` and `npm run lint` from `backend/`. Frontend checks: 
 ## Important Documentation and Integration Gaps
 
 - The architecture document is a planning baseline. Some endpoint names and requirements in it are planned rather than present; inspect `backend/src/routes` for actual registrations.
-- The contact form, saved-property persistence, and analytics delivery remain follow-up work.
+- The contact form and analytics delivery remain follow-up work.

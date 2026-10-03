@@ -8,7 +8,7 @@
 
 **Estimated project completion: approximately 70% for the current MVP/prototype scope.** This is an informed estimate, not an automatically measured metric: the repository does not contain one complete, approved product requirements checklist against which every feature can be scored. The estimate reflects a substantial working API and admin experience, a production-buildable frontend, and passing automated checks, balanced against unfinished product integrations and launch-readiness work listed below.
 
-The backend currently registers **53 distinct HTTP method/path operations** across 11 API areas. The API uses two prefixes: health checks are under `/health`, account/authentication routes are under `/api/auth`, and the feature API is under `/api/v1`. This prefix split is intentional in the current implementation; it differs from the older architecture proposal.
+The backend currently registers **57 distinct HTTP method/path operations** across 12 API areas. The API uses two prefixes: health checks are under `/health`, account/authentication routes are under `/api/auth`, and the feature API is under `/api/v1`. This prefix split is intentional in the current implementation; it differs from the older architecture proposal.
 
 ### Verification performed
 
@@ -120,6 +120,17 @@ These routes use `/api/auth` (not `/api/v1/auth`). Register/login are rate-limit
 | GET | `/api/v1/admin/reports/:id` | Read a report; admin only. | Implemented |
 | PATCH | `/api/v1/admin/reports/:id` | Update report moderation status; admin only. | Implemented |
 
+### Saved Properties
+
+All routes require authentication and are scoped to the caller. Backed by the `SavedProperty` model, which has a unique `(userId, propertyId)` index. Saves are deleted when the property is deleted (single or bulk) and when the user's account is deleted.
+
+| Method | Endpoint | Purpose and access | Status |
+|---|---|---|---|
+| GET | `/api/v1/saved-properties/ids` | List the IDs of the caller's saved properties; authenticated. | Implemented |
+| GET | `/api/v1/saved-properties` | Paginated list of the caller's saved properties (`page`, `limit`); authenticated. | Implemented |
+| POST | `/api/v1/saved-properties/:propertyId` | Save a property; authenticated. | Implemented |
+| DELETE | `/api/v1/saved-properties/:propertyId` | Remove a saved property; authenticated. | Implemented |
+
 ### Admin Dashboard and Bulk Property Actions
 
 | Method | Endpoint | Purpose and access | Status |
@@ -145,7 +156,6 @@ These are absent as dedicated endpoints in the current route tree. Some behavior
 | `GET /api/v1/properties/featured` | No dedicated route. Featured listings are fetched through `GET /api/v1/properties?featured=true&limit=50` and ordered/capped in the frontend. |
 | `GET /api/v1/articles/insights` | No dedicated route. The frontend uses `GET /api/v1/articles?limit=3`. |
 | Builder/developer API | No Builder model or endpoint. Builder cards are derived from published projects. |
-| Persistent favorites/saved-properties API | Not implemented. Save state is currently browser/session UI state, not server-persisted account data. |
 | Contact/support message API | Not implemented; the contact form's confirmation is local UI behavior. |
 | Analytics event ingestion API/vendor integration | Not implemented; the current tracking wrapper is not connected to a configured analytics service. |
 | Saved-search alerts, map search, mobile app, multi-language APIs | Not part of the current API; the product brief identifies these as future scope. |
@@ -161,7 +171,7 @@ These are absent as dedicated endpoints in the current route tree. Some behavior
 
 ### Remaining work / limits
 
-- Favorites are not persisted to an account, the contact/support form has no backend submission, and analytics has no real provider/ingestion integration.
+- The contact/support form has no backend submission, and analytics has no real provider/ingestion integration.
 - There is no separate Builder API; builder data is derived from projects.
 - Cloudinary uploads require valid credentials, and persistent runtime behavior requires MongoDB. Deployment configuration, production credentials, and live deployment were not verified in this review.
 - The architecture document is a planning baseline and is stale in places: it describes an empty backend/localStorage-based admin and proposes routes/prefixes that differ from the current implementation. The current Express route declarations in `backend/src/routes/` are authoritative for the inventory above.

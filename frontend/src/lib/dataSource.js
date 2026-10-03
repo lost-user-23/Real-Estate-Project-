@@ -28,7 +28,7 @@ function normalizeProject(project) {
   };
 }
 
-function normalizeProperty(property) {
+export function normalizeProperty(property) {
   const first = property.images?.[0];
   return {
     ...property,

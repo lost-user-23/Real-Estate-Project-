@@ -2,6 +2,7 @@ const bcrypt = require("bcrypt");
 const User = require("../models/User");
 const Property = require("../models/Property");
 const PropertyImage = require("../models/PropertyImage");
+const { SavedProperty } = require("../models");
 const {
   hashPassword,
   comparePasswords,
@@ -271,6 +272,9 @@ async function deleteAccount(req, res, next) {
     if (propertyIds.length > 0) {
       await Property.deleteMany({ ownerId: user._id });
     }
+    await SavedProperty.deleteMany({
+      $or: [{ userId: user._id }, { propertyId: { $in: propertyIds } }],
+    });
     await User.deleteOne({ _id: user._id });
 
     if (propertyIds.length > 0) {

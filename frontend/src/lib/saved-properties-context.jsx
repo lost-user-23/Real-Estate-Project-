@@ -1,52 +1,77 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useLoginPrompt } from "@/lib/login-prompt-context";
 import { useToast } from "@/lib/toast-context";
 
 const SavedPropertiesContext = createContext(null);
+const BASE = "/api/v1/saved-properties";
 
 export function SavedPropertiesProvider({ children }) {
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, token } = useAuth();
   const { requestLogin } = useLoginPrompt();
   const { show } = useToast();
   const [savedIds, setSavedIds] = useState(new Set());
 
-  const save = useCallback(
-    (id) => {
-      setSavedIds((prev) => {
-        const next = new Set(prev);
-        next.add(id);
-        return next;
-      });
-      show("Saved to your favourites");
+  const setLocal = useCallback((id, saved) => {
+    setSavedIds((prev) => {
+      const next = new Set(prev);
+      if (saved) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
+  // Restore saved hearts when a session exists, clear them when it ends.
+  useEffect(() => {
+    if (!token) {
+      Promise.resolve().then(() => setSavedIds(new Set()));
+      return;
+    }
+    let cancelled = false;
+    api
+      .get(`${BASE}/ids`)
+      .then(({ propertyIds }) => {
+        // union, so a save made during login is not wiped by this response
+        if (!cancelled) setSavedIds((prev) => new Set([...propertyIds, ...prev]));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  // Optimistic update with rollback if the server call fails.
+  const persist = useCallback(
+    async (id, saved) => {
+      setLocal(id, saved);
+      try {
+        if (saved) {
+          await api.post(`${BASE}/${id}`, {});
+          show("Saved to your favourites");
+        } else {
+          await api.delete(`${BASE}/${id}`);
+        }
+      } catch {
+        setLocal(id, !saved);
+        show("Could not update favourites. Try again.");
+      }
     },
-    [show]
+    [setLocal, show]
   );
 
   const toggleSave = useCallback(
     (id) => {
       if (!isLoggedIn) {
         // Property saves automatically once login succeeds.
-        requestLogin(() => save(id));
+        requestLogin(() => persist(id, true));
         return;
       }
-      const willSave = !savedIds.has(id);
-      setSavedIds((prev) => {
-        const next = new Set(prev);
-        if (next.has(id)) {
-          next.delete(id);
-        } else {
-          next.add(id);
-        }
-        return next;
-      });
-      if (willSave) {
-        show("Saved to your favourites");
-      }
+      persist(id, !savedIds.has(id));
     },
-    [isLoggedIn, requestLogin, save, show, savedIds]
+    [isLoggedIn, requestLogin, persist, savedIds]
   );
 
   const value = useMemo(

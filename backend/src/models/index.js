@@ -8,4 +8,5 @@ module.exports = {
   Project: require('./Project'),
   Article: require('./Article'),
   Report: require('./Report'),
+  SavedProperty: require('./SavedProperty'),
 };
