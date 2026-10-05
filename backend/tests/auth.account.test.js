@@ -68,7 +68,7 @@ describe('all account endpoints require authentication', () => {
   ])('%s %s returns 401 without a token', async (method, path) => {
     const res = await request(app)[method](path).send({});
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ message: 'Not authenticated' });
+    expect(res.body).toEqual({ error: { message: 'Not authenticated' } });
   });
 });
 
@@ -144,7 +144,7 @@ describe('PATCH /api/auth/me', () => {
     const { token } = await registerUser();
     const res = await request(app).patch('/api/auth/me').set(auth(token)).send(body);
     expect(res.status).toBe(400);
-    expect(res.body.message).toEqual(expect.any(String));
+    expect(res.body.error.message).toEqual(expect.any(String));
   });
 });
 
@@ -213,7 +213,7 @@ describe('POST /api/auth/change-password', () => {
       .set(auth(token))
       .send({ currentPassword: 'wrong-password', newPassword });
     expect(res.status).toBe(400);
-    expect(res.body.message).toBe('Current password is incorrect');
+    expect(res.body.error.message).toBe('Current password is incorrect');
 
     const login = await request(app)
       .post('/api/auth/login')
@@ -291,7 +291,7 @@ describe('PATCH /api/auth/change-email', () => {
       .set(auth(token))
       .send({ currentPassword: creds.password, newEmail: 'TAKEN@example.com' });
     expect(res.status).toBe(400);
-    expect(res.body.message).toBe('User already exists');
+    expect(res.body.error.message).toBe('User already exists');
   });
 
   it('handles the duplicate-key race (11000 on save) like registration', async () => {
@@ -302,7 +302,7 @@ describe('PATCH /api/auth/change-email', () => {
       .set(auth(token))
       .send({ currentPassword: creds.password, newEmail: 'race@example.com' });
     expect(res.status).toBe(400);
-    expect(res.body.message).toBe('User already exists');
+    expect(res.body.error.message).toBe('User already exists');
     jest.restoreAllMocks();
     expect((await User.findById(id)).email).toBe(creds.email);
   });
@@ -360,7 +360,7 @@ describe('DELETE /api/auth/me', () => {
       .set(auth(token))
       .send({ password: creds.password });
     expect(res.status).toBe(400);
-    expect(res.body.message).toMatch(/last remaining admin/i);
+    expect(res.body.error.message).toMatch(/last remaining admin/i);
     expect(await User.findById(id)).not.toBeNull();
   });
 

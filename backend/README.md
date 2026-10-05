@@ -239,6 +239,9 @@ See `.env.example`.
 - `TRUST_PROXY_HOPS` (default `0`) is the number of reverse proxies in front of
   the server. It is passed to Express `trust proxy` as a hop count; anything
   that is not a positive whole number (including `true`) is treated as `0`.
+- `RATE_LIMIT_MAX` (default `200`) and `RATE_LIMIT_WINDOW_MS` (default
+  `900000`, 15 minutes) set the global per-IP limit that sits under the
+  stricter per-route limiters.
 
 ## Deploy notes
 

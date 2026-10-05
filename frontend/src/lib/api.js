@@ -1,4 +1,4 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+const BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000').replace(/\/$/, "");
 const TOKEN_KEY = 'auth_token';
 const NETWORK_ERROR_MESSAGE = "Could not reach the server. Check your connection and try again.";
 
@@ -39,13 +39,15 @@ export function setUnauthorizedHandler(fn){
 
 export async function request(
   path,
-  { method = "GET", body, headers, auth = true } = {}
+  { method = "GET", body, headers, auth = true, ...fetchOptions } = {}
 ) {
   const token = auth ? tokenStore.get() : null;
 
   let res;
   try {
     res = await fetch(`${BASE_URL}${path}`, {
+      // Extra options (signal, cache, next, ...) go first so they can't override method, headers or body.
+      ...fetchOptions,
       method,
       headers: {
         ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
@@ -54,7 +56,9 @@ export async function request(
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
-  } catch {
+  } catch (err) {
+    // An aborted request also rejects; callers cancelling on purpose must see it untouched.
+    if (err?.name === "AbortError") throw err;
     // fetch only rejects when no response arrived (server down, offline, CORS).
     // Browsers word that differently ("Failed to fetch", "Load failed"), so
     // callers get one readable message and status 0 instead.
@@ -74,10 +78,10 @@ export async function request(
       tokenStore.clear();
       if (onUnauthorized) onUnauthorized();
     }
-    // Auth endpoints (register/login) respond with a flat { message }; property
-    // and admin endpoints go through the shared error handler, which nests it
-    // as { error: { message, details } }. Handle both shapes.
-    const message = data?.error?.message || data?.message || `Request failed (${res.status})`;
+    // Every backend error goes through the shared error handler and arrives as
+    // { error: { message, details? } }. Non-JSON bodies (e.g. a proxy error page)
+    // fall back to the generic status message.
+    const message = data?.error?.message || `Request failed (${res.status})`;
     const details = data?.error?.details;
     // Validation errors carry the reasons in details; "Validation failed" alone
     // gives the user nothing to fix.

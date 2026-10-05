@@ -1,4 +1,4 @@
-import { apiRequest } from "@/lib/api-client";
+import { api } from "@/lib/api";
 
 const MIN_ACTIVE_LISTINGS_FOR_POPULAR = 5;
 
@@ -44,7 +44,7 @@ export function normalizeProperty(property) {
 export async function fetchFeaturedProperties(simulateError = false) {
   if (simulateError) throw new Error("Simulated network error");
 
-  const { properties } = await apiRequest("/api/v1/properties?featured=true&limit=50");
+  const { properties } = (await api.get("/api/v1/properties?featured=true&limit=50", { auth: false })) ?? {};
   const byRank = (a, b) => (a.featuredRank ?? Infinity) - (b.featuredRank ?? Infinity);
   const byRecent = (a, b) => (a.publishedAt < b.publishedAt ? 1 : -1);
   const ranked = properties.filter((p) => p.featuredRank != null).sort(byRank);
@@ -55,7 +55,7 @@ export async function fetchFeaturedProperties(simulateError = false) {
 export async function fetchPopularLocations(simulateError = false) {
   if (simulateError) throw new Error("Simulated network error");
 
-  const { locations } = await apiRequest("/api/v1/locations/popular");
+  const { locations } = (await api.get("/api/v1/locations/popular", { auth: false })) ?? {};
   return locations
     .filter((location) => location.activeListingCount >= MIN_ACTIVE_LISTINGS_FOR_POPULAR)
     .sort((a, b) => (a.popularRank ?? Infinity) - (b.popularRank ?? Infinity))
@@ -71,21 +71,21 @@ export async function fetchPopularLocations(simulateError = false) {
 export async function fetchCategories(simulateError = false) {
   if (simulateError) throw new Error("Simulated network error");
 
-  const { categories } = await apiRequest("/api/v1/categories");
+  const { categories } = (await api.get("/api/v1/categories", { auth: false })) ?? {};
   return categories;
 }
 
 export async function fetchNewProjects(simulateError = false) {
   if (simulateError) throw new Error("Simulated network error");
 
-  const { projects } = await apiRequest("/api/v1/projects/new");
+  const { projects } = (await api.get("/api/v1/projects/new", { auth: false })) ?? {};
   return projects.map(normalizeProject);
 }
 
 export async function fetchInsights(simulateError = false) {
   if (simulateError) throw new Error("Simulated network error");
 
-  const { articles } = await apiRequest("/api/v1/articles?limit=3");
+  const { articles } = (await api.get("/api/v1/articles?limit=3", { auth: false })) ?? {};
   return articles.map(normalizeArticle);
 }
 
@@ -94,7 +94,7 @@ export async function fetchInsights(simulateError = false) {
 export async function fetchBuilders(simulateError = false) {
   if (simulateError) throw new Error("Simulated network error");
 
-  const { projects } = await apiRequest("/api/v1/projects?limit=50");
+  const { projects } = (await api.get("/api/v1/projects?limit=50", { auth: false })) ?? {};
   const published = projects.map(normalizeProject);
   const byDeveloper = new Map();
   for (const project of published) {

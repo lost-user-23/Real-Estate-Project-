@@ -134,7 +134,7 @@ describe('contact rate limit (limiter active)', () => {
 
     expect(statuses.every((status) => status === 200)).toBe(true);
     expect(limited.status).toBe(429);
-    expect(limited.body.message).toMatch(/too many/i);
+    expect(limited.body.error.message).toMatch(/too many/i);
     expect(JSON.stringify(limited.body)).not.toContain(OWNER_NUMBER);
     // The budget is per user, not shared.
     expect(otherUser.status).toBe(200);

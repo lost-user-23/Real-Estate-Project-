@@ -112,7 +112,7 @@ describe('POST /api/auth/login', () => {
       .post('/api/auth/login')
       .send({ email: 'nobody@example.com', password: 'whatever' });
     expect(res.status).toBe(401);
-    expect(res.body.message).toBe('Invalid credentials');
+    expect(res.body.error.message).toBe('Invalid credentials');
   });
 
   it('rejects missing password', async () => {
@@ -184,6 +184,6 @@ describe('unexpected errors in register and login', () => {
     jest.spyOn(User, 'create').mockRejectedValueOnce(duplicate);
     const res = await request(app).post('/api/auth/register').send(creds);
     expect(res.status).toBe(400);
-    expect(res.body.message).toBe('User already exists');
+    expect(res.body.error.message).toBe('User already exists');
   });
 });

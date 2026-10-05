@@ -19,5 +19,6 @@ router.patch('/properties/bulk', protect, restrictTo('admin'), bulkUpdatePropert
 router.delete('/properties/bulk', protect, restrictTo('admin'), bulkDeleteProperties);
 router.use('/articles', protect, restrictTo('admin'), require('./admin-article.routes'));
 router.use('/reports', protect, restrictTo('admin'), require('./admin-report.routes'));
+router.use('/contact-messages', protect, restrictTo('admin'), require('./admin-contactMessage.routes'));
 router.use('/projects', protect, restrictTo('admin'), require('./admin-project.routes'));
 module.exports = router;

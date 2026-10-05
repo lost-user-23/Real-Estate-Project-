@@ -1,5 +1,6 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const AppError = require('../utils/AppError');
 const { protect } = require('../middleware/auth.middleware');
 const {
   createProperty,
@@ -23,7 +24,7 @@ const contactLimiter = rateLimit({
   keyGenerator: (req) => String(req.user._id),
   // Same convention as the auth limiters: tests flip NODE_ENV to exercise it.
   skip: () => process.env.NODE_ENV === 'test',
-  message: { message: 'Too many contact requests. Please try again later.' },
+  handler: (req, res, next, options) => next(new AppError('Too many contact requests. Please try again later.', options.statusCode)),
 });
 
 router.post('/', protect, createProperty);

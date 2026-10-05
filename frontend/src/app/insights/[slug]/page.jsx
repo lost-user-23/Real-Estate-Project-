@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { apiRequest } from "@/lib/api-client";
+import { api } from "@/lib/api";
 import { normalizeArticle } from "@/lib/dataSource";
 import { formatDate } from "@/lib/format";
 import { PageShell } from "@/components/layout/PageShell";
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 async function getArticle(slug) {
   try {
-    const { article } = await apiRequest(`/api/v1/articles/${encodeURIComponent(slug)}`, { cache: "no-store" });
+    const { article } = (await api.get(`/api/v1/articles/${encodeURIComponent(slug)}`, { auth: false, cache: "no-store" })) ?? {};
     return normalizeArticle(article);
   } catch (e) {
     if (e.status === 404) return null;

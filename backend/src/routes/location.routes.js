@@ -1,5 +1,6 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit')
+const AppError = require('../utils/AppError');
 const { getPopularLocations, getLocationSuggestions } = require('../controllers/location.controller');
 const { getFacilitiesByLocation } = require('../controllers/facility.controller');
 
@@ -9,7 +10,7 @@ const locationSuggestionsLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     skip: () => process.env.NODE_ENV === 'test',
-    message: { message: 'Too many attempts, please try again later' },
+    handler: (req, res, next, options) => next(new AppError('Too many attempts, please try again later', options.statusCode)),
 });
 
 const router = express.Router();

@@ -2,7 +2,7 @@ import { cache } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { apiRequest } from "@/lib/api-client";
+import { api } from "@/lib/api";
 import { formatPrice } from "@/lib/format";
 import { PageShell } from "@/components/layout/PageShell";
 import { Container } from "@/components/ui/Container";
@@ -12,8 +12,8 @@ const getProject = cache(async (id) => {
   if (!/^[a-f\d]{24}$/i.test(id)) return null;
 
   try {
-    const result = await apiRequest(`/api/v1/projects/${encodeURIComponent(id)}`);
-    return result.project ?? null;
+    const result = await api.get(`/api/v1/projects/${encodeURIComponent(id)}`, { auth: false });
+    return result?.project ?? null;
   } catch (error) {
     if (error.status === 404) return null;
     throw error;

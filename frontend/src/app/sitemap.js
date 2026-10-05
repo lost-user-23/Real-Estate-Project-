@@ -1,5 +1,5 @@
 import { unstable_rethrow } from "next/navigation";
-import { apiRequest } from "@/lib/api-client";
+import { api } from "@/lib/api";
 import { SITE_URL } from "@/lib/site";
 
 // Rebuilt at most hourly, so a build that ran while the API was down picks the
@@ -32,10 +32,11 @@ const STATIC_ROUTES = [
 async function fetchAll(path, key) {
   const items = [];
   for (let page = 1; page <= MAX_PAGES; page += 1) {
-    const data = await apiRequest(`${path}?page=${page}&limit=${PAGE_SIZE}`, {
+    const data = (await api.get(`${path}?page=${page}&limit=${PAGE_SIZE}`, {
+      auth: false,
       next: { revalidate },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
+    })) ?? {};
     items.push(...(data[key] ?? []));
     if (page >= (data.meta?.totalPages ?? 1)) break;
   }

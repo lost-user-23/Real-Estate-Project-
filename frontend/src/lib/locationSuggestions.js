@@ -1,4 +1,4 @@
-import { apiRequest } from "@/lib/api-client";
+import { api } from "@/lib/api";
 
 const MAX_SUGGESTIONS = 6;
 
@@ -8,7 +8,7 @@ export async function getLocationSuggestions(query, { signal } = {}) {
   if (trimmed.length < 2) return [];
 
   const params = new URLSearchParams({ q: trimmed });
-  const { locations } = await apiRequest(`/api/v1/locations/suggestions?${params.toString()}`, { signal });
+  const { locations = [] } = (await api.get(`/api/v1/locations/suggestions?${params.toString()}`, { auth: false, signal })) ?? {};
 
   const cityMatches = locations.filter((l) => l.locality === null);
   const localityMatches = locations.filter((l) => l.locality !== null);

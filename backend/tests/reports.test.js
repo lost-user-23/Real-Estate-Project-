@@ -340,6 +340,6 @@ describe('report rate limit (limiter active)', () => {
 
     expect(statuses.every((status) => status === 201)).toBe(true);
     expect(limited.status).toBe(429);
-    expect(limited.body).toEqual({ message: 'Too many reports. Please try again later.' });
+    expect(limited.body).toEqual({ error: { message: 'Too many reports. Please try again later.' } });
   });
 });

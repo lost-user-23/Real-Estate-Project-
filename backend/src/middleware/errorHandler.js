@@ -4,6 +4,10 @@ const config = require('../config');
 // details? } triple the response builder below already understands, so
 // route handlers can just throw/reject and never touch res.json themselves.
 function normalize(err) {
+  if (err.type === 'entity.parse.failed') {
+    return { status: 400, message: 'Invalid JSON body' };
+  }
+
   if (err.name === 'ValidationError' && err.errors) {
     return {
       status: 400,

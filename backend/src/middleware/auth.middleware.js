@@ -1,11 +1,12 @@
 const { verifyToken, isTokenStale } = require("../services/auth.service");
 const User = require("../models/User");
+const AppError = require("../utils/AppError");
 
 async function protect(req, res, next) {
   const authHeader = req.headers.authorization;
 
   if (!authHeader?.startsWith("Bearer ")) {
-    return res.status(401).json({ message: "Not authenticated" });
+    return next(AppError.unauthorized());
   }
 
   let decoded;
@@ -13,17 +14,17 @@ async function protect(req, res, next) {
     decoded = verifyToken(authHeader.split(" ")[1]);
   } catch {
     // Malformed, tampered or expired token.
-    return res.status(401).json({ message: "Not authenticated" });
+    return next(AppError.unauthorized());
   }
 
   try {
     const user = await User.findById(decoded.id);
     if (!user) {
-      return res.status(401).json({ message: "Not authenticated" });
+      return next(AppError.unauthorized());
     }
 
     if (isTokenStale(user, decoded)) {
-      return res.status(401).json({ message: "Not authenticated" });
+      return next(AppError.unauthorized());
     }
 
     req.user = user;
@@ -32,7 +33,7 @@ async function protect(req, res, next) {
     // A lookup failure (DB down, bad id in a signed token) is not the client's
     // auth problem; a 401 here would make the frontend log the user out.
     if (error?.name === "CastError") {
-      return res.status(401).json({ message: "Not authenticated" });
+      return next(AppError.unauthorized());
     }
     next(error);
   }
@@ -41,7 +42,7 @@ async function protect(req, res, next) {
 function restrictTo(...allowedRoles) {
   return (req, res, next) => {
     if (!req.user || !allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ message: "Forbidden" });
+      return next(AppError.forbidden());
     }
     next();
   };

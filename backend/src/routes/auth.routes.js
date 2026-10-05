@@ -1,5 +1,6 @@
 const express =  require('express');
 const rateLimit = require('express-rate-limit');
+const AppError = require('../utils/AppError');
 const router = express.Router();
 const {protect} = require("../middleware/auth.middleware");
 const {
@@ -20,7 +21,7 @@ const authLimiter = rateLimit({
   // Automated tests hit these routes far more than any real client would
   // within a window; Jest sets NODE_ENV=test by default.
   skip: () => process.env.NODE_ENV === 'test',
-  message: { message: 'Too many attempts, please try again later' },
+  handler: (req, res, next, options) => next(new AppError('Too many attempts, please try again later', options.statusCode)),
 });
 
 // Password/email/delete take the current password, so they are brute-force
@@ -33,7 +34,7 @@ const accountLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => String(req.user._id),
   skip: () => process.env.NODE_ENV === 'test',
-  message: { message: 'Too many attempts, please try again later' },
+  handler: (req, res, next, options) => next(new AppError('Too many attempts, please try again later', options.statusCode)),
 });
 
 router.post('/register', authLimiter, register);

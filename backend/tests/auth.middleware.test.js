@@ -44,7 +44,7 @@ describe('protect middleware', () => {
       .get('/protected')
       .set('Authorization', 'Bearer not-a-real-token');
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ message: 'Not authenticated' });
+    expect(res.body).toEqual({ error: { message: 'Not authenticated' } });
   });
 
   it('returns 401 for a validly signed token carrying a malformed user id', async () => {
@@ -53,7 +53,7 @@ describe('protect middleware', () => {
       .get('/protected')
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ message: 'Not authenticated' });
+    expect(res.body).toEqual({ error: { message: 'Not authenticated' } });
   });
 
   describe('when the user lookup fails with a database error', () => {

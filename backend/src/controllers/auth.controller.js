@@ -1,5 +1,6 @@
 const bcrypt = require("bcrypt");
 const User = require("../models/User");
+const AppError = require("../utils/AppError");
 const Property = require("../models/Property");
 const PropertyImage = require("../models/PropertyImage");
 const { SavedProperty } = require("../models");
@@ -45,23 +46,21 @@ async function register(req, res, next) {
     const normalizedEmail = normalizeEmail(email);
 
     if (!normalizedEmail || !password) {
-      return res
-        .status(400)
-        .json({ message: "Email and password are required" });
+      throw new AppError("Email and password are required", 400);
     }
 
     if (!EMAIL_RE.test(normalizedEmail)) {
-      return res.status(400).json({ message: "Invalid email address" });
+      throw new AppError("Invalid email address", 400);
     }
 
     const pwError = passwordError(password);
     if (pwError) {
-      return res.status(400).json({ message: pwError });
+      throw new AppError(pwError, 400);
     }
 
     const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
-      return res.status(400).json({ message: USER_EXISTS_MESSAGE });
+      throw new AppError(USER_EXISTS_MESSAGE, 400);
     }
 
     const passwordHash = await hashPassword(password);
@@ -76,7 +75,7 @@ async function register(req, res, next) {
   } catch (err) {
     // Two concurrent registrations can both pass the findOne check above.
     if (err?.code === 11000) {
-      return res.status(400).json({ message: USER_EXISTS_MESSAGE });
+      return next(new AppError(USER_EXISTS_MESSAGE, 400));
     }
     return next(err);
   }
@@ -88,9 +87,7 @@ async function login(req, res, next) {
     const normalizedEmail = normalizeEmail(email);
 
     if (!normalizedEmail || !password) {
-      return res
-        .status(400)
-        .json({ message: "Email and password are required" });
+      throw new AppError("Email and password are required", 400);
     }
 
     const user = await User.findOne({ email: normalizedEmail }).select("+passwordHash");
@@ -103,7 +100,7 @@ async function login(req, res, next) {
     ).then((match) => Boolean(user?.passwordHash) && match);
 
     if (!isValid) {
-      return res.status(401).json({ message: "Invalid credentials" });
+      throw new AppError("Invalid credentials", 401);
     }
 
     const token = generateToken(user);
@@ -126,9 +123,7 @@ async function updateProfile(req, res, next) {
 
     if (name !== undefined) {
       if (typeof name !== "string" || name.trim().length > MAX_NAME_LENGTH) {
-        return res
-          .status(400)
-          .json({ message: `Name must be text of at most ${MAX_NAME_LENGTH} characters` });
+        throw new AppError(`Name must be text of at most ${MAX_NAME_LENGTH} characters`, 400);
       }
       updates.name = name.trim();
     }
@@ -137,13 +132,13 @@ async function updateProfile(req, res, next) {
       const trimmed = typeof phone === "string" ? phone.trim() : null;
       // An empty string clears the phone number.
       if (trimmed === null || (trimmed !== "" && !PHONE_RE.test(trimmed))) {
-        return res.status(400).json({ message: "Invalid phone number" });
+        throw new AppError("Invalid phone number", 400);
       }
       updates.phone = trimmed;
     }
 
     if (Object.keys(updates).length === 0) {
-      return res.status(400).json({ message: "Nothing to update" });
+      throw new AppError("Nothing to update", 400);
     }
 
     const user = await User.findByIdAndUpdate(
@@ -152,7 +147,7 @@ async function updateProfile(req, res, next) {
       { returnDocument: "after", runValidators: true }
     );
     if (!user) {
-      return res.status(401).json({ message: "Not authenticated" });
+      throw new AppError("Not authenticated", 401);
     }
     return res.status(200).json({ user: serializeUser(user) });
   } catch (err) {
@@ -160,26 +155,23 @@ async function updateProfile(req, res, next) {
   }
 }
 
-// Loads the caller with their hash and checks the supplied password. Sends the
-// response and returns null on failure. A wrong password is a 400, not a 401:
+// Loads the caller with their hash and checks the supplied password. Throws an
+// AppError on failure. A wrong password is a 400, not a 401:
 // the frontend treats any 401 on an authenticated request as "session expired"
 // and logs the user out.
-async function loadUserWithVerifiedPassword(req, res, password) {
+async function loadUserWithVerifiedPassword(req, password) {
   if (typeof password !== "string" || !password) {
-    res.status(400).json({ message: "Current password is required" });
-    return null;
+    throw new AppError("Current password is required", 400);
   }
   const user = await User.findById(req.user._id).select("+passwordHash");
   if (!user) {
-    res.status(401).json({ message: "Not authenticated" });
-    return null;
+    throw new AppError("Not authenticated", 401);
   }
   const match = user.passwordHash
     ? await comparePasswords(password, user.passwordHash)
     : false;
   if (!match) {
-    res.status(400).json({ message: "Current password is incorrect" });
-    return null;
+    throw new AppError("Current password is incorrect", 400);
   }
   return user;
 }
@@ -190,12 +182,10 @@ async function changePassword(req, res, next) {
 
     const pwError = passwordError(newPassword);
     if (pwError) {
-      return res.status(400).json({ message: pwError.replace("Password", "New password") });
+      throw new AppError(pwError.replace("Password", "New password"), 400);
     }
 
-    const user = await loadUserWithVerifiedPassword(req, res, currentPassword);
-    if (!user) return null;
-
+    const user = await loadUserWithVerifiedPassword(req, currentPassword);
     user.passwordHash = await hashPassword(newPassword);
     user.passwordChangedAt = new Date();
     await user.save();
@@ -214,22 +204,20 @@ async function changeEmail(req, res, next) {
     const normalizedEmail = normalizeEmail(newEmail);
 
     if (!normalizedEmail) {
-      return res.status(400).json({ message: "New email is required" });
+      throw new AppError("New email is required", 400);
     }
     if (!EMAIL_RE.test(normalizedEmail)) {
-      return res.status(400).json({ message: "Invalid email address" });
+      throw new AppError("Invalid email address", 400);
     }
 
-    const user = await loadUserWithVerifiedPassword(req, res, currentPassword);
-    if (!user) return null;
-
+    const user = await loadUserWithVerifiedPassword(req, currentPassword);
     if (normalizedEmail === user.email) {
-      return res.status(400).json({ message: "New email is the same as the current email" });
+      throw new AppError("New email is the same as the current email", 400);
     }
 
     const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
-      return res.status(400).json({ message: USER_EXISTS_MESSAGE });
+      throw new AppError(USER_EXISTS_MESSAGE, 400);
     }
 
     // TODO: require verification of the new address (emailed link/code) before
@@ -240,7 +228,7 @@ async function changeEmail(req, res, next) {
     return res.status(200).json({ user: serializeUser(user) });
   } catch (err) {
     if (err?.code === 11000) {
-      return res.status(400).json({ message: USER_EXISTS_MESSAGE });
+      return next(new AppError(USER_EXISTS_MESSAGE, 400));
     }
     return next(err);
   }
@@ -256,15 +244,11 @@ async function deleteAccount(req, res, next) {
   try {
     const { password } = req.body ?? {};
 
-    const user = await loadUserWithVerifiedPassword(req, res, password);
-    if (!user) return null;
-
+    const user = await loadUserWithVerifiedPassword(req, password);
     if (user.role === "admin") {
       const adminCount = await User.countDocuments({ role: "admin" });
       if (adminCount <= 1) {
-        return res
-          .status(400)
-          .json({ message: "The last remaining admin account cannot be deleted" });
+        throw new AppError("The last remaining admin account cannot be deleted", 400);
       }
     }
 

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { apiRequest } from "@/lib/api-client";
+import { api } from "@/lib/api";
 import { PROPERTY_TYPE_LABELS } from "@/lib/propertyTypes";
 import { formatPrice } from "@/lib/format";
 import { PropertyCard } from "@/components/home/PropertyCard";
@@ -40,9 +40,9 @@ export function SearchResults() {
   useEffect(() => {
     const controller = new AbortController();
 
-    apiRequest(`/api/v1/properties?${queryString}`, { signal: controller.signal })
+    api.get(`/api/v1/properties?${queryString}`, { auth: false, signal: controller.signal })
       .then((result) => {
-        const properties = (result.properties ?? []).map((property) => ({
+        const properties = (result?.properties ?? []).map((property) => ({
           ...property,
           id: String(property._id),
           image: property.images?.[0]
@@ -52,7 +52,7 @@ export function SearchResults() {
                 alt: property.title,
               },
         }));
-        setState({ status: "success", properties, meta: result.meta, error: "", requestKey });
+        setState({ status: "success", properties, meta: result?.meta ?? null, error: "", requestKey });
       })
       .catch((error) => {
         if (error.name === "AbortError") return;

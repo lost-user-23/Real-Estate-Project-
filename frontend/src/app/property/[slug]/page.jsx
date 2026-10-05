@@ -1,7 +1,7 @@
 import { cache } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { apiRequest } from "@/lib/api-client";
+import { api } from "@/lib/api";
 import { formatArea, formatPrice } from "@/lib/format";
 import { PROPERTY_TYPE_LABELS } from "@/lib/propertyTypes";
 import { PageShell } from "@/components/layout/PageShell";
@@ -14,8 +14,8 @@ import { CheckBadgeIcon, MapPinIcon, StarIcon } from "@/components/icons";
 
 const getProperty = cache(async (slug) => {
   try {
-    const result = await apiRequest(`/api/v1/properties/${encodeURIComponent(slug)}`);
-    return result.property ?? null;
+    const result = await api.get(`/api/v1/properties/${encodeURIComponent(slug)}`, { auth: false });
+    return result?.property ?? null;
   } catch (error) {
     if (error.status === 404) return null;
     throw error;
