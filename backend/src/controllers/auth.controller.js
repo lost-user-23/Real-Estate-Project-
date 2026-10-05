@@ -4,6 +4,7 @@ const AppError = require("../utils/AppError");
 const Property = require("../models/Property");
 const PropertyImage = require("../models/PropertyImage");
 const { SavedProperty } = require("../models");
+const { deleteAssetsForImages } = require("../services/cloudinaryAssets.service");
 const {
   hashPassword,
   comparePasswords,
@@ -263,7 +264,9 @@ async function deleteAccount(req, res, next) {
 
     if (propertyIds.length > 0) {
       try {
+        const images = await PropertyImage.find({ propertyId: { $in: propertyIds } }).lean();
         await PropertyImage.deleteMany({ propertyId: { $in: propertyIds } });
+        await deleteAssetsForImages(images, user._id);
       } catch (cleanupErr) {
         console.error("[account] image cleanup failed after account deletion:", cleanupErr.message);
       }

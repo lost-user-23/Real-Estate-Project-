@@ -10,6 +10,7 @@ instead).
 - `setup-db.js` — run via `npm run db:setup` (see `../README.md` → "Setting
   up database indexes"). Syncs every model's indexes; never drops a
   collection or deletes data.
+- `backfill-city-lower.js` - run via `npm run backfill:city-lower`. Fills `cityLower` on properties, projects and locations (and `localityLower` on locations) for documents created before those fields existed. Idempotent: it only writes documents whose value differs, prints counts only, and is safe to run twice. Run it after deploying the code and before relying on city filters, then run `npm run db:setup` to build the new indexes.
 - `seed.js` — run via `npm run seed` (see `../README.md` → "Seeding the
   database" for usage, what it does, and how to rerun it safely).
 - `seedData/` — pure helpers used by `seed.js`: `loadMockData.js` reads

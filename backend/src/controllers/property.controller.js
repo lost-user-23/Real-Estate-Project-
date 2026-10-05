@@ -5,6 +5,7 @@ const propertyService = require('../services/property.service');
 const { BULK_UPDATABLE_FIELDS } = propertyService;
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
+const { parseOptionalCity } = require('../utils/queryParams');
 const { serializeProperty, serializeProperties } = require('../utils/serializers/property.serializer');
 
 const MAX_LIMIT = 50;
@@ -44,6 +45,9 @@ function validateImagesInput(images, minimumCount = 0) {
     }
     if (image != null && image.alt != null && typeof image.alt !== 'string') {
       errors.push(`images[${index}].alt must be a string`);
+    }
+    if (image != null && image.publicId != null && !isNonEmptyString(image.publicId)) {
+      errors.push(`images[${index}].publicId must be a non-empty string`);
     }
   });
 
@@ -189,6 +193,36 @@ const listProperties = asyncHandler(async (req, res) => {
     properties: serializeProperties(properties, imagesByPropertyId),
     meta: { total, page, limit, totalPages },
   });
+});
+
+const FEATURED_DEFAULT_LIMIT = 8;
+
+function parseFeaturedQuery(query) {
+  const errors = [];
+  let limit = FEATURED_DEFAULT_LIMIT;
+  const city = parseOptionalCity(query, errors);
+
+  if (query.limit != null) {
+    const num = typeof query.limit === 'string' && query.limit.trim() !== '' ? Number(query.limit) : NaN;
+    if (!Number.isInteger(num) || num < 1) {
+      errors.push('limit must be a positive integer');
+    } else {
+      limit = Math.min(num, MAX_LIMIT);
+    }
+  }
+
+  return { city, limit, errors };
+}
+
+const listFeaturedProperties = asyncHandler(async (req, res) => {
+  const { city, limit, errors } = parseFeaturedQuery(req.query || {});
+  if (errors.length > 0) {
+    throw AppError.badRequest('Validation failed', errors);
+  }
+
+  const { properties, imagesByPropertyId, scope } = await propertyService.findFeaturedProperties({ city, limit });
+
+  res.status(200).json({ properties: serializeProperties(properties, imagesByPropertyId), scope });
 });
 
 const listMyProperties = asyncHandler(async (req, res) => {
@@ -424,6 +458,7 @@ module.exports = {
   createProperty,
   listProperties,
   listMyProperties,
+  listFeaturedProperties,
   listAdminProperties,
   getPropertyBySlug,
   getPropertyContact,

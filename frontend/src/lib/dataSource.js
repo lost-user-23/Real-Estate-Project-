@@ -40,16 +40,18 @@ export function normalizeProperty(property) {
   };
 }
 
-// Admin-flagged listings: explicit ranks first, then unranked by most recently published.
-export async function fetchFeaturedProperties(simulateError = false) {
+// Admin-flagged listings. Ordering, the city filter and the nationwide
+// fallback all happen on the server; `scope` says which list came back.
+export async function fetchFeaturedProperties(city, limit, simulateError = false) {
   if (simulateError) throw new Error("Simulated network error");
 
-  const { properties } = (await api.get("/api/v1/properties?featured=true&limit=50", { auth: false })) ?? {};
-  const byRank = (a, b) => (a.featuredRank ?? Infinity) - (b.featuredRank ?? Infinity);
-  const byRecent = (a, b) => (a.publishedAt < b.publishedAt ? 1 : -1);
-  const ranked = properties.filter((p) => p.featuredRank != null).sort(byRank);
-  const unranked = properties.filter((p) => p.featuredRank == null).sort(byRecent);
-  return [...ranked, ...unranked].slice(0, 8).map(normalizeProperty);
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (city) params.set("city", city);
+  const data = (await api.get(`/api/v1/properties/featured?${params}`, { auth: false })) ?? {};
+  return {
+    properties: (data.properties ?? []).map(normalizeProperty),
+    scope: data.scope ?? "national",
+  };
 }
 
 export async function fetchPopularLocations(simulateError = false) {
@@ -89,24 +91,22 @@ export async function fetchInsights(simulateError = false) {
   return articles.map(normalizeArticle);
 }
 
-// Builders/developers aren't their own record type yet, so derive them from
-// the public project API.
-export async function fetchBuilders(simulateError = false) {
+async function requestBuilders(city) {
+  const query = city ? `?${new URLSearchParams({ city })}` : "";
+  const { builders } = (await api.get(`/api/v1/projects/builders${query}`, { auth: false })) ?? {};
+  return (builders ?? []).map((builder) => ({
+    ...builder,
+    projects: (builder.projects ?? []).map(normalizeProject),
+  }));
+}
+
+// Grouping, counting and ordering happen on the server. A city with no
+// builders falls back to the nationwide list so the section is never blank;
+// `scope` says which list came back.
+export async function fetchBuilders(city, simulateError = false) {
   if (simulateError) throw new Error("Simulated network error");
 
-  const { projects } = (await api.get("/api/v1/projects?limit=50", { auth: false })) ?? {};
-  const published = projects.map(normalizeProject);
-  const byDeveloper = new Map();
-  for (const project of published) {
-    if (!byDeveloper.has(project.developer)) {
-      byDeveloper.set(project.developer, { name: project.developer, projects: [] });
-    }
-    byDeveloper.get(project.developer).projects.push(project);
-  }
-  const builders = [...byDeveloper.values()].map((builder) => ({
-    ...builder,
-    cities: [...new Set(builder.projects.map((p) => p.city))],
-    projectCount: builder.projects.length,
-  }));
-  return builders;
+  const inCity = city ? await requestBuilders(city) : [];
+  if (inCity.length > 0) return { builders: inCity, scope: "city" };
+  return { builders: await requestBuilders(), scope: "national" };
 }

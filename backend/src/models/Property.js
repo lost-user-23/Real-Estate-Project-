@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const normalizedLocationPlugin = require('./plugins/normalizedLocation');
 
 const { Schema } = mongoose;
 
@@ -67,6 +68,10 @@ const propertySchema = new Schema(
       required: true,
       trim: true,
     },
+    // normalizeCity(city); the field city matching runs on. Never user-supplied.
+    cityLower: {
+      type: String,
+    },
     locality: {
       type: String,
       default: null,
@@ -111,14 +116,17 @@ const propertySchema = new Schema(
   { timestamps: true }
 );
 
-propertySchema.index({ status: 1 });
 propertySchema.index({ featured: 1 });
 propertySchema.index({ featuredRank: 1 });
 propertySchema.index({ publishedAt: -1 });
-propertySchema.index({ city: 1 });
+// Public list and featured queries always filter on status first, then city.
+propertySchema.index({ status: 1, cityLower: 1, publishedAt: -1 });
+propertySchema.index({ status: 1, featured: 1, cityLower: 1 });
 propertySchema.index({ locality: 1 });
 propertySchema.index({ intent: 1 });
 propertySchema.index({ propertyType: 1 });
+
+propertySchema.plugin(normalizedLocationPlugin);
 
 module.exports = mongoose.model('Property', propertySchema);
 module.exports.PROPERTY_INTENTS = PROPERTY_INTENTS;

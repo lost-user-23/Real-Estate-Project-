@@ -7,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { fetchNewProjects } from "@/lib/dataSource";
 import { useSectionData } from "@/lib/useSectionData";
 import { useCity } from "@/lib/city-context";
+import { isSameCity } from "@/lib/city";
 import { formatPrice } from "@/lib/format";
 import { Section } from "@/components/ui/Section";
 import { SkeletonGrid } from "@/components/ui/SkeletonGrid";
@@ -22,7 +23,7 @@ export function NewProjects() {
   const { shown, scopedToAll } = useMemo(() => {
     if (!data) return { shown: [], scopedToAll: false };
     if (!city) return { shown: data, scopedToAll: false };
-    const inCity = data.filter((p) => p.city === city);
+    const inCity = data.filter((p) => isSameCity(p.city, city));
     if (inCity.length > 0) return { shown: inCity, scopedToAll: false };
     return { shown: data, scopedToAll: true };
   }, [data, city]);
@@ -35,7 +36,7 @@ export function NewProjects() {
       title="New projects"
       subtitle={
         scopedToAll
-          ? `No new launches in ${city} yet — showing recent launches nationwide.`
+          ? `No new launches in ${city} yet. Showing recent launches nationwide.`
           : "Recently launched developments worth a look."
       }
       tone="surface"

@@ -52,6 +52,11 @@ describe('seed data transforms (no MongoDB required)', () => {
       });
     });
 
+    it('adds the normalized cityLower for matching', () => {
+      const { doc } = transformProperty({ ...validMock, city: '  New   Delhi ' });
+      expect(doc.cityLower).toBe('new delhi');
+    });
+
     it('never invents an ownerId or contactNumber', () => {
       const { doc } = transformProperty(validMock);
       expect(doc.ownerId).toBeNull();
@@ -101,7 +106,9 @@ describe('seed data transforms (no MongoDB required)', () => {
       });
       expect(doc).toEqual({
         city: 'Bengaluru',
+        cityLower: 'bengaluru',
         locality: null,
+        localityLower: null,
         activeListingCount: 1240,
         popular: true,
         popularRank: 1,
@@ -124,6 +131,18 @@ describe('seed data transforms (no MongoDB required)', () => {
     });
   });
 
+  describe('transformLocation normalized fields', () => {
+    it('adds cityLower and localityLower, with null locality staying null', () => {
+      const base = { id: 'l2', city: ' Mumbai ', activeListingCount: 1 };
+      expect(transformLocation({ ...base, locality: 'Andheri  West' }).doc).toEqual(
+        expect.objectContaining({ cityLower: 'mumbai', localityLower: 'andheri west' })
+      );
+      expect(transformLocation(base).doc).toEqual(
+        expect.objectContaining({ cityLower: 'mumbai', localityLower: null })
+      );
+    });
+  });
+
   describe('transformProject', () => {
     const validMock = {
       id: 'pr1',
@@ -143,6 +162,10 @@ describe('seed data transforms (no MongoDB required)', () => {
       expect(doc.name).toBe('Emerald Heights');
       expect(doc.publishedAt).toBeInstanceOf(Date);
       expect(doc.imageUrl).toBe('https://picsum.photos/seed/proj-1/800/600');
+    });
+
+    it('adds the normalized cityLower for matching', () => {
+      expect(transformProject({ ...validMock, city: 'BENGALURU ' }).doc.cityLower).toBe('bengaluru');
     });
 
     it('rejects an invalid status', () => {

@@ -3,6 +3,7 @@ function serializeImage(image) {
   return {
     id: String(obj._id),
     url: obj.url,
+    publicId: obj.publicId ?? null,
     alt: obj.alt,
     displayOrder: obj.displayOrder,
   };
@@ -20,6 +21,7 @@ function serializeProperty(property, images = [], { includeContactNumber = false
   } else {
     delete obj.contactNumber;
   }
+  delete obj.cityLower;
   obj.images = images.map(serializeImage);
   return obj;
 }

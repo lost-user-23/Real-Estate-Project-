@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useCity } from "@/lib/city-context";
+import { isSameCity } from "@/lib/city";
 import { MOCK_LOCATIONS } from "@/lib/mockData";
 import { ChevronDownIcon, MapPinIcon } from "@/components/icons";
 
@@ -72,10 +73,10 @@ export function CitySelector({ transparent = false }) {
               key={location.id}
               type="button"
               role="option"
-              aria-selected={city === location.city}
+              aria-selected={isSameCity(city, location.city)}
               onClick={() => select(location.city)}
               className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-bg ${
-                city === location.city ? "font-semibold text-primary" : ""
+                isSameCity(city, location.city) ? "font-semibold text-primary" : ""
               }`}
             >
               <span>{location.city}</span>

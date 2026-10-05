@@ -249,7 +249,7 @@ export function AdminStoreProvider({ children }) {
             if (!res.ok || !result.secure_url) {
               throw new Error(result.error?.message || `Photo ${index + 1} could not be uploaded.`);
             }
-            return { url: result.secure_url, alt: file.name, displayOrder: index };
+            return { url: result.secure_url, publicId: result.public_id, alt: file.name, displayOrder: index };
           })
         );
         const { property } = await api.post("/api/v1/properties", { ...input, images });

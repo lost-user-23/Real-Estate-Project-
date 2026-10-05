@@ -1,6 +1,8 @@
 const crypto = require('crypto');
 const { Property, PropertyImage, SavedProperty } = require('../models');
 const AppError = require('../utils/AppError');
+const { normalizeCity } = require('../utils/normalizeCity');
+const { resolvePublicId, deleteAssetsForImages } = require('./cloudinaryAssets.service');
 
 const EDITABLE_FIELDS = [
   'title',
@@ -61,6 +63,7 @@ function normalizeImageInput(images) {
     }
     return {
       url: image.url,
+      publicId: image.publicId ?? null,
       alt: image.alt ?? '',
       displayOrder: image.displayOrder ?? index,
     };
@@ -68,12 +71,22 @@ function normalizeImageInput(images) {
 }
 
 // Replace the property's complete set of image records with the submitted set.
-async function replacePropertyImages(propertyId, images) {
+// Assets of images that were in the old set and are not in the new one are
+// deleted from Cloudinary, but only after the replacement has succeeded.
+async function replacePropertyImages(propertyId, images, ownerId) {
+  const previous = await PropertyImage.find({ propertyId }).lean();
   await PropertyImage.deleteMany({ propertyId });
-  if (!images || images.length === 0) return [];
 
-  const docs = normalizeImageInput(images).map((image) => ({ ...image, propertyId }));
-  return PropertyImage.insertMany(docs);
+  const docs = images && images.length > 0
+    ? normalizeImageInput(images).map((image) => ({ ...image, propertyId }))
+    : [];
+  const inserted = docs.length > 0 ? await PropertyImage.insertMany(docs) : [];
+
+  const kept = new Set(inserted.map((row) => resolvePublicId(row)).filter(Boolean));
+  const removed = previous.filter((image) => !kept.has(resolvePublicId(image)));
+  await deleteAssetsForImages(removed, ownerId);
+
+  return inserted;
 }
 
 async function getPropertyImages(propertyId) {
@@ -118,7 +131,7 @@ async function createProperty({ ownerId, input }) {
   }
 
   const images = input.images && input.images.length > 0
-    ? await replacePropertyImages(property._id, input.images)
+    ? await replacePropertyImages(property._id, input.images, property.ownerId)
     : [];
 
   return { property, images };
@@ -157,7 +170,7 @@ function buildListFilter({ intent, city, locality, propertyType, minPrice, maxPr
   if (featured != null) filter.featured = featured;
   if (intent) filter.intent = intent;
   if (propertyType) filter.propertyType = propertyType;
-  if (city) filter.city = new RegExp(`^${escapeRegExp(city)}$`, 'i');
+  if (city) filter.cityLower = normalizeCity(city);
   if (locality) filter.locality = new RegExp(`^${escapeRegExp(locality)}$`, 'i');
 
   if (minPrice != null || maxPrice != null) {
@@ -188,6 +201,38 @@ async function findProperties({ filters, page, limit }) {
     total,
     totalPages: Math.max(1, Math.ceil(total / limit)),
   };
+}
+
+// Ranked picks first (rank 0 is a valid rank), then unranked newest first. The
+// aggregation only decides the order of ids: documents are loaded through
+// find() afterwards so select:false fields stay hidden and nothing raw leaks.
+async function featuredIds({ city, limit }) {
+  const rows = await Property.aggregate([
+    { $match: buildListFilter({ featured: true, city }) },
+    { $addFields: { isUnranked: { $in: [{ $type: '$featuredRank' }, ['null', 'missing']] } } },
+    { $sort: { isUnranked: 1, featuredRank: 1, publishedAt: -1, _id: 1 } },
+    { $limit: limit },
+    { $project: { _id: 1 } },
+  ]);
+  return rows.map((row) => row._id);
+}
+
+// A city with no featured listings falls back to the national list so the
+// homepage section is never blank; `scope` tells the caller which one it got.
+async function findFeaturedProperties({ city, limit }) {
+  let scope = city ? 'city' : 'national';
+  let ids = city ? await featuredIds({ city, limit }) : [];
+  if (!city || ids.length === 0) {
+    scope = 'national';
+    ids = await featuredIds({ limit });
+  }
+
+  const found = await Property.find({ _id: { $in: ids } });
+  const byId = new Map(found.map((p) => [p._id.toString(), p]));
+  const properties = ids.map((id) => byId.get(id.toString())).filter(Boolean);
+  const imagesByPropertyId = await getImagesForProperties(ids);
+
+  return { properties, imagesByPropertyId, scope };
 }
 
 // Owner's own listings in every status (drafts included), newest first. The
@@ -259,7 +304,7 @@ async function updatePropertyById(id, body, actor) {
   await property.save();
 
   const images = Object.prototype.hasOwnProperty.call(body, 'images')
-    ? await replacePropertyImages(property._id, body.images)
+    ? await replacePropertyImages(property._id, body.images, property.ownerId)
     : await getPropertyImages(property._id);
 
   return { property, images };
@@ -273,9 +318,11 @@ async function deletePropertyById(id, actor) {
     return { error: 'forbidden' };
   }
 
+  const images = await PropertyImage.find({ propertyId: id }).lean();
   await property.deleteOne();
   await PropertyImage.deleteMany({ propertyId: id });
   await SavedProperty.deleteMany({ propertyId: id });
+  await deleteAssetsForImages(images, property.ownerId);
   return {};
 }
 
@@ -287,6 +334,9 @@ async function bulkUpdatePropertiesByIds(ids, updates) {
     }
   }
 
+  // updateMany skips document hooks, so keep cityLower in step by hand.
+  if (typeof setFields.city === 'string') setFields.cityLower = normalizeCity(setFields.city);
+
   const result = await Property.updateMany({ _id: { $in: ids } }, { $set: setFields });
 
   if (setFields.status === 'published') {
@@ -296,11 +346,26 @@ async function bulkUpdatePropertiesByIds(ids, updates) {
   return { matchedCount: result.matchedCount, modifiedCount: result.modifiedCount };
 }
 
-// Delete image metadata along with properties; Cloudinary assets are not deleted here.
+// Image rows go with the properties, then the Cloudinary assets as best effort.
 async function bulkDeletePropertiesByIds(ids) {
+  // Owners must be read before the rows go: each property's images are only
+  // deletable under its own owner's folder.
+  const properties = await Property.find({ _id: { $in: ids } }).select('ownerId').lean();
+  const images = await PropertyImage.find({ propertyId: { $in: ids } }).lean();
   const result = await Property.deleteMany({ _id: { $in: ids } });
   await PropertyImage.deleteMany({ propertyId: { $in: ids } });
   await SavedProperty.deleteMany({ propertyId: { $in: ids } });
+
+  const ownerByProperty = new Map(properties.map((p) => [String(p._id), p.ownerId ? String(p.ownerId) : null]));
+  const imagesByOwner = new Map();
+  for (const image of images) {
+    const owner = ownerByProperty.get(String(image.propertyId)) ?? null;
+    if (!imagesByOwner.has(owner)) imagesByOwner.set(owner, []);
+    imagesByOwner.get(owner).push(image);
+  }
+  for (const [owner, ownerImages] of imagesByOwner) {
+    await deleteAssetsForImages(ownerImages, owner);
+  }
   return { deletedCount: result.deletedCount };
 }
 
@@ -311,6 +376,7 @@ module.exports = {
   BULK_UPDATABLE_FIELDS,
   createProperty,
   findProperties,
+  findFeaturedProperties,
   findPropertiesByOwner,
   findPublishedBySlug,
   findPublishedContactById,

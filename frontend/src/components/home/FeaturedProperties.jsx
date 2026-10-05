@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { fetchFeaturedProperties } from "@/lib/dataSource";
 import { useSectionData } from "@/lib/useSectionData";
@@ -16,18 +16,14 @@ export function FeaturedProperties() {
   const searchParams = useSearchParams();
   const { city } = useCity();
   const simulateError = searchParams.get("debugError") === "featured";
-  const fetcher = useCallback(() => fetchFeaturedProperties(simulateError), [simulateError]);
+  const fetcher = useCallback(
+    () => fetchFeaturedProperties(city, MAX_SHOWN, simulateError),
+    [city, simulateError]
+  );
   const { status, data, retry } = useSectionData(fetcher);
 
-  const { shown, scopedToAll } = useMemo(() => {
-    if (!data) return { shown: [], scopedToAll: false };
-    if (!city) return { shown: data.slice(0, MAX_SHOWN), scopedToAll: false };
-    const inCity = data.filter((p) => p.city === city);
-    if (inCity.length > 0) return { shown: inCity.slice(0, MAX_SHOWN), scopedToAll: false };
-    // No featured picks in the selected city yet - fall back to nationwide
-    // rather than hiding the section (PRD §11 "never a blank area").
-    return { shown: data.slice(0, MAX_SHOWN), scopedToAll: true };
-  }, [data, city]);
+  const shown = data?.properties ?? [];
+  const scopedToAll = Boolean(city) && data?.scope === "national";
 
   if (status === "success" && shown.length === 0) return null;
 
@@ -37,7 +33,7 @@ export function FeaturedProperties() {
       title="Featured properties"
       subtitle={
         scopedToAll
-          ? `No featured picks in ${city} yet — showing top picks nationwide.`
+          ? `No featured picks in ${city} yet. Showing nationwide picks.`
           : city
             ? `Reviewed listings in ${city}, picked by our team.`
             : "Reviewed listings, picked by our team."

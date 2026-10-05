@@ -1,4 +1,5 @@
 const Project = require('../models/Project');
+const { normalizeCity } = require('../utils/normalizeCity');
 
 const EDITABLE_FIELDS = [
   'name',
@@ -48,6 +49,45 @@ async function listNewProjects() {
     .limit(NEW_PROJECTS_LIMIT);
 }
 
+const MAX_BUILDERS = 50;
+
+// Published projects grouped by the developer string exactly as stored (no
+// merging of spelling variants). Busiest builders first, capped at
+// MAX_BUILDERS; projects inside a builder are newest published first.
+async function listBuilders({ city } = {}) {
+  const match = { status: 'published' };
+  if (city) match.cityLower = normalizeCity(city);
+
+  const groups = await Project.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: '$developer',
+        projectIds: { $push: '$_id' },
+        cities: { $addToSet: '$city' },
+        projectCount: { $sum: 1 },
+      },
+    },
+    { $sort: { projectCount: -1, _id: 1 } },
+    { $limit: MAX_BUILDERS },
+  ]);
+
+  const allIds = groups.flatMap((group) => group.projectIds);
+  const projects = await Project.find({ _id: { $in: allIds } });
+  const byId = new Map(projects.map((project) => [project._id.toString(), project]));
+  const publishedTime = (project) => (project.publishedAt ? project.publishedAt.getTime() : 0);
+
+  return groups.map((group) => ({
+    name: group._id,
+    projectCount: group.projectCount,
+    cities: [...group.cities].sort((a, b) => a.localeCompare(b)),
+    projects: group.projectIds
+      .map((id) => byId.get(id.toString()))
+      .filter(Boolean)
+      .sort((a, b) => publishedTime(b) - publishedTime(a) || (a._id.toString() < b._id.toString() ? -1 : 1)),
+  }));
+}
+
 async function findPublishedById(id) {
   return Project.findOne({ _id: id, status: 'published' });
 }
@@ -91,6 +131,7 @@ module.exports = {
   createProject,
   listProjects,
   listNewProjects,
+  listBuilders,
   findPublishedById,
   findById,
   updateProjectById,

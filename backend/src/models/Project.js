@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const normalizedLocationPlugin = require('./plugins/normalizedLocation');
 const { CONTENT_STATUSES } = require('./contentStatus');
 
 const { Schema } = mongoose;
@@ -19,6 +20,10 @@ const projectSchema = new Schema(
       type: String,
       required: true,
       trim: true,
+    },
+    // normalizeCity(city); the field city matching runs on. Never user-supplied.
+    cityLower: {
+      type: String,
     },
     locality: {
       type: String,
@@ -56,7 +61,9 @@ const projectSchema = new Schema(
   { timestamps: true }
 );
 
-projectSchema.index({ status: 1 });
+projectSchema.index({ status: 1, cityLower: 1, publishedAt: -1 });
 projectSchema.index({ publishedAt: -1 });
+
+projectSchema.plugin(normalizedLocationPlugin);
 
 module.exports = mongoose.model('Project', projectSchema);

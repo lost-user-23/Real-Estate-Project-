@@ -1,5 +1,6 @@
 const { PROPERTY_INTENTS, PROPERTY_TYPES, PROPERTY_STATUSES } = require('../../src/models/Property');
 const { CONTENT_STATUSES } = require('../../src/models/contentStatus');
+const { normalizeCity } = require('../../src/utils/normalizeCity');
 
 class SeedValidationError extends Error {
   constructor(collection, identifier, message) {
@@ -79,6 +80,7 @@ function transformProperty(mock) {
     areaSqft: mock.areaSqft,
     priceInRupees: mock.priceInRupees,
     city: mock.city,
+    cityLower: normalizeCity(mock.city),
     locality: mock.locality ?? null,
     amenities: Array.isArray(mock.amenities) ? mock.amenities : [],
     // Not present in mock data; never invented (docs/backend-architecture.md
@@ -110,7 +112,9 @@ function transformLocation(mock) {
 
   const doc = {
     city: mock.city,
+    cityLower: normalizeCity(mock.city),
     locality: mock.locality ?? null,
+    localityLower: mock.locality ? normalizeCity(mock.locality) : null,
     activeListingCount,
     popular: Boolean(mock.popular),
     popularRank,
@@ -156,6 +160,7 @@ function transformProject(mock) {
     name: mock.name,
     developer: mock.developer,
     city: mock.city,
+    cityLower: normalizeCity(mock.city),
     locality: mock.locality ?? null,
     imageUrl: image ? image.url : null,
     imageAlt: image ? image.alt : null,

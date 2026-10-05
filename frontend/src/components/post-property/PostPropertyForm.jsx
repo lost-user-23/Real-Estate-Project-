@@ -106,7 +106,7 @@ export function PostPropertyForm() {
           if (!uploadResponse.ok || !uploadResult.secure_url) {
             throw new Error(uploadResult.error?.message || `Photo ${index + 1} could not be uploaded.`);
           }
-          return { url: uploadResult.secure_url, alt: image.name, displayOrder: index };
+          return { url: uploadResult.secure_url, publicId: uploadResult.public_id, alt: image.name, displayOrder: index };
         })
       );
 

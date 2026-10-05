@@ -1,5 +1,7 @@
 function serializeProject(project) {
-  return typeof project.toObject === 'function' ? project.toObject() : { ...project };
+  const obj = typeof project.toObject === 'function' ? project.toObject() : { ...project };
+  delete obj.cityLower;
+  return obj;
 }
 
 function serializeProjects(projects) {

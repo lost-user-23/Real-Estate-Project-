@@ -11,6 +11,7 @@
     "test": "jest --runInBand",
     "seed": "node scripts/seed.js",
     "db:setup": "node scripts/setup-db.js",
+    "backfill:city-lower": "node scripts/backfill-city-lower.js",
     "admin:create": "node scripts/create-admin.js"
   },
   "engines": {

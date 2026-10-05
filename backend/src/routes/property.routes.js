@@ -6,6 +6,7 @@ const {
   createProperty,
   listProperties,
   listMyProperties,
+  listFeaturedProperties,
   getPropertyBySlug,
   getPropertyContact,
   updateProperty,
@@ -29,8 +30,9 @@ const contactLimiter = rateLimit({
 
 router.post('/', protect, createProperty);
 router.get('/', listProperties);
-// Must be registered before '/:slug', which would otherwise capture "mine".
+// Must be registered before '/:slug', which would otherwise capture "mine" and "featured".
 router.get('/mine', protect, listMyProperties);
+router.get('/featured', listFeaturedProperties);
 router.get('/:id/contact', protect, contactLimiter, getPropertyContact);
 router.get('/:slug', getPropertyBySlug);
 router.patch('/:id', protect, updateProperty);

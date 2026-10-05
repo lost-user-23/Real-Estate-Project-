@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -33,25 +33,12 @@ export function BuildersDirectory() {
   const searchParams = useSearchParams();
   const { city } = useCity();
   const simulateError = searchParams.get("debugError") === "builders";
-  const fetcher = useCallback(() => fetchBuilders(simulateError), [simulateError]);
+  const fetcher = useCallback(() => fetchBuilders(city, simulateError), [city, simulateError]);
   const { status, data, retry } = useSectionData(fetcher);
 
-  const { popular, all, scopedToAll } = useMemo(() => {
-    if (!data) return { popular: [], all: [], scopedToAll: false };
-    const byCount = (a, b) => b.projectCount - a.projectCount;
-    if (!city) {
-      const sorted = [...data].sort(byCount);
-      return { popular: sorted.slice(0, POPULAR_COUNT), all: sorted, scopedToAll: false };
-    }
-    const inCity = data
-      .map((builder) => ({ ...builder, projects: builder.projects.filter((p) => p.city === city) }))
-      .filter((builder) => builder.projects.length > 0)
-      .map((builder) => ({ ...builder, projectCount: builder.projects.length }))
-      .sort(byCount);
-    if (inCity.length > 0) return { popular: inCity.slice(0, POPULAR_COUNT), all: inCity, scopedToAll: false };
-    const sorted = [...data].sort(byCount);
-    return { popular: sorted.slice(0, POPULAR_COUNT), all: sorted, scopedToAll: true };
-  }, [data, city]);
+  const all = data?.builders ?? [];
+  const popular = all.slice(0, POPULAR_COUNT);
+  const scopedToAll = Boolean(city) && data?.scope === "national";
 
   return (
     <>
@@ -60,7 +47,7 @@ export function BuildersDirectory() {
         title={city ? `Popular builders in ${city}` : "Popular builders"}
         subtitle={
           scopedToAll
-            ? `No builders active in ${city} yet — showing top builders nationwide.`
+            ? `No builders active in ${city} yet. Showing top builders nationwide.`
             : "The developers with the most active projects, ranked by project count."
         }
       >

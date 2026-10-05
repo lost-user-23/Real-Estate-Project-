@@ -1,6 +1,7 @@
 const Location = require('../models/Location');
 const AppError = require('../utils/AppError');
 const asyncHandler = require('../utils/asyncHandler');
+const { normalizeCity } = require('../utils/normalizeCity');
 const { serializeLocation } = require('../utils/serializers/location.serializer');
 
 const getPopularLocations = asyncHandler(async (req, res) => {
@@ -38,16 +39,24 @@ const listAdminLocations = asyncHandler(async (req, res) => {
     });
 });
 
+const SUGGESTION_LIMIT = 6;
+
+// Anchored prefix match on the lowercase fields, so the cityLower/localityLower
+// indexes can serve it. Matches on the city sort before locality-only matches,
+// then alphabetical, so the order is deterministic.
 const getLocationSuggestions = asyncHandler(async (req, res) => {
     const { q } = req.query;
     if (!q || typeof q !== 'string' || q.trim().length === 0) {
         throw AppError.badRequest('Query parameter "q" is required');
     }
 
-    const regex = new RegExp(escapeRegExp(q.trim()), 'i');
-    const locations = await Location.find({
-        $or: [{ city: regex }, { locality: regex }],
-    }).limit(6);
+    const prefix = `^${escapeRegExp(normalizeCity(q))}`;
+    const locations = await Location.aggregate([
+        { $match: { $or: [{ cityLower: { $regex: prefix } }, { localityLower: { $regex: prefix } }] } },
+        { $addFields: { cityRank: { $cond: [{ $regexMatch: { input: '$cityLower', regex: prefix } }, 0, 1] } } },
+        { $sort: { cityRank: 1, cityLower: 1, localityLower: 1, _id: 1 } },
+        { $limit: SUGGESTION_LIMIT },
+    ]);
 
     res.json({ locations: locations.map(serializeLocation) });
 });
@@ -112,6 +121,11 @@ const updateLocation = asyncHandler(async (req, res) => {
 
     if (validationErrors.length > 0) {
         throw AppError.badRequest('Validation failed', validationErrors);
+    }
+    // findByIdAndUpdate skips document hooks, so keep the lowercase fields in step by hand.
+    if (typeof updates.city === 'string') updates.cityLower = normalizeCity(updates.city);
+    if (updates.locality !== undefined) {
+        updates.localityLower = updates.locality === null ? null : normalizeCity(updates.locality);
     }
     const location = await Location.findByIdAndUpdate(req.params.id, updates, {
         new: true,
