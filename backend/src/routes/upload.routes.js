@@ -1,9 +1,11 @@
 const express = require('express');
 const {protect} = require('../middleware/auth.middleware');
-const {generateUploadSignature} = require('../controllers/upload.controller');
+const {uploadImage: uploadImageController} = require('../controllers/upload.controller');
+const {uploadRateLimiter, uploadDailyLimiter} = require('../middleware/uploadRateLimiter');
+const {uploadImage} = require('../middleware/uploadImage');
 
 const router = express.Router();
 
-router.post('/signature', protect, generateUploadSignature);
+router.post('/image', protect, uploadRateLimiter, uploadDailyLimiter, uploadImage, uploadImageController);
 
 module.exports = router;

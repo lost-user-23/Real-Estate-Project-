@@ -42,6 +42,8 @@ export async function request(
   { method = "GET", body, headers, auth = true, ...fetchOptions } = {}
 ) {
   const token = auth ? tokenStore.get() : null;
+  // FormData must go out as-is so the browser sets the multipart boundary itself.
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
 
   let res;
   try {
@@ -50,11 +52,11 @@ export async function request(
       ...fetchOptions,
       method,
       headers: {
-        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(body !== undefined && !isFormData ? { "Content-Type": "application/json" } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...headers,
       },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: body !== undefined && !isFormData ? JSON.stringify(body) : body,
     });
   } catch (err) {
     // An aborted request also rejects; callers cancelling on purpose must see it untouched.

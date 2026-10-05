@@ -232,24 +232,15 @@ export function AdminStoreProvider({ children }) {
         await api.delete("/api/v1/admin/properties/bulk", { body: { ids } });
         setProperties((prev) => prev.filter((p) => !ids.includes(p.id)));
       },
-      // Uploads the photos straight to Cloudinary (signed by the backend), then creates the
+      // Uploads the photos through the backend (size/type checked, then sent to Cloudinary), then creates the
       // property. POST /properties always creates a draft, so publishing is a follow-up PATCH.
       addProperty: async ({ files, status, ...input }) => {
         const images = await Promise.all(
           files.map(async (file, index) => {
-            const sig = await api.post("/api/v1/uploads/signature", {});
             const body = new FormData();
-            body.append("file", file);
-            body.append("api_key", sig.apiKey);
-            body.append("timestamp", String(sig.timestamp));
-            body.append("folder", sig.folder);
-            body.append("signature", sig.signature);
-            const res = await fetch(sig.uploadUrl, { method: "POST", body });
-            const result = await res.json().catch(() => ({}));
-            if (!res.ok || !result.secure_url) {
-              throw new Error(result.error?.message || `Photo ${index + 1} could not be uploaded.`);
-            }
-            return { url: result.secure_url, publicId: result.public_id, alt: file.name, displayOrder: index };
+            body.append("image", file);
+            const result = await api.post("/api/v1/uploads/image", body);
+            return { url: result.url, publicId: result.publicId, alt: file.name, displayOrder: index };
           })
         );
         const { property } = await api.post("/api/v1/properties", { ...input, images });

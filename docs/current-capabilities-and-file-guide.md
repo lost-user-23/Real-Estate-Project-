@@ -105,7 +105,7 @@ All routes below are registered by the current backend. Unless noted, API routes
 | `GET/POST/PATCH/DELETE /api/v1/admin/articles...` | Admin article management, including explicit publish endpoint |
 | `POST /api/v1/reports` | Public/optional-auth report creation |
 | `GET/PATCH /api/v1/admin/reports...` | Admin report review and status updates |
-| `POST /api/v1/uploads/signature` | Authenticated Cloudinary upload-signature request. The server signs the folder `<CLOUDINARY_FOLDER>/<userId>` and ignores any `folder` sent by the client. |
+| `POST /api/v1/uploads/image` | Authenticated multipart image upload (field `image`; jpg/jpeg/png/webp, max 5 MB; rate limited per user). Streams to Cloudinary under `<CLOUDINARY_FOLDER>/<userId>` and returns `{ url, publicId }`. |
 
 ## Setup and Running
 
@@ -186,7 +186,7 @@ Backend checks: `npm test` and `npm run lint` from `backend/`. Frontend checks: 
 | `backend/src/controllers/project.controller.js` | Validates and handles public/admin project operations. |
 | `backend/src/controllers/property.controller.js` | Validates property create/search/update/delete and admin bulk operations. |
 | `backend/src/controllers/report.controller.js` | Creates user reports and provides admin report list/detail/status operations. |
-| `backend/src/controllers/upload.controller.js` | Generates authenticated Cloudinary upload signatures for a server-chosen per-user folder. |
+| `backend/src/controllers/upload.controller.js` | Streams validated images to Cloudinary in a server-chosen per-user folder. |
 | `backend/src/middleware/auth.middleware.js` | Verifies bearer JWT, loads the user, and enforces allowed roles. |
 | `backend/src/middleware/optionalAuth.js` | Attaches a user when a valid bearer token is present, without requiring login. |
 | `backend/src/middleware/errorHandler.js` | Normalizes validation/database errors and writes safe JSON error responses. |
@@ -217,7 +217,7 @@ Backend checks: `npm test` and `npm run lint` from `backend/`. Frontend checks: 
 | `backend/src/routes/project.routes.js` | Public new/list/detail project routes. |
 | `backend/src/routes/property.routes.js` | Public property search/detail, authenticated `/mine`, and create/update/delete routes. |
 | `backend/src/routes/report.routes.js` | Public optional-auth report creation route. |
-| `backend/src/routes/upload.routes.js` | Authenticated upload-signature route. |
+| `backend/src/routes/upload.routes.js` | Authenticated, rate-limited image upload route. |
 | `backend/src/services/article.service.js` | Article database selection, slug creation, publication, and CRUD behavior. |
 | `backend/src/services/auth.service.js` | Password hashing/comparison and JWT creation/verification. |
 | `backend/src/services/health.service.js` | Builds health response including MongoDB status. |
@@ -256,7 +256,7 @@ Backend checks: `npm test` and `npm run lint` from `backend/`. Frontend checks: 
 | `backend/tests/properties.test.js` | Listing validation/search, ownership, serialization, and image behavior. |
 | `backend/tests/reports.test.js` | Report creation and admin status workflow. |
 | `backend/tests/seedTransform.test.js` | Seed transformation/validation without MongoDB. |
-| `backend/tests/upload.test.js` | Upload-signature endpoint and access control. |
+| `backend/tests/upload.test.js` | Image upload endpoint: size/type validation, access control, rate limiting. |
 
 ### Frontend
 

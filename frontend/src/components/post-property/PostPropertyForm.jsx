@@ -93,20 +93,10 @@ export function PostPropertyForm() {
     try {
       const uploadedImages = await Promise.all(
         form.images.map(async (image, index) => {
-          const signature = await api.post("/api/v1/uploads/signature", { resourceType: "image" });
           const uploadData = new FormData();
-          uploadData.append("file", image.file);
-          uploadData.append("api_key", signature.apiKey);
-          uploadData.append("timestamp", String(signature.timestamp));
-          uploadData.append("folder", signature.folder);
-          uploadData.append("signature", signature.signature);
-
-          const uploadResponse = await fetch(signature.uploadUrl, { method: "POST", body: uploadData });
-          const uploadResult = await uploadResponse.json().catch(() => ({}));
-          if (!uploadResponse.ok || !uploadResult.secure_url) {
-            throw new Error(uploadResult.error?.message || `Photo ${index + 1} could not be uploaded.`);
-          }
-          return { url: uploadResult.secure_url, publicId: uploadResult.public_id, alt: image.name, displayOrder: index };
+          uploadData.append("image", image.file);
+          const uploaded = await api.post("/api/v1/uploads/image", uploadData);
+          return { url: uploaded.url, publicId: uploaded.publicId, alt: image.name, displayOrder: index };
         })
       );
 

@@ -64,7 +64,7 @@ Protected routes need `Authorization: Bearer <token>`.
 | Categories | `GET /categories`; admin `POST/PATCH/DELETE` |
 | Projects, articles | Public `GET /projects`, `/projects/new`, `/projects/:id`, `/articles`, `/articles/:slug` |
 | Reports | `POST /reports` (optional auth) |
-| Uploads | `POST /uploads/signature` (auth; the server signs `<CLOUDINARY_FOLDER>/<userId>` and ignores any `folder` in the body) |
+| Uploads | `POST /uploads/image` (auth; multipart field `image`, max 5 MB, jpg/jpeg/png/webp; the server picks the Cloudinary folder `<CLOUDINARY_FOLDER>/<userId>`) |
 | Admin (role `admin`) | `/admin/dashboard`, `/admin/properties` (+ `/bulk`), `/admin/locations`, `/admin/facilities`, `/admin/projects`, `/admin/articles`, `/admin/reports` |
 
 Authentication is one JWT (7 days) shared by the public site and the admin

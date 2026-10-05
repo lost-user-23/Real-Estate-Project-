@@ -144,7 +144,7 @@ All routes require authentication and are scoped to the caller. Backed by the `S
 
 | Method | Endpoint | Purpose and access | Status |
 |---|---|---|---|
-| POST | `/api/v1/uploads/signature` | Generate a Cloudinary upload signature in a server-selected user folder; authenticated. | Implemented |
+| POST | `/api/v1/uploads/image` | Upload one image (multipart field `image`, max 5 MB, jpg/jpeg/png/webp) to Cloudinary in a server-selected user folder; authenticated and rate limited. | Implemented |
 
 ## Not Implemented or Not Exposed as Dedicated APIs
 
