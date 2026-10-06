@@ -1,4 +1,5 @@
 import { Inter, Plus_Jakarta_Sans } from "next/font/google";
+import { GoogleAnalytics } from "@next/third-parties/google";
 import { Providers } from "@/components/Providers";
 import { SITE_URL } from "@/lib/site";
 import "./globals.css";
@@ -52,6 +53,8 @@ const jsonLd = [
   },
 ];
 
+const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim();
+
 export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${jakarta.variable} ${inter.variable} h-full antialiased`}>
@@ -61,6 +64,7 @@ export default function RootLayout({ children }) {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
         <Providers>{children}</Providers>
+        {GA_MEASUREMENT_ID ? <GoogleAnalytics gaId={GA_MEASUREMENT_ID} /> : null}
       </body>
     </html>
   );

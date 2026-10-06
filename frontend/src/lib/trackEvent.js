@@ -12,6 +12,14 @@ function getViewport() {
   return "desktop";
 }
 
+// "/" is "home"; any other route is labelled by its first path segment
+// (e.g. "/builders" -> "builders"). Callers can still override via props.
+function getPage() {
+  if (typeof window === "undefined") return "home";
+  const segment = window.location.pathname.split("/").filter(Boolean)[0];
+  return segment || "home";
+}
+
 function getSessionId() {
   if (typeof window === "undefined") return "server";
   try {
@@ -28,7 +36,7 @@ function getSessionId() {
 export function trackEvent(name, props = {}) {
   const payload = {
     event: name,
-    page: "home",
+    page: getPage(),
     viewport: getViewport(),
     sessionId: getSessionId(),
     ...props,
@@ -38,5 +46,10 @@ export function trackEvent(name, props = {}) {
     console.debug("[trackEvent]", payload);
   }
 
-  // TODO(PRD §12): forward `payload` to the confirmed analytics provider.
+  // Events are forwarded to GA4 when it is loaded. This file is the only
+  // place that knows about GA.
+  if (typeof window !== "undefined" && typeof window.gtag === "function") {
+    const { event, page, sessionId, ...rest } = payload;
+    window.gtag("event", name, { ...rest, page_name: page });
+  }
 }

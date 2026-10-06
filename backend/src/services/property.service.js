@@ -337,7 +337,9 @@ async function bulkUpdatePropertiesByIds(ids, updates) {
   // updateMany skips document hooks, so keep cityLower in step by hand.
   if (typeof setFields.city === 'string') setFields.cityLower = normalizeCity(setFields.city);
 
-  const result = await Property.updateMany({ _id: { $in: ids } }, { $set: setFields });
+  // runValidators is a second line of defence behind validateBulkUpdates: it
+  // applies the schema's required/enum checks to the $set paths.
+  const result = await Property.updateMany({ _id: { $in: ids } }, { $set: setFields }, { runValidators: true });
 
   if (setFields.status === 'published') {
     await Property.updateMany({ _id: { $in: ids }, publishedAt: null }, { $set: { publishedAt: new Date() } });

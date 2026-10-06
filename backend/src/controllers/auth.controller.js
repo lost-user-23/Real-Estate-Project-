@@ -5,17 +5,41 @@ const Property = require("../models/Property");
 const PropertyImage = require("../models/PropertyImage");
 const { SavedProperty } = require("../models");
 const { deleteAssetsForImages } = require("../services/cloudinaryAssets.service");
+// Called as mailer.fn(...) (not destructured) so tests can spy on it.
+const mailer = require("../services/mailer.service");
+const config = require("../config");
+const { generateVerificationToken, hashToken } = require("../utils/verificationToken");
 const {
   hashPassword,
   comparePasswords,
   generateToken,
 } = require("../services/auth.service");
 
+const SAME_SITE_VALUES = ["lax", "strict", "none"];
+
+// Built per call so NODE_ENV / COOKIE_SAMESITE are read when the cookie is
+// issued. An unknown COOKIE_SAMESITE falls back to "lax". SameSite=None is
+// rejected by browsers unless the cookie is Secure, so it forces secure.
+function getCookieOptions() {
+  const requested = String(process.env.COOKIE_SAMESITE || "").trim().toLowerCase();
+  const sameSite = SAME_SITE_VALUES.includes(requested) ? requested : "lax";
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production" || sameSite === "none",
+    sameSite,
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: "/",
+  };
+}
+
+function setAuthCookie(res, token) {
+  res.cookie("token", token, getCookieOptions());
+}
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^\+?[0-9 ()-]{7,20}$/;
 const MIN_PASSWORD_LENGTH = 8;
 const MAX_NAME_LENGTH = 100;
-const USER_EXISTS_MESSAGE = "User already exists";
 // Real bcrypt hash (cost 10) of a throwaway value; only used to equalise timing.
 const DUMMY_HASH = bcrypt.hashSync("timing-equaliser", 10);
 
@@ -38,47 +62,168 @@ function serializeUser(user) {
     name: user.name,
     phone: user.phone || "",
     role: user.role,
+    emailVerified: user.emailVerified,
   };
 }
 
+const REGISTER_MESSAGE =
+  "If this email can be registered, we've sent a verification link to it. Check your inbox.";
+const EMAIL_CHANGE_MESSAGE =
+  "If this address can be used, we've sent a confirmation link to it. Your email stays the same until you confirm.";
+const RESEND_MESSAGE =
+  "If this address is waiting for verification, we've sent a new link to it.";
+const INVALID_LINK_MESSAGE = "This verification link is invalid or has expired";
+const MAIL_FAILED_MESSAGE = "We could not send the verification email. Please try again.";
+
+const VERIFICATION_COOLDOWN_MS = 60 * 1000;
+const VERIFY_TOKEN_FIELDS = { verifyTokenHash: 1, verifyTokenExpiry: 1, verifyTokenPurpose: 1 };
+
+// `flow` tells the /verify-email page whether to ask for a password. It is a UI
+// hint only: the server decides from the stored verifyTokenPurpose.
+function verificationLink(token, flow) {
+  return `${config.appUrl}/verify-email?token=${encodeURIComponent(token)}&flow=${flow}`;
+}
+
+// Matches an account whose `field` timestamp is unset or older than the
+// cooldown. Used inside a conditional update so check and write are atomic.
+function outsideCooldown(field, now) {
+  return {
+    $or: [{ [field]: null }, { [field]: { $lte: new Date(now.getTime() - VERIFICATION_COOLDOWN_MS) } }],
+  };
+}
+
+// Runs work after the response has been sent. Whatever it throws or rejects
+// with (even a non-Error such as undefined) is logged here and never becomes
+// an unhandled rejection, which would crash the Node process. The logging
+// itself cannot throw: it does not assume `err` is an Error.
+function runInBackground(label, work) {
+  Promise.resolve()
+    .then(work)
+    .catch((err) => {
+      try {
+        console.error(`[auth] ${label} failed:`, err instanceof Error ? err.message : String(err));
+      } catch {
+        // Nothing left to do; never let logging take the process down.
+      }
+    });
+}
+
+// Stores a fresh token for `purpose` and returns the raw token, or null when a
+// verification mail went to this account less than a minute ago (the existing
+// link stays valid then). The cooldown check and the write are one conditional
+// update, so two concurrent requests cannot both send.
+async function issueVerificationToken(userId, purpose, { cooldown = true, extraSet = {} } = {}) {
+  const { token, tokenHash, expiresAt } = generateVerificationToken();
+  const now = new Date();
+  const filter = { _id: userId, ...(cooldown ? outsideCooldown("verifyTokenSentAt", now) : {}) };
+  const result = await User.updateOne(filter, {
+    $set: {
+      ...extraSet,
+      verifyTokenHash: tokenHash,
+      verifyTokenExpiry: expiresAt,
+      verifyTokenPurpose: purpose,
+      verifyTokenSentAt: now,
+    },
+  });
+  return result.modifiedCount === 1 ? token : null;
+}
+
+// Any mail failure surfaces as the same 503 whichever branch ran, so the
+// outcome of a request never depends on whether the address was already taken.
+async function sendOrFail(send) {
+  try {
+    await send();
+  } catch (err) {
+    console.error("[auth] could not send email:", err.message);
+    throw new AppError(MAIL_FAILED_MESSAGE, 503);
+  }
+}
+
+// Registration takes no password and never starts a session. The password is
+// set on the verify step, by whoever can read the inbox, so registering
+// someone else's address first gains nothing.
+//
+// The response goes out before any lookup, and the rest runs in the
+// background, so neither the body nor the timing says which branch ran:
+//   - new address        -> unverified account (no password) + link
+//   - unverified account -> new link unless one went out <60s ago (name kept)
+//   - verified account   -> "someone tried to use your address" notice,
+//                           at most one per minute
 async function register(req, res, next) {
   try {
-    const { name, email, password } = req.body;
+    const { name, email } = req.body ?? {};
     const normalizedEmail = normalizeEmail(email);
 
-    if (!normalizedEmail || !password) {
-      throw new AppError("Email and password are required", 400);
+    if (!normalizedEmail) {
+      throw new AppError("Email is required", 400);
     }
-
     if (!EMAIL_RE.test(normalizedEmail)) {
       throw new AppError("Invalid email address", 400);
     }
-
-    const pwError = passwordError(password);
-    if (pwError) {
-      throw new AppError(pwError, 400);
+    if (name !== undefined && (typeof name !== "string" || name.trim().length > MAX_NAME_LENGTH)) {
+      throw new AppError(`Name must be text of at most ${MAX_NAME_LENGTH} characters`, 400);
     }
 
-    const existingUser = await User.findOne({ email: normalizedEmail });
-    if (existingUser) {
-      throw new AppError(USER_EXISTS_MESSAGE, 400);
-    }
-
-    const passwordHash = await hashPassword(password);
-    const user = await User.create({
-      email: normalizedEmail,
-      passwordHash,
-      name: typeof name === "string" ? name.trim() : "",
-    });
-
-    const token = generateToken(user);
-    return res.status(201).json({ token, user: serializeUser(user) });
+    res.status(202).json({ message: REGISTER_MESSAGE });
+    const cleanName = typeof name === "string" ? name.trim() : "";
+    runInBackground("registration", () => processRegistration(normalizedEmail, cleanName));
   } catch (err) {
-    // Two concurrent registrations can both pass the findOne check above.
-    if (err?.code === 11000) {
-      return next(new AppError(USER_EXISTS_MESSAGE, 400));
-    }
     return next(err);
+  }
+}
+
+async function processRegistration(email, name) {
+  const existing = await User.findOne({ email });
+
+  if (existing?.emailVerified) {
+    // Same one-minute cooldown as verification mails, on its own timestamp so
+    // the two never block each other.
+    const now = new Date();
+    const claimed = await User.updateOne(
+      { _id: existing._id, ...outsideCooldown("accountNoticeSentAt", now) },
+      { $set: { accountNoticeSentAt: now } }
+    );
+    if (claimed.modifiedCount === 1) {
+      await mailer.sendAccountExistsEmail(email);
+    }
+    return;
+  }
+
+  if (existing) {
+    // The name is set only when the account is first created; a re-register
+    // (possibly by someone else) must not choose what the inbox owner gets.
+    const token = await issueVerificationToken(existing._id, "register");
+    if (token) {
+      await mailer.sendVerificationEmail(email, verificationLink(token, "register"));
+    }
+    return;
+  }
+
+  const { token, tokenHash, expiresAt } = generateVerificationToken();
+  let user;
+  try {
+    user = await User.create({
+      email,
+      name,
+      emailVerified: false,
+      verifyTokenHash: tokenHash,
+      verifyTokenExpiry: expiresAt,
+      verifyTokenPurpose: "register",
+      verifyTokenSentAt: new Date(),
+    });
+  } catch (err) {
+    // A concurrent registration for the same address won the insert; it sends
+    // its own link.
+    if (err?.code === 11000) return;
+    throw err;
+  }
+
+  try {
+    await mailer.sendVerificationEmail(email, verificationLink(token, "register"));
+  } catch (err) {
+    // No account that nobody was told about: the address is free to try again.
+    await User.deleteOne({ _id: user._id, emailVerified: false, verifyTokenHash: tokenHash });
+    throw err;
   }
 }
 
@@ -105,10 +250,18 @@ async function login(req, res, next) {
     }
 
     const token = generateToken(user);
-    return res.status(200).json({ token, user: serializeUser(user) });
+    setAuthCookie(res, token);
+    return res.status(200).json({ user: serializeUser(user) });
   } catch (err) {
     return next(err);
   }
+}
+
+function logout(req, res) {
+  const options = getCookieOptions();
+  delete options.maxAge;
+  res.clearCookie("token", options);
+  return res.status(200).json({ message: "Logged out" });
 }
 
 async function getCurrentUser(req, res) {
@@ -191,14 +344,19 @@ async function changePassword(req, res, next) {
     user.passwordChangedAt = new Date();
     await user.save();
 
-    // Every earlier token is now rejected by protect; hand back a fresh one so
+    // Every earlier token is now rejected by protect; replace the cookie so
     // this session keeps working.
-    return res.status(200).json({ token: generateToken(user), user: serializeUser(user) });
+    setAuthCookie(res, generateToken(user));
+    return res.status(200).json({ user: serializeUser(user) });
   } catch (err) {
     return next(err);
   }
 }
 
+// The requested address is parked in pendingEmail and `email` is left alone
+// until the link sent to the NEW address is used. The answer is identical
+// whether or not another account already holds that address (that address gets
+// a notice instead of a link), so the endpoint cannot be used to probe emails.
 async function changeEmail(req, res, next) {
   try {
     const { currentPassword, newEmail } = req.body ?? {};
@@ -216,23 +374,128 @@ async function changeEmail(req, res, next) {
       throw new AppError("New email is the same as the current email", 400);
     }
 
-    const existingUser = await User.findOne({ email: normalizedEmail });
-    if (existingUser) {
-      throw new AppError(USER_EXISTS_MESSAGE, 400);
+    const taken = await User.exists({ email: normalizedEmail });
+    if (taken) {
+      await sendOrFail(() => mailer.sendAccountExistsEmail(normalizedEmail));
+      return res.status(202).json({ message: EMAIL_CHANGE_MESSAGE });
     }
 
-    // TODO: require verification of the new address (emailed link/code) before
-    // switching; today the change takes effect immediately.
-    user.email = normalizedEmail;
-    await user.save();
-
-    return res.status(200).json({ user: serializeUser(user) });
+    // No cooldown here: correcting a mistyped address must send at once.
+    const token = await issueVerificationToken(user._id, "email-change", {
+      cooldown: false,
+      extraSet: { pendingEmail: normalizedEmail },
+    });
+    try {
+      await sendOrFail(() =>
+        mailer.sendVerificationEmail(normalizedEmail, verificationLink(token, "email-change"))
+      );
+    } catch (err) {
+      await User.updateOne(
+        { _id: user._id },
+        { $unset: { pendingEmail: 1, verifyTokenSentAt: 1, ...VERIFY_TOKEN_FIELDS } }
+      );
+      throw err;
+    }
+    return res.status(202).json({ message: EMAIL_CHANGE_MESSAGE });
   } catch (err) {
-    if (err?.code === 11000) {
-      return next(new AppError(USER_EXISTS_MESSAGE, 400));
-    }
     return next(err);
   }
+}
+
+// The token is looked up first without being consumed, so a registration that
+// arrives with a missing or weak password can be corrected and retried with the
+// same link. Completing a flow consumes the token in the same atomic update that
+// applies it, so a replay (or two clicks racing) cannot apply it twice.
+async function verifyEmail(req, res, next) {
+  try {
+    const { token, password } = req.body ?? {};
+    if (typeof token !== "string" || token.length < 1 || token.length > 200) {
+      throw new AppError(INVALID_LINK_MESSAGE, 400);
+    }
+    const tokenHash = hashToken(token);
+    const live = () => ({ verifyTokenHash: tokenHash, verifyTokenExpiry: { $gt: new Date() } });
+
+    const holder = await User.findOne(live()).select("+pendingEmail +verifyTokenPurpose");
+    if (!holder) {
+      throw new AppError(INVALID_LINK_MESSAGE, 400);
+    }
+    const purpose = holder.verifyTokenPurpose || (holder.pendingEmail ? "email-change" : "register");
+
+    if (purpose === "register") {
+      const pwError = passwordError(password);
+      if (pwError) {
+        throw new AppError(pwError, 400);
+      }
+      const passwordHash = await hashPassword(password);
+      // passwordChangedAt: setting the password is a password change, so any
+      // session that predates it (an account created before this design) ends.
+      const user = await User.findOneAndUpdate(
+        { _id: holder._id, ...live() },
+        {
+          $set: { passwordHash, emailVerified: true, passwordChangedAt: new Date() },
+          $unset: { pendingEmail: 1, ...VERIFY_TOKEN_FIELDS },
+        },
+        { returnDocument: "after" }
+      );
+      if (!user) {
+        throw new AppError(INVALID_LINK_MESSAGE, 400);
+      }
+      // The inbox owner just set the password: sign them in.
+      setAuthCookie(res, generateToken(user));
+      return res.status(200).json({ message: "Email verified", flow: "register", user: serializeUser(user) });
+    }
+
+    const consumed = await User.findOneAndUpdate(
+      { _id: holder._id, ...live() },
+      { $unset: VERIFY_TOKEN_FIELDS },
+      { returnDocument: "before" }
+    ).select("+pendingEmail");
+    if (!consumed) {
+      throw new AppError(INVALID_LINK_MESSAGE, 400);
+    }
+
+    const set = { emailVerified: true };
+    if (consumed.pendingEmail) {
+      set.email = consumed.pendingEmail;
+    }
+    try {
+      await User.updateOne({ _id: consumed._id }, { $set: set, $unset: { pendingEmail: 1 } });
+    } catch (err) {
+      if (err?.code === 11000) {
+        await User.updateOne({ _id: consumed._id }, { $unset: { pendingEmail: 1 } });
+        throw new AppError(
+          "That email address is no longer available. Request the change again with a different address.",
+          409
+        );
+      }
+      throw err;
+    }
+
+    const user = await User.findById(consumed._id);
+    return res.status(200).json({ message: "Email verified", flow: "email-change", user: serializeUser(user) });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+// Always the same quick answer; the lookup and send happen after responding so
+// neither the body nor the timing says whether the address is registered. At
+// most one mail per account per minute (see issueVerificationToken).
+function resendVerification(req, res) {
+  const normalizedEmail = normalizeEmail(req.body?.email);
+  res.status(202).json({ message: RESEND_MESSAGE });
+  if (!normalizedEmail || !EMAIL_RE.test(normalizedEmail)) return;
+
+  runInBackground("resend verification", async () => {
+    const user = await User.findOne({
+      $or: [{ email: normalizedEmail, emailVerified: false }, { pendingEmail: normalizedEmail }],
+    }).select("+pendingEmail");
+    if (!user) return;
+    const purpose = user.pendingEmail === normalizedEmail ? "email-change" : "register";
+    const token = await issueVerificationToken(user._id, purpose);
+    if (!token) return;
+    await mailer.sendVerificationEmail(normalizedEmail, verificationLink(token, purpose));
+  });
 }
 
 // MongoDB here is standalone (no transactions), so the cascade is ordered so
@@ -281,9 +544,12 @@ async function deleteAccount(req, res, next) {
 module.exports = {
   register,
   login,
+  logout,
   getCurrentUser,
   updateProfile,
   changePassword,
   changeEmail,
   deleteAccount,
+  verifyEmail,
+  resendVerification,
 };

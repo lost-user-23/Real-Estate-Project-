@@ -84,6 +84,7 @@ const propertySchema = new Schema(
     description: {
       type: String,
       default: '',
+      maxlength: 2000,
     },
     // Private field; must be excluded from anonymous/public projections.
     contactNumber: {

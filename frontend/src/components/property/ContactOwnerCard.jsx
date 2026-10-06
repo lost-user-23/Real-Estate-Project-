@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { api, tokenStore } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useLoginPrompt } from "@/lib/login-prompt-context";
 
@@ -18,22 +18,35 @@ function contactErrorMessage(error) {
 
 // Contact numbers are only served to logged-in users (GET
 // /api/v1/properties/:id/contact). The fetched number is remembered together
-// with the token it was fetched under, so it disappears on logout or when a
+// with the user it was fetched for, so it disappears on logout or when a
 // different account logs in.
 export function ContactOwnerCard({ propertyId }) {
-  const { isLoggedIn, token } = useAuth();
+  const { isLoggedIn, user, sessionVersion } = useAuth();
+  const userId = user?.id;
   const { requestLogin } = useLoginPrompt();
   const [state, setState] = useState(IDLE);
 
-  const revealed = state.status === "revealed" && state.token === token ? state : null;
+  const revealed =
+    state.status === "revealed" &&
+    state.userId === userId &&
+    state.sessionVersion === sessionVersion
+      ? state
+      : null;
   const isLoading = state.status === "loading";
 
-  const fetchContact = async () => {
-    const requestToken = tokenStore.get();
+  const fetchContact = async (
+    authenticatedUserId = userId,
+    authenticatedSessionVersion = sessionVersion
+  ) => {
     setState({ status: "loading" });
     try {
       const { contactNumber } = await api.get(`/api/v1/properties/${encodeURIComponent(propertyId)}/contact`);
-      setState({ status: "revealed", token: requestToken, contactNumber });
+      setState({
+        status: "revealed",
+        userId: authenticatedUserId,
+        sessionVersion: authenticatedSessionVersion,
+        contactNumber,
+      });
     } catch (error) {
       setState({ status: "error", message: contactErrorMessage(error) });
     }
@@ -55,7 +68,11 @@ export function ContactOwnerCard({ propertyId }) {
     body = (
       <button
         type="button"
-        onClick={() => requestLogin(() => fetchContact())}
+        onClick={() =>
+          requestLogin(({ user: loggedInUser, sessionVersion: loggedInSessionVersion }) =>
+            fetchContact(loggedInUser.id, loggedInSessionVersion)
+          )
+        }
         className="mt-4 w-full rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary-dark"
       >
         Log in to view contact details

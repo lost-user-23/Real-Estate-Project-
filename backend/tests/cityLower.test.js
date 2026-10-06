@@ -1,4 +1,5 @@
 process.env.MONGODB_DB_NAME = 'homenest_test_city_lower';
+const { tokenFromResponse, registerVerified } = require('./helpers/auth');
 
 const request = require('supertest');
 const mongoose = require('mongoose');
@@ -15,9 +16,9 @@ const app = createApp();
 
 async function registerAdmin() {
   const email = `city-${new mongoose.Types.ObjectId()}@example.com`;
-  const res = await request(app).post('/api/auth/register').send({ email, password: 'password123' });
+  const res = await registerVerified(app, { email, password: 'password123' });
   await User.findByIdAndUpdate(res.body.user.id, { role: 'admin' });
-  return { Authorization: `Bearer ${res.body.token}` };
+  return { Cookie: `token=${tokenFromResponse(res)}` };
 }
 
 let counter = 0;

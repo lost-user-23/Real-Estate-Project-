@@ -9,7 +9,7 @@ import { useAuth } from "@/lib/auth-context";
 const AdminAuthContext = createContext(null);
 
 export function AdminAuthProvider({ children }) {
-  const { user, isLoggedIn, loading, sessionError, verifySession, login: sharedLogin, logout } = useAuth();
+  const { user, loading, sessionError, verifySession, login: sharedLogin, logout } = useAuth();
 
   const value = useMemo(() => {
     const adminUser = user?.role === "admin" ? user : null;
@@ -19,19 +19,19 @@ export function AdminAuthProvider({ children }) {
       loading,
       // A stored session that could not be checked (backend unreachable).
       // Showing the login gate here would look like a silent logout.
-      sessionError: isLoggedIn && !user ? sessionError : null,
+      sessionError,
       retrySession: verifySession,
       logout,
       login: async (email, password) => {
         const { user: loggedIn } = await sharedLogin({ email, password, mode: "login" });
         if (loggedIn?.role !== "admin") {
-          logout();
+          await logout();
           throw new Error("This account is not an admin");
         }
         return loggedIn;
       },
     };
-  }, [user, isLoggedIn, loading, sessionError, verifySession, sharedLogin, logout]);
+  }, [user, loading, sessionError, verifySession, sharedLogin, logout]);
 
   return <AdminAuthContext.Provider value={value}>{children}</AdminAuthContext.Provider>;
 }

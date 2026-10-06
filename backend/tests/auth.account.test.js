@@ -1,4 +1,5 @@
 process.env.MONGODB_DB_NAME = 'homenest_test_auth_account';
+const { tokenFromResponse, registerVerified, tokenFromLink } = require('./helpers/auth');
 
 const request = require('supertest');
 const mongoose = require('mongoose');
@@ -9,17 +10,18 @@ const Property = require('../src/models/Property');
 const PropertyImage = require('../src/models/PropertyImage');
 
 const config = require('../src/config');
+const mailer = require('../src/services/mailer.service');
 
 const app = createApp();
 
 const creds = { name: 'Test User', email: 'user@example.com', password: 'password123' };
-const auth = (token) => ({ Authorization: `Bearer ${token}` });
+const auth = (token) => ({ Cookie: `token=${token}` });
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function registerUser(overrides = {}) {
   const body = { ...creds, ...overrides };
-  const res = await request(app).post('/api/auth/register').send(body);
-  return { token: res.body.token, id: res.body.user.id, ...body };
+  const res = await registerVerified(app, body);
+  return { token: tokenFromResponse(res), id: res.body.user.id, ...body };
 }
 
 async function makeAdmin(id) {
@@ -151,14 +153,15 @@ describe('PATCH /api/auth/me', () => {
 describe('POST /api/auth/change-password', () => {
   const newPassword = 'a-brand-new-password';
 
-  it('changes the password, returns a fresh token, and the new password logs in', async () => {
+  it('changes the password, sets a fresh session cookie, and the new password logs in', async () => {
     const { token } = await registerUser();
     const res = await request(app)
       .post('/api/auth/change-password')
       .set(auth(token))
       .send({ currentPassword: creds.password, newPassword });
     expect(res.status).toBe(200);
-    expect(res.body.token).toEqual(expect.any(String));
+    expect(tokenFromResponse(res)).toEqual(expect.any(String));
+    expect(res.body.token).toBeUndefined();
     expect(res.body.user.passwordHash).toBeUndefined();
 
     const oldLogin = await request(app)
@@ -178,7 +181,7 @@ describe('POST /api/auth/change-password', () => {
       .post('/api/auth/change-password')
       .set(auth(token))
       .send({ currentPassword: creds.password, newPassword });
-    const me = await request(app).get('/api/auth/me').set(auth(res.body.token));
+    const me = await request(app).get('/api/auth/me').set(auth(tokenFromResponse(res)));
     expect(me.status).toBe(200);
   });
 
@@ -194,7 +197,7 @@ describe('POST /api/auth/change-password', () => {
 
     const oldRes = await request(app).get('/api/auth/me').set(auth(oldToken));
     expect(oldRes.status).toBe(401);
-    const newRes = await request(app).get('/api/auth/me').set(auth(res.body.token));
+    const newRes = await request(app).get('/api/auth/me').set(auth(tokenFromResponse(res)));
     expect(newRes.status).toBe(200);
 
     // optionalAuth (used by POST /reports) must treat the stale token as anonymous too.
@@ -202,7 +205,7 @@ describe('POST /api/auth/change-password', () => {
     const staleReport = await request(app).post('/api/v1/reports').set(auth(oldToken)).send(report);
     expect(staleReport.status).toBe(201);
     expect(staleReport.body.report.reporterId).toBeNull();
-    const freshReport = await request(app).post('/api/v1/reports').set(auth(res.body.token)).send(report);
+    const freshReport = await request(app).post('/api/v1/reports').set(auth(tokenFromResponse(res))).send(report);
     expect(freshReport.body.report.reporterId).toBe(res.body.user.id);
   });
 
@@ -235,14 +238,31 @@ describe('POST /api/auth/change-password', () => {
 });
 
 describe('PATCH /api/auth/change-email', () => {
-  it('changes the email (normalized) and the new address can log in', async () => {
-    const { token } = await registerUser();
+  beforeEach(() => {
+    jest.spyOn(mailer, 'sendVerificationEmail').mockResolvedValue();
+    jest.spyOn(mailer, 'sendAccountExistsEmail').mockResolvedValue();
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('keeps the old email until the new address is confirmed, then switches', async () => {
+    const { token, id } = await registerUser();
     const res = await request(app)
       .patch('/api/auth/change-email')
       .set(auth(token))
       .send({ currentPassword: creds.password, newEmail: '  New@Example.COM ' });
-    expect(res.status).toBe(200);
-    expect(res.body.user.email).toBe('new@example.com');
+    expect(res.status).toBe(202);
+    expect(res.body.user).toBeUndefined();
+    // The link goes to the NEW (normalized) address; the account is unchanged.
+    expect(mailer.sendVerificationEmail.mock.calls.at(-1)[0]).toBe('new@example.com');
+    expect((await User.findById(id)).email).toBe(creds.email);
+    const before = await request(app).post('/api/auth/login').send({ email: 'new@example.com', password: creds.password });
+    expect(before.status).toBe(401);
+
+    const confirm = await request(app)
+      .post('/api/auth/verify-email')
+      .send({ token: tokenFromLink(mailer.sendVerificationEmail.mock.calls.at(-1)[1]) });
+    expect(confirm.status).toBe(200);
+    expect(confirm.body.user.email).toBe('new@example.com');
 
     const login = await request(app)
       .post('/api/auth/login')
@@ -250,12 +270,15 @@ describe('PATCH /api/auth/change-email', () => {
     expect(login.status).toBe(200);
   });
 
-  it('keeps the existing token valid after an email change', async () => {
+  it('keeps the existing token valid after an email change is confirmed', async () => {
     const { token } = await registerUser();
     await request(app)
       .patch('/api/auth/change-email')
       .set(auth(token))
       .send({ currentPassword: creds.password, newEmail: 'new@example.com' });
+    await request(app)
+      .post('/api/auth/verify-email')
+      .send({ token: tokenFromLink(mailer.sendVerificationEmail.mock.calls.at(-1)[1]) });
     const me = await request(app).get('/api/auth/me').set(auth(token));
     expect(me.status).toBe(200);
     expect(me.body.user.email).toBe('new@example.com');
@@ -283,28 +306,58 @@ describe('PATCH /api/auth/change-email', () => {
     expect(res.status).toBe(400);
   });
 
-  it('rejects an email already used by another account (case-insensitive)', async () => {
+  it('answers an address used by another account exactly like a free one (case-insensitive)', async () => {
     await registerUser({ email: 'taken@example.com' });
-    const { token } = await registerUser();
-    const res = await request(app)
+    const { token, id } = await registerUser();
+    const free = await request(app)
+      .patch('/api/auth/change-email')
+      .set(auth(token))
+      .send({ currentPassword: creds.password, newEmail: 'free@example.com' });
+    const taken = await request(app)
       .patch('/api/auth/change-email')
       .set(auth(token))
       .send({ currentPassword: creds.password, newEmail: 'TAKEN@example.com' });
-    expect(res.status).toBe(400);
-    expect(res.body.error.message).toBe('User already exists');
+    expect(taken.status).toBe(free.status);
+    expect(taken.body).toEqual(free.body);
+    // The holder gets a notice instead of a link, and nothing is parked for it.
+    expect(mailer.sendAccountExistsEmail).toHaveBeenCalledWith('taken@example.com');
+    expect((await User.findById(id).select('+pendingEmail')).pendingEmail).toBe('free@example.com');
+    expect((await User.findById(id)).email).toBe(creds.email);
   });
 
-  it('handles the duplicate-key race (11000 on save) like registration', async () => {
+  it('returns 503 and leaves nothing pending when the confirmation email cannot be sent', async () => {
     const { token, id } = await registerUser();
-    jest.spyOn(User.prototype, 'save').mockRejectedValue(Object.assign(new Error('dup'), { code: 11000 }));
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    mailer.sendVerificationEmail.mockRejectedValueOnce(new Error('smtp down'));
     const res = await request(app)
       .patch('/api/auth/change-email')
       .set(auth(token))
+      .send({ currentPassword: creds.password, newEmail: 'unsent@example.com' });
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({ error: { message: 'We could not send the verification email. Please try again.' } });
+    const user = await User.findById(id).select('+pendingEmail +verifyTokenHash +verifyTokenExpiry');
+    expect(user.email).toBe(creds.email);
+    expect(user.pendingEmail).toBeUndefined();
+    expect(user.verifyTokenHash).toBeUndefined();
+    expect(user.verifyTokenExpiry).toBeUndefined();
+  });
+
+  it('refuses to apply a pending address that was taken in the meantime', async () => {
+    const { token, id } = await registerUser();
+    await request(app)
+      .patch('/api/auth/change-email')
+      .set(auth(token))
       .send({ currentPassword: creds.password, newEmail: 'race@example.com' });
-    expect(res.status).toBe(400);
-    expect(res.body.error.message).toBe('User already exists');
-    jest.restoreAllMocks();
-    expect((await User.findById(id)).email).toBe(creds.email);
+    const link = mailer.sendVerificationEmail.mock.calls.at(-1)[1];
+    // Someone else claims the address before the link is used.
+    await User.create({ email: 'race@example.com', passwordHash: 'x', emailVerified: true });
+
+    const res = await request(app).post('/api/auth/verify-email').send({ token: tokenFromLink(link) });
+    expect(res.status).toBe(409);
+    expect(res.body.error.message).toEqual(expect.any(String));
+    const user = await User.findById(id).select('+pendingEmail');
+    expect(user.email).toBe(creds.email);
+    expect(user.pendingEmail).toBeUndefined();
   });
 });
 
@@ -455,7 +508,7 @@ describe('unexpected errors in account endpoints', () => {
       'patch',
       '/api/auth/change-email',
       { currentPassword: creds.password, newEmail: 'new@example.com' },
-      () => jest.spyOn(User.prototype, 'save').mockRejectedValue(boom()),
+      () => jest.spyOn(User, 'updateOne').mockRejectedValue(boom()),
     ],
     ['delete', '/api/auth/me', { password: creds.password }, () => jest.spyOn(User, 'deleteOne').mockRejectedValue(boom())],
   ])('%s %s -> generic 500 through the error handler, logged without secrets', async (method, path, body, fail) => {

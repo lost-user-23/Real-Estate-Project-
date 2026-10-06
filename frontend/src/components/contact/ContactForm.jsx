@@ -16,8 +16,8 @@ export function ContactForm() {
     setError("");
     setIsSubmitting(true);
     try {
-      // auth: false keeps a stored token off this public endpoint, so an expired
-      // one can't 401 and trigger logout. website (honeypot) is sent untrimmed.
+      // auth: false prevents a public endpoint's 401 from clearing the session.
+      // website (honeypot) is sent untrimmed.
       await api.post(
         "/api/v1/contact-messages",
         {

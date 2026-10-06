@@ -1,4 +1,6 @@
 process.env.MONGODB_DB_NAME = 'homenest_test_properties_contact';
+process.env.CLOUDINARY_CLOUD_NAME = 'demo';
+const { tokenFromResponse, registerVerified } = require('./helpers/auth');
 
 const request = require('supertest');
 const mongoose = require('mongoose');
@@ -9,15 +11,15 @@ const Property = require('../src/models/Property');
 const PropertyImage = require('../src/models/PropertyImage');
 
 const app = createApp();
-const auth = (token) => ({ Authorization: `Bearer ${token}` });
+const auth = (token) => ({ Cookie: `token=${token}` });
 
 const OWNER_NUMBER = '+91 98765 43210';
 const OTHER_NUMBER = '+91 91234 56789';
 
 async function registerUser(label = 'user') {
   const email = `${label}-${new mongoose.Types.ObjectId()}@example.com`;
-  const res = await request(app).post('/api/auth/register').send({ email, password: 'password123' });
-  return { token: res.body.token, id: res.body.user.id };
+  const res = await registerVerified(app, { email, password: 'password123' });
+  return { token: tokenFromResponse(res), id: res.body.user.id };
 }
 
 async function promoteToAdmin(userId) {
@@ -149,7 +151,7 @@ describe('contactNumber never appears in public or admin property responses', ()
     const published = await createListing({ ownerId: owner.id });
     await createListing({ ownerId: owner.id, status: 'draft', contactNumber: OTHER_NUMBER });
 
-    const images = Array.from({ length: 5 }, (_, i) => ({ url: `https://example.com/${i}.jpg` }));
+    const images = Array.from({ length: 5 }, (_, i) => ({ url: `https://res.cloudinary.com/demo/image/upload/v1/property-images/${i}.jpg` }));
     const responses = {
       list: await request(app).get('/api/v1/properties'),
       listLoggedIn: await request(app).get('/api/v1/properties').set(auth(owner.token)),

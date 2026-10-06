@@ -53,12 +53,12 @@ curl http://localhost:4000/health
 ## API overview
 
 Auth routes live under `/api/auth`; everything else under `/api/v1`.
-Protected routes need `Authorization: Bearer <token>`.
+Protected routes use the HTTP-only `token` cookie set by login or registration.
 
 | Area | Routes |
 |---|---|
 | Health | `GET /health` |
-| Auth | `POST /api/auth/register`, `POST /api/auth/login` (10 attempts per 15 minutes per IP); `GET/PATCH/DELETE /api/auth/me`; `POST /api/auth/change-password`, `PATCH /api/auth/change-email` (delete, change-password and change-email: 10 attempts per 15 minutes per user, current password required) |
+| Auth | `POST /api/auth/register`, `POST /api/auth/login` (10 attempts per 15 minutes per IP), `POST /api/auth/logout`; `GET/PATCH/DELETE /api/auth/me`; `POST /api/auth/change-password`, `PATCH /api/auth/change-email` (delete, change-password and change-email: 10 attempts per 15 minutes per user, current password required) |
 | Properties | `GET /properties`, `GET /properties/:slug` (published only, public); `GET /properties/mine` (owner, any status, includes the owner's `contactNumber`); `GET /properties/:id/contact` (auth, 20 per hour per user, see below); `POST /properties` (created as draft, at least 5 images); `PATCH/DELETE /properties/:id` (owner or admin) |
 | Locations | `GET /locations/popular`, `GET /locations/suggestions`, `GET /locations/:locationId/facilities` |
 | Categories | `GET /categories`; admin `POST/PATCH/DELETE` |
@@ -69,8 +69,10 @@ Protected routes need `Authorization: Bearer <token>`.
 
 Authentication is one JWT (7 days) shared by the public site and the admin
 area; admin access is the `role` on the user. A password change re-issues the
-token and invalidates every earlier one. Slugs for new properties come from the
-title, with a random hex suffix added when the slug is already taken. If two
+HTTP-only cookie and invalidates every earlier token. The browser sends the
+cookie with API requests; `COOKIE_SAMESITE` configures its SameSite policy
+(defaults to `lax`). Slugs for new properties come from the title, with a
+random hex suffix added when the slug is already taken. If two
 creates race and the insert still hits a duplicate slug, it is retried with a
 new suffix up to 3 times, then answered with 409. Existing slugs never change.
 
@@ -230,29 +232,37 @@ See `.env.example`.
 - `JWT_SECRET` is required in every environment. `src/services/auth.service.js`
   throws when it is empty, so the server will not start without it. Use a long
   random value (for example `openssl rand -hex 64`).
-- With `NODE_ENV=production`, `MONGODB_URI`, `JWT_SECRET` and `CORS_ORIGIN`
-  must all be set or the process refuses to start.
+- With `NODE_ENV=production` the process refuses to start unless `MONGODB_URI`,
+  `JWT_SECRET`, `CORS_ORIGIN`, `TRUST_PROXY_HOPS`, `APP_URL`, `SMTP_HOST`,
+  `MAIL_FROM`, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` and
+  `CLOUDINARY_API_SECRET` are all set. In production `JWT_SECRET` must also be
+  at least 32 characters and not a placeholder (values copied from
+  `.env.example` are rejected).
 - `MONGODB_URI`, `MONGODB_DB_NAME`, `PORT` and `CORS_ORIGIN` fall back to local
-  defaults in development.
-- `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` and
-  `CLOUDINARY_FOLDER` are needed for photo uploads.
+  defaults outside production only.
+- `CORS_ORIGIN` is one exact origin or a comma-separated list (for example
+  `https://www.example.com,https://example.com`). Entries are trimmed and lose
+  trailing slashes; paths and `*` are rejected at startup.
+- `CLOUDINARY_FOLDER` (default `property-images`) is optional.
 - `TRUST_PROXY_HOPS` (default `0`) is the number of reverse proxies in front of
   the server. It is passed to Express `trust proxy` as a hop count; anything
   that is not a positive whole number (including `true`) is treated as `0`.
+- `COOKIE_SAMESITE` (default `lax`) configures the SameSite policy for the
+  HTTP-only authentication cookie.
 - `RATE_LIMIT_MAX` (default `200`) and `RATE_LIMIT_WINDOW_MS` (default
   `900000`, 15 minutes) set the global per-IP limit that sits under the
   stricter per-route limiters.
 
 ## Deploy notes
 
-- Run with `NODE_ENV=production` and set `JWT_SECRET`, `MONGODB_URI` and
-  `CORS_ORIGIN`.
+- Run with `NODE_ENV=production` and set every variable listed above; see
+  `PRODUCTION_CHECKLIST.md` at the repo root.
 - The login rate limiter keys on the client IP. Behind a reverse proxy or load
   balancer, set `TRUST_PROXY_HOPS` to the number of proxies (usually `1`), or
   every request appears to come from the proxy and all users share one budget.
   Do not set it higher than the real hop count: clients could then spoof their
   IP through `X-Forwarded-For`.
-- Serve over HTTPS; the frontend keeps the session token in localStorage.
+- Serve over HTTPS; production auth cookies are marked `Secure` and `HttpOnly`.
 
 ## Architectural decisions made during this setup
 

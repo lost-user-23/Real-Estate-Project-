@@ -1,4 +1,5 @@
 process.env.MONGODB_DB_NAME = 'homenest_test_category';
+const { tokenFromResponse, registerVerified } = require('./helpers/auth');
 
 const request = require('supertest');
 const mongoose = require('mongoose');
@@ -11,10 +12,8 @@ const app = createApp();
 
 async function registerUser(overrides = {}) {
   const email = overrides.email || `user-${new mongoose.Types.ObjectId()}@example.com`;
-  const res = await request(app)
-    .post('/api/auth/register')
-    .send({ name: 'Test User', email, password: 'password123', ...overrides });
-  return { token: res.body.token, user: res.body.user };
+  const res = await registerVerified(app, { name: 'Test User', email, password: 'password123', ...overrides });
+  return { token: tokenFromResponse(res), user: res.body.user };
 }
 
 async function makeAdmin(userId) {
@@ -81,7 +80,7 @@ describe('POST /api/v1/categories', () => {
     const { token } = await registerUser();
     const res = await request(app)
       .post('/api/v1/categories')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send(validPayload);
     expect(res.status).toBe(403);
   });
@@ -90,7 +89,7 @@ describe('POST /api/v1/categories', () => {
     const { token } = await registerAdmin();
     const res = await request(app)
       .post('/api/v1/categories')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send(validPayload);
 
     expect(res.status).toBe(201);
@@ -107,7 +106,7 @@ describe('POST /api/v1/categories', () => {
     const { token } = await registerAdmin();
     const res = await request(app)
       .post('/api/v1/categories')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ ...validPayload, name: '' });
     expect(res.status).toBe(400);
   });
@@ -118,7 +117,7 @@ describe('POST /api/v1/categories', () => {
     delete rest.slug;
     const res = await request(app)
       .post('/api/v1/categories')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send(rest);
     expect(res.status).toBe(400);
   });
@@ -129,7 +128,7 @@ describe('POST /api/v1/categories', () => {
 
     const res = await request(app)
       .post('/api/v1/categories')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send(validPayload);
     expect(res.status).toBe(409);
   });
@@ -149,7 +148,7 @@ describe('PATCH /api/v1/categories/:id', () => {
     const category = await Category.create(validPayload);
     const res = await request(app)
       .patch(`/api/v1/categories/${category._id}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ name: 'New Name' });
     expect(res.status).toBe(403);
   });
@@ -160,7 +159,7 @@ describe('PATCH /api/v1/categories/:id', () => {
 
     const res = await request(app)
       .patch(`/api/v1/categories/${category._id}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ listingCount: 42 });
 
     expect(res.status).toBe(200);
@@ -176,7 +175,7 @@ describe('PATCH /api/v1/categories/:id', () => {
 
     const res = await request(app)
       .patch(`/api/v1/categories/${category._id}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ listingCount: -5 });
 
     expect(res.status).toBe(400);
@@ -189,7 +188,7 @@ describe('PATCH /api/v1/categories/:id', () => {
 
     const res = await request(app)
       .patch(`/api/v1/categories/${category._id}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ slug: 'villas' });
 
     expect(res.status).toBe(409);
@@ -199,7 +198,7 @@ describe('PATCH /api/v1/categories/:id', () => {
     const { token } = await registerAdmin();
     const res = await request(app)
       .patch(`/api/v1/categories/${new mongoose.Types.ObjectId()}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ name: 'New Name' });
     expect(res.status).toBe(404);
   });
@@ -217,7 +216,7 @@ describe('DELETE /api/v1/categories/:id', () => {
     const category = await Category.create(validPayload);
     const res = await request(app)
       .delete(`/api/v1/categories/${category._id}`)
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
     expect(res.status).toBe(403);
   });
 
@@ -227,7 +226,7 @@ describe('DELETE /api/v1/categories/:id', () => {
 
     const res = await request(app)
       .delete(`/api/v1/categories/${category._id}`)
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     expect(res.status).toBe(204);
     expect(await Category.findById(category._id)).toBeNull();
@@ -237,7 +236,7 @@ describe('DELETE /api/v1/categories/:id', () => {
     const { token } = await registerAdmin();
     const res = await request(app)
       .delete(`/api/v1/categories/${new mongoose.Types.ObjectId()}`)
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
     expect(res.status).toBe(404);
   });
 });

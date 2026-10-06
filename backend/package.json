@@ -12,6 +12,7 @@
     "seed": "node scripts/seed.js",
     "db:setup": "node scripts/setup-db.js",
     "backfill:city-lower": "node scripts/backfill-city-lower.js",
+    "backfill:email-verified": "node scripts/backfill-email-verified.js",
     "admin:create": "node scripts/create-admin.js"
   },
   "engines": {
@@ -28,6 +29,7 @@
   "dependencies": {
     "bcrypt": "^5.1.1",
     "cloudinary": "^2.11.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^18.0.2",
     "express": "^5.2.1",
@@ -36,7 +38,8 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^9.10.1",
     "morgan": "^1.12.1",
-    "multer": "^2.4.0"
+    "multer": "^2.4.0",
+    "nodemailer": "^10.0.15"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

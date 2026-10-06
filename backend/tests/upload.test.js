@@ -3,6 +3,7 @@ process.env.CLOUDINARY_CLOUD_NAME = 'demo';
 process.env.CLOUDINARY_API_KEY = '123456789012345';
 process.env.CLOUDINARY_API_SECRET = 'test-secret';
 process.env.CLOUDINARY_FOLDER = 'property-images';
+const { tokenFromResponse, registerVerified } = require('./helpers/auth');
 
 const request = require('supertest');
 const mongoose = require('mongoose');
@@ -56,8 +57,8 @@ describe('POST /api/v1/uploads/image', () => {
   let token;
 
   beforeEach(async () => {
-    const reg = await request(app).post('/api/auth/register').send(creds);
-    token = reg.body.token;
+    const reg = await registerVerified(app, creds);
+    token = tokenFromResponse(reg);
     jest.spyOn(cloudinaryV2.uploader, 'upload_stream').mockImplementation((opts, cb) => ({
       end: () => cb(null, { secure_url: `https://res.cloudinary.com/demo/${opts.folder}/x.jpg`, public_id: `${opts.folder}/x` }),
     }));
@@ -65,7 +66,7 @@ describe('POST /api/v1/uploads/image', () => {
   afterEach(() => jest.restoreAllMocks());
 
   const send = (buf, name, type) =>
-    request(app).post('/api/v1/uploads/image').set('Authorization', `Bearer ${token}`).attach('image', buf, { filename: name, contentType: type });
+    request(app).post('/api/v1/uploads/image').set('Cookie', `token=${token}`).attach('image', buf, { filename: name, contentType: type });
 
   it('uploads a valid image', async () => {
     const res = await send(Buffer.alloc(1024), 'a.jpg', 'image/jpeg');
@@ -91,7 +92,7 @@ describe('POST /api/v1/uploads/image', () => {
   );
 
   it('rejects a request without a file and an unauthenticated request', async () => {
-    const none = await request(app).post('/api/v1/uploads/image').set('Authorization', `Bearer ${token}`);
+    const none = await request(app).post('/api/v1/uploads/image').set('Cookie', `token=${token}`);
     expect(none.status).toBe(400);
     const anon = await request(app).post('/api/v1/uploads/image');
     expect(anon.status).toBe(401);

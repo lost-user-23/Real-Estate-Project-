@@ -6,11 +6,14 @@ const {protect} = require("../middleware/auth.middleware");
 const {
   register,
   login,
+  logout,
   getCurrentUser,
   updateProfile,
   changePassword,
   changeEmail,
   deleteAccount,
+  verifyEmail,
+  resendVerification,
 } = require('../controllers/auth.controller');
 
 const authLimiter = rateLimit({
@@ -37,8 +40,21 @@ const accountLimiter = rateLimit({
   handler: (req, res, next, options) => next(new AppError('Too many attempts, please try again later', options.statusCode)),
 });
 
+// Resending sends mail to arbitrary addresses, so it gets a much smaller budget
+// than login. Deliberately NOT skipped in tests so the limit can be exercised.
+const resendLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res, next, options) => next(new AppError('Too many requests, please try again later', options.statusCode)),
+});
+
 router.post('/register', authLimiter, register);
+router.post('/verify-email', authLimiter, verifyEmail);
+router.post('/resend-verification', resendLimiter, resendVerification);
 router.post('/login', authLimiter, login);
+router.post('/logout', logout);
 
 router.get('/me', protect, getCurrentUser);
 router.patch('/me', protect, updateProfile);

@@ -1,188 +1,188 @@
-# HomeNest API Inventory and Project Status
+# API Inventory and Project Status
 
-**Reviewed:** 2026-09-30  
-**Scope:** Current workspace implementation, including existing uncommitted changes.  
-**Audience:** Project review and mentor walkthrough.
+## Scope and source of truth
 
-## Executive Summary
+This inventory reflects the current API surface registered in the backend route tree, not the earlier planning notes or a proposed future state. The authoritative implementation lives in:
 
-**Estimated project completion: approximately 70% for the current MVP/prototype scope.** This is an informed estimate, not an automatically measured metric: the repository does not contain one complete, approved product requirements checklist against which every feature can be scored. The estimate reflects a substantial working API and admin experience, a production-buildable frontend, and passing automated checks, balanced against unfinished product integrations and launch-readiness work listed below.
+- `backend/src/app.js`
+- `backend/src/routes/index.js`
+- `backend/src/routes/*.js`
+- `backend/src/controllers/*.js`
+- `backend/src/middleware/*.js`
 
-The backend currently registers **57 distinct HTTP method/path operations** across 12 API areas. The API uses two prefixes: health checks are under `/health`, account/authentication routes are under `/api/auth`, and the feature API is under `/api/v1`. This prefix split is intentional in the current implementation; it differs from the older architecture proposal.
+## API prefix model
 
-### Verification performed
+The backend uses a hybrid prefix layout:
 
-| Check | Result |
-|---|---|
-| Backend tests | Passed: 23 suites, 318 tests |
-| Backend lint | Passed |
-| Frontend lint | Passed |
-| Frontend production build | Passed; Next.js generated 30 routes |
+- `/health` - health checks
+- `/api/auth` - authentication and account management
+- `/api/v1` - all feature APIs and admin endpoints
 
-The Jest run emitted non-blocking Mongoose deprecation warnings for the `new` option in `findOneAndUpdate`/`findOneAndReplace`. The working tree already contained report-related edits; this review includes the current contents and does not alter or discard those edits.
+This split is intentional in the current codebase and differs from the older architecture note.
 
-## API Inventory
+## Health and status
 
-“Implemented” means the method/path is registered in the current Express router and has a controller implementation. Authentication requirements are noted per route. Unless stated otherwise, request and response bodies are JSON. Protected endpoints use `Authorization: Bearer <token>`.
-
-### Health
-
-| Method | Endpoint | Purpose and access | Status |
+| Method | Endpoint | Access | Purpose |
 |---|---|---|---|
-| GET | `/health` | Service health and MongoDB connection state; public. | Implemented |
+| GET | `/health` | Public | Returns API health and MongoDB connection status. |
 
-### Authentication and Account
+## Authentication and account APIs
 
-These routes use `/api/auth` (not `/api/v1/auth`). Register/login are rate-limited by client IP; sensitive account operations are rate-limited by user.
-
-| Method | Endpoint | Purpose and access | Status |
+| Method | Endpoint | Access | Purpose |
 |---|---|---|---|
-| POST | `/api/auth/register` | Create an account and return a token/user; public. | Implemented |
-| POST | `/api/auth/login` | Authenticate and return a token/user; public. | Implemented |
-| GET | `/api/auth/me` | Return the authenticated user's profile. | Implemented |
-| PATCH | `/api/auth/me` | Update the authenticated user's name/phone. | Implemented |
-| DELETE | `/api/auth/me` | Delete the account after password confirmation; protected. | Implemented |
-| POST | `/api/auth/change-password` | Change password and issue a replacement token; protected. | Implemented |
-| PATCH | `/api/auth/change-email` | Change email after password confirmation; protected. | Implemented |
+| POST | `/api/auth/register` | Public | Create an account; issues a JWT cookie and returns the user. |
+| POST | `/api/auth/verify-email` | Public | Verify an emailed token; completes registration or email-change flow. |
+| POST | `/api/auth/resend-verification` | Public | Resend a verification email when the current cooldown allows it. |
+| POST | `/api/auth/login` | Public | Authenticate with email/password and issue the token cookie. |
+| POST | `/api/auth/logout` | Public | Clear the cookie and return success. |
+| GET | `/api/auth/me` | Authenticated | Return the current authenticated user profile. |
+| PATCH | `/api/auth/me` | Authenticated | Update the user's `name` and/or `phone`. |
+| DELETE | `/api/auth/me` | Authenticated | Delete the current account after password confirmation. |
+| POST | `/api/auth/change-password` | Authenticated | Change password and reissue the auth cookie. |
+| PATCH | `/api/auth/change-email` | Authenticated | Change email after password confirmation and verification. |
 
-### Properties
+Notes:
 
-| Method | Endpoint | Purpose and access | Status |
+- Auth routes use rate limiting to protect login and account-mutating actions.
+- The backend uses HTTP-only `token` cookies.
+- The auth flow also supports account verification and re-verification mail sending.
+
+## Property APIs
+
+| Method | Endpoint | Access | Purpose |
 |---|---|---|---|
-| GET | `/api/v1/properties` | Search/list published properties with filters and pagination; public. | Implemented |
-| GET | `/api/v1/properties/mine` | List the caller's own properties, including non-public statuses; authenticated owner. | Implemented |
-| GET | `/api/v1/properties/:id/contact` | Return contact number for a published property; authenticated, limited to 20 requests per user per hour. | Implemented |
-| GET | `/api/v1/properties/:slug` | Read a published property by slug; public. | Implemented |
-| POST | `/api/v1/properties` | Submit a property; authenticated; new submissions are drafts. | Implemented |
-| PATCH | `/api/v1/properties/:id` | Update a property; authenticated owner or admin. | Implemented |
-| DELETE | `/api/v1/properties/:id` | Delete a property; authenticated owner or admin. | Implemented |
+| GET | `/api/v1/properties` | Public | Search/list published properties with filters, sorting, and pagination. |
+| POST | `/api/v1/properties` | Authenticated + verified | Create a property listing; new listings start as drafts. |
+| GET | `/api/v1/properties/mine` | Authenticated | Return the caller's own properties across statuses. |
+| GET | `/api/v1/properties/featured` | Public | Return featured property sets for the landing sections. |
+| GET | `/api/v1/properties/:id/contact` | Authenticated + verified | Return a private property contact number for a published listing; limited by per-user rate limit. |
+| GET | `/api/v1/properties/:slug` | Public | Return a published property by slug. |
+| PATCH | `/api/v1/properties/:id` | Authenticated | Update a property owned by the caller or an admin. |
+| DELETE | `/api/v1/properties/:id` | Authenticated | Delete a property owned by the caller or an admin. |
 
-### Locations
+Property behavior currently implemented in the backend:
 
-| Method | Endpoint | Purpose and access | Status |
+- public property queries filter to `published` listings
+- the backend exposes a private contact-number endpoint for verified users
+- owner-owned listings can be queried even when not published via `/mine`
+- property submission is gated by verification; the API does not auto-publish user submissions
+
+## Location and facility APIs
+
+| Method | Endpoint | Access | Purpose |
 |---|---|---|---|
-| GET | `/api/v1/locations/popular` | List popular locations; public. | Implemented |
-| GET | `/api/v1/locations/suggestions?q=...` | Autocomplete suggestions; public and rate-limited. | Implemented |
-| GET | `/api/v1/locations/:locationId/facilities` | List facilities associated with a location; public. | Implemented |
-| GET | `/api/v1/admin/locations` | List locations for administration; admin only. | Implemented |
-| PATCH | `/api/v1/admin/locations/:id` | Update location fields such as popular flag/order; admin only. | Implemented |
+| GET | `/api/v1/locations/popular` | Public | Return popular locations sorted by rank and active listing count. |
+| GET | `/api/v1/locations/suggestions` | Public | Suggest city/locality matches with request throttling. |
+| GET | `/api/v1/locations/:locationId/facilities` | Public | Return facility entries for a location. |
+| GET | `/api/v1/admin/locations` | Admin | List locations for admin management. |
+| PATCH | `/api/v1/admin/locations/:id` | Admin | Update location fields such as popularity and rank. |
+| POST | `/api/v1/admin/facilities` | Admin | Create a facility record. |
+| PATCH | `/api/v1/admin/facilities/:id` | Admin | Update a facility record. |
+| DELETE | `/api/v1/admin/facilities/:id` | Admin | Delete a facility record. |
 
-### Facilities
+## Category APIs
 
-| Method | Endpoint | Purpose and access | Status |
+| Method | Endpoint | Access | Purpose |
 |---|---|---|---|
-| POST | `/api/v1/admin/facilities` | Create a nearby facility; admin only. | Implemented |
-| PATCH | `/api/v1/admin/facilities/:id` | Update a nearby facility; admin only. | Implemented |
-| DELETE | `/api/v1/admin/facilities/:id` | Delete a nearby facility; admin only. | Implemented |
+| GET | `/api/v1/categories` | Public | List categories. |
+| POST | `/api/v1/categories` | Admin | Create a category. |
+| PATCH | `/api/v1/categories/:id` | Admin | Update a category. |
+| DELETE | `/api/v1/categories/:id` | Admin | Delete a category. |
 
-### Categories
+## Project APIs
 
-| Method | Endpoint | Purpose and access | Status |
+| Method | Endpoint | Access | Purpose |
 |---|---|---|---|
-| GET | `/api/v1/categories` | List categories; public. | Implemented |
-| POST | `/api/v1/categories` | Create a category; admin only. | Implemented |
-| PATCH | `/api/v1/categories/:id` | Update a category; admin only. | Implemented |
-| DELETE | `/api/v1/categories/:id` | Delete a category; admin only. | Implemented |
+| GET | `/api/v1/projects/new` | Public | Return newly published projects. |
+| GET | `/api/v1/projects/builders` | Public | Return builder/developer groupings for project discovery. |
+| GET | `/api/v1/projects` | Public | List published projects. |
+| GET | `/api/v1/projects/:id` | Public | Return a published project by id. |
+| GET | `/api/v1/admin/projects` | Admin | List projects for admin review. |
+| POST | `/api/v1/admin/projects` | Admin | Create a project. |
+| GET | `/api/v1/admin/projects/:id` | Admin | Read project details for admin work. |
+| PATCH | `/api/v1/admin/projects/:id` | Admin | Update a project. |
+| PATCH | `/api/v1/admin/projects/:id/publish` | Admin | Publish a project. |
+| DELETE | `/api/v1/admin/projects/:id` | Admin | Delete a project. |
 
-### Projects
+## Article and insight APIs
 
-| Method | Endpoint | Purpose and access | Status |
+| Method | Endpoint | Access | Purpose |
 |---|---|---|---|
-| GET | `/api/v1/projects/new` | List newly published projects; public. | Implemented |
-| GET | `/api/v1/projects` | List published projects; public. | Implemented |
-| GET | `/api/v1/projects/:id` | Read a published project; public. | Implemented |
-| GET | `/api/v1/admin/projects` | List projects for administration; admin only. | Implemented |
-| POST | `/api/v1/admin/projects` | Create a project; admin only. | Implemented |
-| GET | `/api/v1/admin/projects/:id` | Read a project for administration; admin only. | Implemented |
-| PATCH | `/api/v1/admin/projects/:id` | Update a project; admin only. | Implemented |
-| PATCH | `/api/v1/admin/projects/:id/publish` | Publish a project; admin only. | Implemented |
-| DELETE | `/api/v1/admin/projects/:id` | Delete a project; admin only. | Implemented |
+| GET | `/api/v1/articles` | Public | List published articles or insights. |
+| GET | `/api/v1/articles/:slug` | Public | Read a published article by slug. |
+| GET | `/api/v1/admin/articles` | Admin | List articles for admin management. |
+| POST | `/api/v1/admin/articles` | Admin | Create an article. |
+| GET | `/api/v1/admin/articles/:id` | Admin | Read an article for admin review. |
+| PATCH | `/api/v1/admin/articles/:id` | Admin | Update an article. |
+| PATCH | `/api/v1/admin/articles/:id/publish` | Admin | Publish an article. |
+| DELETE | `/api/v1/admin/articles/:id` | Admin | Delete an article. |
 
-### Articles / Insights
+## Report APIs
 
-| Method | Endpoint | Purpose and access | Status |
+| Method | Endpoint | Access | Purpose |
 |---|---|---|---|
-| GET | `/api/v1/articles` | List published articles; public. | Implemented |
-| GET | `/api/v1/articles/:slug` | Read a published article by slug; public. | Implemented |
-| GET | `/api/v1/admin/articles` | List articles for administration; admin only. | Implemented |
-| POST | `/api/v1/admin/articles` | Create an article; admin only. | Implemented |
-| GET | `/api/v1/admin/articles/:id` | Read an article for administration; admin only. | Implemented |
-| PATCH | `/api/v1/admin/articles/:id` | Update an article; admin only. | Implemented |
-| PATCH | `/api/v1/admin/articles/:id/publish` | Publish an article; admin only. | Implemented |
-| DELETE | `/api/v1/admin/articles/:id` | Delete an article; admin only. | Implemented |
+| POST | `/api/v1/reports` | Public; optional auth | Submit a listing report. |
+| GET | `/api/v1/admin/reports` | Admin | List reports for moderation. |
+| GET | `/api/v1/admin/reports/:id` | Admin | Read a report detail record. |
+| PATCH | `/api/v1/admin/reports/:id` | Admin | Update the report moderation status. |
 
-### Reports
+## Saved property APIs
 
-| Method | Endpoint | Purpose and access | Status |
+| Method | Endpoint | Access | Purpose |
 |---|---|---|---|
-| POST | `/api/v1/reports` | Submit a listing report; public, with optional authentication; rate-limited. | Implemented |
-| GET | `/api/v1/admin/reports` | List reports for moderation; admin only. | Implemented |
-| GET | `/api/v1/admin/reports/:id` | Read a report; admin only. | Implemented |
-| PATCH | `/api/v1/admin/reports/:id` | Update report moderation status; admin only. | Implemented |
+| GET | `/api/v1/saved-properties/ids` | Authenticated | Return the caller's saved property ids. |
+| GET | `/api/v1/saved-properties` | Authenticated | Return a paginated list of saved properties for the caller. |
+| POST | `/api/v1/saved-properties/:propertyId` | Authenticated + verified | Save a property for the caller. |
+| DELETE | `/api/v1/saved-properties/:propertyId` | Authenticated | Remove a saved property for the caller. |
 
-### Saved Properties
+## Upload APIs
 
-All routes require authentication and are scoped to the caller. Backed by the `SavedProperty` model, which has a unique `(userId, propertyId)` index. Saves are deleted when the property is deleted (single or bulk) and when the user's account is deleted.
-
-| Method | Endpoint | Purpose and access | Status |
+| Method | Endpoint | Access | Purpose |
 |---|---|---|---|
-| GET | `/api/v1/saved-properties/ids` | List the IDs of the caller's saved properties; authenticated. | Implemented |
-| GET | `/api/v1/saved-properties` | Paginated list of the caller's saved properties (`page`, `limit`); authenticated. | Implemented |
-| POST | `/api/v1/saved-properties/:propertyId` | Save a property; authenticated. | Implemented |
-| DELETE | `/api/v1/saved-properties/:propertyId` | Remove a saved property; authenticated. | Implemented |
+| POST | `/api/v1/uploads/image` | Authenticated + verified | Upload an image to Cloudinary; the server selects a user-scoped folder. |
 
-### Admin Dashboard and Bulk Property Actions
+## Contact message APIs
 
-| Method | Endpoint | Purpose and access | Status |
+| Method | Endpoint | Access | Purpose |
 |---|---|---|---|
-| GET | `/api/v1/admin/dashboard` | Return dashboard counts/summary; admin only. | Implemented |
-| GET | `/api/v1/admin/properties` | List properties across statuses for administration; admin only. | Implemented |
-| PATCH | `/api/v1/admin/properties/bulk` | Bulk-update supported property fields; admin only. | Implemented |
-| DELETE | `/api/v1/admin/properties/bulk` | Bulk-delete properties; admin only. | Implemented |
+| POST | `/api/v1/contact-messages` | Public | Submit a contact message with rate limiting. |
+| GET | `/api/v1/admin/contact-messages` | Admin | List incoming contact submissions. |
+| PATCH | `/api/v1/admin/contact-messages/:id` | Admin | Update contact message status. |
 
-### Uploads
+## Admin dashboard and bulk actions
 
-| Method | Endpoint | Purpose and access | Status |
+| Method | Endpoint | Access | Purpose |
 |---|---|---|---|
-| POST | `/api/v1/uploads/image` | Upload one image (multipart field `image`, max 5 MB, jpg/jpeg/png/webp) to Cloudinary in a server-selected user folder; authenticated and rate limited. | Implemented |
+| GET | `/api/v1/admin/dashboard` | Admin | Return dashboard summary data and counts. |
+| GET | `/api/v1/admin/properties` | Admin | List properties across states for admin review. |
+| PATCH | `/api/v1/admin/properties/bulk` | Admin | Bulk-update supported property fields. |
+| DELETE | `/api/v1/admin/properties/bulk` | Admin | Bulk-delete properties. |
 
-## Not Implemented or Not Exposed as Dedicated APIs
+## Current implementation status
 
-These are absent as dedicated endpoints in the current route tree. Some behavior is available through a broader existing endpoint; those cases are distinguished below so they are not mistaken for missing functionality.
+### Implemented and active
 
-| Capability or proposed route | Current state |
-|---|---|
-| `POST /api/v1/auth/logout` | No server logout endpoint. The frontend logs out by clearing the locally stored token; tokens are otherwise invalidated through account/password changes or expiry. |
-| `GET /api/v1/properties/featured` | No dedicated route. Featured listings are fetched through `GET /api/v1/properties?featured=true&limit=50` and ordered/capped in the frontend. |
-| `GET /api/v1/articles/insights` | No dedicated route. The frontend uses `GET /api/v1/articles?limit=3`. |
-| Builder/developer API | No Builder model or endpoint. Builder cards are derived from published projects. |
-| Contact/support message API | Not implemented; the contact form's confirmation is local UI behavior. |
-| Analytics event ingestion API/vendor integration | Not implemented; the current tracking wrapper is not connected to a configured analytics service. |
-| Saved-search alerts, map search, mobile app, multi-language APIs | Not part of the current API; the product brief identifies these as future scope. |
+- public property discovery and detail APIs
+- owner-managed property CRUD and private contact access
+- account registration, login, logout, and verification flows
+- admin dashboard, projects, articles, locations, reports, and bulk property actions
+- Cloudinary upload flow for property images
+- saved-property and contact-message flows
+- public data APIs for categories, locations, and projects
 
-## Project Findings and Estimate
+### Operational notes
 
-### What is working
+This API is currently production-oriented from a backend perspective, even though a few user-facing product features remain future-scope or not yet fully wired to external vendors. The route tree is therefore the primary contract for the backend and should be used as the source of truth for feature planning and QA.
 
-- The backend has a broad, versioned feature API with public, authenticated-owner, and admin-only operations.
-- The frontend includes public discovery/detail flows, search, account/profile management, property submission, owner contact access, reporting, and admin management pages.
-- API-backed workflows include admin operations, account pages, property search/details, location/category/project/article content, property submission, and reports.
-- Automated checks passed as recorded above.
+## Notable validation and security patterns
 
-### Remaining work / limits
+- `protect` enforces cookie-based auth and invalidates stale tokens.
+- `restrictTo('admin')` gates admin routines.
+- `requireVerified` blocks unverified users from sensitive listing and media actions.
+- rate-limiters are applied to login, verification, reports, uploads, and contact-submission endpoints.
+- non-safe requests validate the request `Origin` against an allowlist.
+- property contact information is protected from anonymous exposure.
 
-- The contact/support form has no backend submission, and analytics has no real provider/ingestion integration.
-- There is no separate Builder API; builder data is derived from projects.
-- Cloudinary uploads require valid credentials, and persistent runtime behavior requires MongoDB. Deployment configuration, production credentials, and live deployment were not verified in this review.
-- The architecture document is a planning baseline and is stale in places: it describes an empty backend/localStorage-based admin and proposes routes/prefixes that differ from the current implementation. The current Express route declarations in `backend/src/routes/` are authoritative for the inventory above.
-- `docs/current-capabilities-and-file-guide.md` says featured properties and insights are mock-backed, but the current `frontend/src/lib/dataSource.js` fetches both through the API. That part of the guide should be reconciled with the code.
+## Documentation note
 
-### Completion estimate
-
-**Approximately 70% complete as an MVP/prototype.** The core application and API are substantially implemented and build/test clean. The remaining estimate reflects missing product integrations, future-scope features, and unverified production deployment/readiness. This percentage should not be presented as an exact audit score until the team agrees on a complete requirements checklist and weights each requirement.
-
-## Source of Truth
-
-- Current API registration: `backend/src/app.js`, `backend/src/routes/index.js`, and the individual files in `backend/src/routes/`.
-- Current frontend data access: `frontend/src/lib/dataSource.js`, `frontend/src/lib/api.js`, and `frontend/src/lib/admin-store.jsx`.
-- Product scope references: `docs/backend-architecture.md` (planning baseline), `docs/landing-page-prd.md`, and `docs/current-capabilities-and-file-guide.md` (contains the noted drift).
+This document intentionally reflects the implemented route tree; it is not a wishlist for future work. When product scope or requirements drift from the current route registrations, the backend route files should be treated as the authoritative source.

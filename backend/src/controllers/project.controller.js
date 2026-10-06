@@ -1,5 +1,6 @@
 const { CONTENT_STATUSES } = require('../models/contentStatus');
-const projectService = require('../services/project.service');
+const { isOwnCloudinaryImageUrl } = require('../services/cloudinaryAssets.service');
+const projectService =require('../services/project.service');
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
 const { parseOptionalCity } = require('../utils/queryParams');
@@ -8,6 +9,7 @@ const { serializeProject, serializeProjects } = require('../utils/serializers/pr
 const MAX_LIMIT = 50;
 const DEFAULT_LIMIT = 20;
 const MAX_NAME_LENGTH = 200;
+const MAX_IMAGE_URL_LENGTH = 2048;
 const NULLABLE_STRING_FIELDS = ['locality', 'imageUrl', 'imageAlt'];
 
 function isNonEmptyString(value) {
@@ -41,6 +43,13 @@ function validateFields(body, { isCreate = false } = {}) {
     if (body[field] !== undefined && body[field] !== null && typeof body[field] !== 'string') {
       errors.push(`${field} must be a string or null`);
     }
+  }
+
+  if (
+    typeof body.imageUrl === 'string' &&
+    !(body.imageUrl.length <= MAX_IMAGE_URL_LENGTH && isOwnCloudinaryImageUrl(body.imageUrl))
+  ) {
+    errors.push('imageUrl must be a valid Cloudinary image URL');
   }
 
   if (isCreate || body.startingPriceInRupees !== undefined) {

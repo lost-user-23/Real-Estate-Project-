@@ -1,4 +1,5 @@
 process.env.MONGODB_DB_NAME = 'homenest_test_articles';
+const { tokenFromResponse, registerVerified } = require('./helpers/auth');
 
 const request = require('supertest');
 const mongoose = require('mongoose');
@@ -11,10 +12,8 @@ const app = createApp();
 
 async function registerUser() {
   const email = `article-${new mongoose.Types.ObjectId()}@example.com`;
-  const response = await request(app)
-    .post('/api/auth/register')
-    .send({ name: 'Article Tester', email, password: 'password123' });
-  return { token: response.body.token, user: response.body.user };
+  const response = await registerVerified(app, { name: 'Article Tester', email, password: 'password123' });
+  return { token: tokenFromResponse(response), user: response.body.user };
 }
 
 async function promoteToAdmin(userId) {
@@ -80,7 +79,7 @@ describe('admin articles', () => {
     const token = await createAdmin();
     const response = await request(app)
       .post('/api/v1/admin/articles')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ title: 'A Guide to Home Buying!' });
 
     expect(response.status).toBe(201);
@@ -93,12 +92,12 @@ describe('admin articles', () => {
     const token = await createAdmin();
     const created = await request(app)
       .post('/api/v1/admin/articles')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ title: 'Original title', slug: 'seo-friendly-title' });
 
     const updated = await request(app)
       .patch(`/api/v1/admin/articles/${created.body.article._id}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ title: 'Revised title' });
 
     expect(updated.status).toBe(200);
@@ -110,7 +109,7 @@ describe('admin articles', () => {
     const token = await createAdmin();
     const baseRequest = request(app)
       .post('/api/v1/admin/articles')
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     const malformed = await baseRequest.send({ title: 'Malformed slug', slug: 'Bad Slug!' });
     expect(malformed.status).toBe(400);
@@ -118,7 +117,7 @@ describe('admin articles', () => {
     await createArticle({ slug: 'already-taken' });
     const duplicate = await request(app)
       .post('/api/v1/admin/articles')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ title: 'Duplicate', slug: 'already-taken' });
     expect(duplicate.status).toBe(409);
   });
@@ -130,11 +129,11 @@ describe('admin articles', () => {
 
     const first = await request(app)
       .patch(publishUrl)
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
     const firstPublishedAt = first.body.article.publishedAt;
     const second = await request(app)
       .patch(publishUrl)
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     expect(first.status).toBe(200);
     expect(first.body.article.status).toBe('published');
@@ -145,7 +144,7 @@ describe('admin articles', () => {
   it('lists all statuses and supports updates and deletion', async () => {
     const token = await createAdmin();
     const article = await createArticle({ status: 'archived' });
-    const headers = { Authorization: `Bearer ${token}` };
+    const headers = { Cookie: `token=${token}` };
 
     const list = await request(app).get('/api/v1/admin/articles').set(headers);
     expect(list.status).toBe(200);

@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { CheckInbox } from "@/components/account/CheckInbox";
 
 const LoginPromptContext = createContext(null);
 
@@ -46,6 +47,8 @@ function LoginPromptModal({ onClose, onSuccess }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Set after sign-up: the account is not usable until the emailed link is opened.
+  const [registeredEmail, setRegisteredEmail] = useState("");
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -53,15 +56,54 @@ function LoginPromptModal({ onClose, onSuccess }) {
     setIsSubmitting(true);
     let session;
     try {
-      session = await login({ email, password, name, mode });
+      session = await login(mode === "register" ? { email, name, mode } : { email, password, mode });
     } catch (requestError) {
       setError(requestError.message);
+      setIsSubmitting(false);
+      return;
+    }
+    if (session.registered) {
+      setRegisteredEmail(email);
       setIsSubmitting(false);
       return;
     }
     // Unmounts this component, so no state updates after this point.
     onSuccess(session);
   };
+
+  if (registeredEmail) {
+    return (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="login-prompt-title"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+      >
+        <div className="w-full max-w-sm rounded-2xl bg-surface p-6 shadow-xl">
+          <span id="login-prompt-title" className="sr-only">Check your inbox</span>
+          <CheckInbox email={registeredEmail}>
+            <p className="text-text-muted">Open the link to choose your password. You&apos;ll be signed in right after.</p>
+          </CheckInbox>
+          <div className="mt-6 flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setRegisteredEmail("");
+                setPassword("");
+                setMode("login");
+              }}
+              className="rounded-full px-4 py-2 text-sm font-medium text-text-muted hover:bg-bg"
+            >
+              Back to log in
+            </button>
+            <button type="button" onClick={onClose} className="rounded-full bg-primary px-5 py-2 text-sm font-medium text-white hover:bg-primary-dark">
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -103,10 +145,14 @@ function LoginPromptModal({ onClose, onSuccess }) {
             Email
             <input required type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-1 block w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text" />
           </label>
-          <label className="text-xs font-medium text-text-muted">
-            Password
-            <input required type="password" minLength={8} autoComplete={mode === "register" ? "new-password" : "current-password"} value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1 block w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text" />
-          </label>
+          {mode === "register" ? (
+            <p className="text-xs text-text-muted">We&apos;ll email you a link to verify your address and choose a password.</p>
+          ) : (
+            <label className="text-xs font-medium text-text-muted">
+              Password
+              <input required type="password" minLength={8} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1 block w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text" />
+            </label>
+          )}
         </div>
         {error ? <p role="alert" className="mt-3 text-sm text-danger">{error}</p> : null}
         <div className="mt-6 flex justify-end gap-3">

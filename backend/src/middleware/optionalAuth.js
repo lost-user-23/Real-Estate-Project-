@@ -3,12 +3,12 @@ const User = require('../models/User');
 const config = require('../config');
 
 async function optionalAuth(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) return next();
+  const token = req.cookies?.token;
+  if (!token) return next();
 
   let decoded;
   try {
-    decoded = verifyToken(authHeader.slice(7));
+    decoded = verifyToken(token);
   } catch {
     return next();
   }

@@ -2,6 +2,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const AppError = require('../utils/AppError');
 const { protect } = require('../middleware/auth.middleware');
+const requireVerified = require('../middleware/requireVerified');
 const {
   createProperty,
   listProperties,
@@ -28,12 +29,12 @@ const contactLimiter = rateLimit({
   handler: (req, res, next, options) => next(new AppError('Too many contact requests. Please try again later.', options.statusCode)),
 });
 
-router.post('/', protect, createProperty);
+router.post('/', protect, requireVerified, createProperty);
 router.get('/', listProperties);
 // Must be registered before '/:slug', which would otherwise capture "mine" and "featured".
 router.get('/mine', protect, listMyProperties);
 router.get('/featured', listFeaturedProperties);
-router.get('/:id/contact', protect, contactLimiter, getPropertyContact);
+router.get('/:id/contact', protect, requireVerified, contactLimiter, getPropertyContact);
 router.get('/:slug', getPropertyBySlug);
 router.patch('/:id', protect, updateProperty);
 router.delete('/:id', protect, deleteProperty);

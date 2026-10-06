@@ -11,7 +11,8 @@ const SavedPropertiesContext = createContext(null);
 const BASE = "/api/v1/saved-properties";
 
 export function SavedPropertiesProvider({ children }) {
-  const { isLoggedIn, token } = useAuth();
+  const { isLoggedIn, user } = useAuth();
+  const userId = user?.id;
   const { requestLogin } = useLoginPrompt();
   const { show } = useToast();
   const [savedIds, setSavedIds] = useState(new Set());
@@ -35,7 +36,7 @@ export function SavedPropertiesProvider({ children }) {
 
   // Restore saved hearts when a session exists, clear them when it ends.
   useEffect(() => {
-    if (!token) {
+    if (!isLoggedIn || !userId) {
       sync.reset();
       Promise.resolve().then(() => setSavedIds(new Set()));
       return;
@@ -54,7 +55,7 @@ export function SavedPropertiesProvider({ children }) {
     return () => {
       cancelled = true;
     };
-  }, [token, sync, show]);
+  }, [isLoggedIn, userId, sync, show]);
 
   const toggleSave = useCallback(
     (id) => {

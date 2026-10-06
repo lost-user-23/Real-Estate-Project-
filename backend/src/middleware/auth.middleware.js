@@ -3,15 +3,14 @@ const User = require("../models/User");
 const AppError = require("../utils/AppError");
 
 async function protect(req, res, next) {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader?.startsWith("Bearer ")) {
+  const token = req.cookies?.token;
+  if (!token) {
     return next(AppError.unauthorized());
   }
 
   let decoded;
   try {
-    decoded = verifyToken(authHeader.split(" ")[1]);
+    decoded = verifyToken(token);
   } catch {
     // Malformed, tampered or expired token.
     return next(AppError.unauthorized());

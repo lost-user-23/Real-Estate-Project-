@@ -3,6 +3,7 @@ process.env.CLOUDINARY_CLOUD_NAME = 'demo';
 process.env.CLOUDINARY_API_KEY = '123456789012345';
 process.env.CLOUDINARY_API_SECRET = 'cleanup-test-secret';
 process.env.CLOUDINARY_FOLDER = 'property-images';
+const { tokenFromResponse, registerVerified } = require('./helpers/auth');
 
 jest.mock('../src/config/cloudinary', () => ({
   v2: { api: { delete_resources: jest.fn() } },
@@ -21,7 +22,7 @@ const PropertyImage = require('../src/models/PropertyImage');
 
 const app = createApp();
 const deleteResources = cloudinary.v2.api.delete_resources;
-const auth = (token) => ({ Authorization: `Bearer ${token}` });
+const auth = (token) => ({ Cookie: `token=${token}` });
 
 const ownUrl = (id, ext = 'jpg', version = 'v1700000000') =>
   `https://res.cloudinary.com/demo/image/upload/${version}/${id}.${ext}`;
@@ -29,8 +30,8 @@ const idFor = (user, name) => `property-images/${user}/${name}`;
 const sentIds = () => deleteResources.mock.calls.flatMap(([ids]) => ids).sort();
 
 async function registerUser(email) {
-  const res = await request(app).post('/api/auth/register').send({ email, password: 'password123' });
-  return { token: res.body.token, id: res.body.user.id };
+  const res = await registerVerified(app, { email, password: 'password123' });
+  return { token: tokenFromResponse(res), id: res.body.user.id };
 }
 
 async function makeAdmin(id) {

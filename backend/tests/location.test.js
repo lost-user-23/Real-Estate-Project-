@@ -1,4 +1,5 @@
 process.env.MONGODB_DB_NAME = 'homenest_test_location';
+const { tokenFromResponse, registerVerified } = require('./helpers/auth');
 
 const request = require('supertest');
 const mongoose = require('mongoose');
@@ -11,10 +12,8 @@ const app = createApp();
 
 async function registerUser(overrides = {}) {
   const email = overrides.email || `user-${new mongoose.Types.ObjectId()}@example.com`;
-  const res = await request(app)
-    .post('/api/auth/register')
-    .send({ name: 'Test User', email, password: 'password123', ...overrides });
-  return { token: res.body.token, user: res.body.user };
+  const res = await registerVerified(app, { name: 'Test User', email, password: 'password123', ...overrides });
+  return { token: tokenFromResponse(res), user: res.body.user };
 }
 
 async function makeAdmin(userId) {
@@ -144,7 +143,7 @@ describe('PATCH /api/v1/admin/locations/:id', () => {
     const location = await Location.create(validPayload);
     const res = await request(app)
       .patch(`/api/v1/admin/locations/${location._id}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ city: 'Pune' });
     expect(res.status).toBe(403);
   });
@@ -155,7 +154,7 @@ describe('PATCH /api/v1/admin/locations/:id', () => {
 
     const res = await request(app)
       .patch(`/api/v1/admin/locations/${location._id}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ city: 'Pune' });
 
     expect(res.status).toBe(200);
@@ -177,7 +176,7 @@ describe('PATCH /api/v1/admin/locations/:id', () => {
 
     const res = await request(app)
       .patch(`/api/v1/admin/locations/${location._id}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ activeListingCount: 99 });
 
     expect(res.status).toBe(200);
@@ -194,7 +193,7 @@ describe('PATCH /api/v1/admin/locations/:id', () => {
 
     const res = await request(app)
       .patch(`/api/v1/admin/locations/${location._id}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ activeListingCount: -1 });
 
     expect(res.status).toBe(400);
@@ -204,7 +203,7 @@ describe('PATCH /api/v1/admin/locations/:id', () => {
     const { token } = await registerAdmin();
     const res = await request(app)
       .patch(`/api/v1/admin/locations/${new mongoose.Types.ObjectId()}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ city: 'Pune' });
     expect(res.status).toBe(404);
   });
@@ -215,7 +214,7 @@ describe('PATCH /api/v1/admin/locations/:id', () => {
 
     const res = await request(app)
       .patch(`/api/v1/admin/locations/${location._id}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({
         city: 'Pune',
         contactEmail: 'hacker@example.com',

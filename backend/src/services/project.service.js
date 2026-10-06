@@ -34,7 +34,8 @@ async function createProject(input) {
 async function listProjects({ page, limit, publishedOnly }) {
   const filter = publishedOnly ? { status: 'published' } : {};
   const skip = (page - 1) * limit;
-  const sort = publishedOnly ? { publishedAt: -1 } : { createdAt: -1 };
+  // _id breaks createdAt/publishedAt ties so pagination order is deterministic.
+  const sort = publishedOnly ? { publishedAt: -1, _id: -1 } : { createdAt: -1, _id: -1 };
   const [projects, total] = await Promise.all([
     Project.find(filter).sort(sort).skip(skip).limit(limit),
     Project.countDocuments(filter),

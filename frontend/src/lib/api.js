@@ -1,5 +1,4 @@
 const BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000').replace(/\/$/, "");
-const TOKEN_KEY = 'auth_token';
 const NETWORK_ERROR_MESSAGE = "Could not reach the server. Check your connection and try again.";
 
 export class ApiError extends Error {
@@ -11,37 +10,16 @@ export class ApiError extends Error {
     }
 }
 
-export const tokenStore = {
-    get() {
-        try{
-            return localStorage.getItem(TOKEN_KEY);
-        }
-        catch{
-            return null;
-        }
-    },
-    set(token) {
-        try{
-            localStorage.setItem(TOKEN_KEY, token);
-        } catch{}
-    },
-    clear(){
-        try{
-            localStorage.removeItem(TOKEN_KEY);
-        } catch{}
-    },
-};
-
 let onUnauthorized = null;
 export function setUnauthorizedHandler(fn){
     onUnauthorized = fn;
 }
 
+// `auth` controls session clearing on 401; cookies are sent on every request.
 export async function request(
   path,
   { method = "GET", body, headers, auth = true, ...fetchOptions } = {}
 ) {
-  const token = auth ? tokenStore.get() : null;
   // FormData must go out as-is so the browser sets the multipart boundary itself.
   const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
 
@@ -51,9 +29,9 @@ export async function request(
       // Extra options (signal, cache, next, ...) go first so they can't override method, headers or body.
       ...fetchOptions,
       method,
+      credentials: "include",
       headers: {
         ...(body !== undefined && !isFormData ? { "Content-Type": "application/json" } : {}),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...headers,
       },
       body: body !== undefined && !isFormData ? JSON.stringify(body) : body,
@@ -75,9 +53,8 @@ export async function request(
   }
 
   if (!res.ok) {
-    //  treat 401 as "session expired" if we actually sent a token. wrong password on the login form is also a 401 and must not trigger a logout.
-    if (res.status === 401 && token) {
-      tokenStore.clear();
+    // A login 401 is invalid credentials, not an expired session.
+    if (res.status === 401 && auth) {
       if (onUnauthorized) onUnauthorized();
     }
     // Every backend error goes through the shared error handler and arrives as

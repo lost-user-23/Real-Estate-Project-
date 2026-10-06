@@ -1,4 +1,5 @@
 process.env.MONGODB_DB_NAME = 'homenest_test_location_admin';
+const { tokenFromResponse, registerVerified } = require('./helpers/auth');
 
 const request = require('supertest');
 const mongoose = require('mongoose');
@@ -11,10 +12,8 @@ const app = createApp();
 
 async function registerUser() {
   const email = `location-admin-${new mongoose.Types.ObjectId()}@example.com`;
-  const res = await request(app)
-    .post('/api/auth/register')
-    .send({ name: 'Location Admin Tester', email, password: 'password123' });
-  return { token: res.body.token, user: res.body.user };
+  const res = await registerVerified(app, { name: 'Location Admin Tester', email, password: 'password123' });
+  return { token: tokenFromResponse(res), user: res.body.user };
 }
 
 async function createAdminToken() {
@@ -46,7 +45,7 @@ describe('GET /api/v1/admin/locations', () => {
     const { token } = await registerUser();
     const response = await request(app)
       .get('/api/v1/admin/locations')
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
     expect(response.status).toBe(403);
   });
 
@@ -60,7 +59,7 @@ describe('GET /api/v1/admin/locations', () => {
 
     const response = await request(app)
       .get('/api/v1/admin/locations')
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     expect(response.status).toBe(200);
     expect(response.body.locations.map((l) => l.city)).toEqual(['Big City', 'Mid City', 'Quiet Town']);
@@ -75,7 +74,7 @@ describe('GET /api/v1/admin/locations', () => {
 
   it('paginates, caps the limit and validates page params', async () => {
     const token = await createAdminToken();
-    const headers = { Authorization: `Bearer ${token}` };
+    const headers = { Cookie: `token=${token}` };
     await Location.create([
       { city: 'A', activeListingCount: 3 },
       { city: 'B', activeListingCount: 2 },
@@ -96,7 +95,7 @@ describe('GET /api/v1/admin/locations', () => {
 
   it('lets an admin toggle popular and clear the rank with null through PATCH', async () => {
     const token = await createAdminToken();
-    const headers = { Authorization: `Bearer ${token}` };
+    const headers = { Cookie: `token=${token}` };
     const location = await Location.create({ city: 'Rankville', activeListingCount: 9 });
 
     const on = await request(app)

@@ -1,7 +1,9 @@
 const express = require('express');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const helmet = require('helmet');
 const config = require('./config');
+const AppError = require('./utils/AppError');
 const { globalRateLimiter } = require('./middleware/globalRateLimiter');
 const requestLogger = require('./middleware/requestLogger');
 const notFound = require('./middleware/notFound');
@@ -19,6 +21,23 @@ function trustProxyHops() {
   return Number.isInteger(hops) && hops > 0 ? hops : 0;
 }
 
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+function stripTrailingSlash(value) {
+  return value.replace(/\/+$/, '');
+}
+
+// CSRF cover for cookie auth: a state-changing request that names an Origin
+// other than the allowed frontend is rejected. Requests without an Origin
+// header (curl, server-to-server, tests) are allowed through.
+function rejectForeignOrigin(req, res, next) {
+  if (SAFE_METHODS.has(req.method)) return next();
+  const origin = req.get('origin');
+  if (!origin) return next();
+  if (config.corsOrigins.includes(stripTrailingSlash(origin))) return next();
+  return next(AppError.forbidden());
+}
+
 // TODO: confirm with the host how many reverse proxies sit in front of the API
 // and set TRUST_PROXY_HOPS to that exact number (usually 1). No deploy config
 // is checked in, so the default stays 0. If the real count is higher, every
@@ -32,10 +51,12 @@ function createApp() {
   app.use(helmet());
   app.use(
     cors({
-      origin: config.corsOrigin,
+      origin: config.corsOrigins,
       credentials: true,
     })
   );
+  app.use(cookieParser());
+  app.use(rejectForeignOrigin);
   app.use(globalRateLimiter);
   app.use(express.json());
   app.use(requestLogger);

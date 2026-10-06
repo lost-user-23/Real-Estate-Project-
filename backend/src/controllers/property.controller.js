@@ -6,14 +6,24 @@ const { BULK_UPDATABLE_FIELDS } = propertyService;
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
 const { parseOptionalCity } = require('../utils/queryParams');
-const { serializeProperty, serializeProperties } = require('../utils/serializers/property.serializer');
+const { isOwnCloudinaryImageUrl } = require('../services/cloudinaryAssets.service');
+const { serializeProperty,serializeProperties } = require('../utils/serializers/property.serializer');
 
 const MAX_LIMIT = 50;
 const DEFAULT_LIMIT = 20;
 const MAX_TITLE_LENGTH = 200;
+const MAX_DESCRIPTION_LENGTH = 2000;
+const MAX_PROPERTY_IMAGES = 20;
+const MAX_IMAGE_URL_LENGTH = 2048;
+const MAX_IMAGE_ALT_LENGTH = 300;
+const MAX_IMAGE_PUBLIC_ID_LENGTH = 500;
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isValidImageUrl(value) {
+  return typeof value === 'string' && value.length <= MAX_IMAGE_URL_LENGTH && isOwnCloudinaryImageUrl(value);
 }
 
 function isFiniteNonNegativeNumber(value) {
@@ -34,20 +44,29 @@ function validateImagesInput(images, minimumCount = 0) {
   if (images.length < minimumCount) {
     errors.push(`images must contain at least ${minimumCount} images`);
   }
+  if (images.length > MAX_PROPERTY_IMAGES) {
+    errors.push(`images must contain at most ${MAX_PROPERTY_IMAGES} images`);
+  }
 
   images.forEach((image, index) => {
     if (typeof image === 'string') {
-      if (!isNonEmptyString(image)) errors.push(`images[${index}] must be a non-empty URL string`);
+      if (!isValidImageUrl(image)) {
+        errors.push(`images[${index}] must be a valid Cloudinary image URL`);
+      }
       return;
     }
-    if (typeof image !== 'object' || image === null || !isNonEmptyString(image.url)) {
-      errors.push(`images[${index}].url must be a non-empty string`);
+    if (typeof image !== 'object' || image === null || !isValidImageUrl(image.url)) {
+      errors.push(`images[${index}].url must be a valid Cloudinary image URL`);
     }
     if (image != null && image.alt != null && typeof image.alt !== 'string') {
       errors.push(`images[${index}].alt must be a string`);
+    } else if (image != null && typeof image.alt === 'string' && image.alt.length > MAX_IMAGE_ALT_LENGTH) {
+      errors.push(`images[${index}].alt must be at most ${MAX_IMAGE_ALT_LENGTH} characters`);
     }
     if (image != null && image.publicId != null && !isNonEmptyString(image.publicId)) {
       errors.push(`images[${index}].publicId must be a non-empty string`);
+    } else if (image != null && typeof image.publicId === 'string' && image.publicId.length > MAX_IMAGE_PUBLIC_ID_LENGTH) {
+      errors.push(`images[${index}].publicId must be at most ${MAX_IMAGE_PUBLIC_ID_LENGTH} characters`);
     }
   });
 
@@ -78,8 +97,12 @@ function validateCreateInput(body) {
   if (body.locality != null && typeof body.locality !== 'string') {
     errors.push('locality must be a string');
   }
-  if (body.description != null && typeof body.description !== 'string') {
-    errors.push('description must be a string');
+  if (body.description != null) {
+    if (typeof body.description !== 'string') {
+      errors.push('description must be a string');
+    } else if (body.description.trim().length > MAX_DESCRIPTION_LENGTH) {
+      errors.push(`description must be at most ${MAX_DESCRIPTION_LENGTH} characters`);
+    }
   }
   if (body.contactNumber != null && typeof body.contactNumber !== 'string') {
     errors.push('contactNumber must be a string');
@@ -316,6 +339,16 @@ function validateUpdateInput(body, isAdmin) {
     errors.push('priceInRupees must be a non-negative number');
   }
   if (body.bhk != null && !isFiniteNonNegativeNumber(body.bhk)) errors.push('bhk must be a non-negative number');
+  if (body.description != null) {
+    if (typeof body.description !== 'string') {
+      errors.push('description must be a string');
+    } else if (body.description.trim().length > MAX_DESCRIPTION_LENGTH) {
+      errors.push(`description must be at most ${MAX_DESCRIPTION_LENGTH} characters`);
+    }
+  }
+  if (body.contactNumber != null && typeof body.contactNumber !== 'string') {
+    errors.push('contactNumber must be a string');
+  }
   if (body.amenities != null && (!Array.isArray(body.amenities) || !body.amenities.every((a) => typeof a === 'string'))) {
     errors.push('amenities must be an array of strings');
   }
@@ -389,6 +422,10 @@ function validateBulkIds(ids) {
   return errors;
 }
 
+function hasField(obj, field) {
+  return Object.prototype.hasOwnProperty.call(obj, field);
+}
+
 function validateBulkUpdates(updates) {
   const errors = [];
 
@@ -405,25 +442,28 @@ function validateBulkUpdates(updates) {
     errors.push('updates must include at least one field');
   }
 
-  if (updates.status != null && !PROPERTY_STATUSES.includes(updates.status)) {
+  // Presence is decided by key, not value: bulkUpdatePropertiesByIds $sets every
+  // own key, so a present null must be validated like any other value.
+  if (hasField(updates, 'status') && !PROPERTY_STATUSES.includes(updates.status)) {
     errors.push(`status must be one of: ${PROPERTY_STATUSES.join(', ')}`);
   }
-  if (updates.verified != null && typeof updates.verified !== 'boolean') {
+  if (hasField(updates, 'verified') && typeof updates.verified !== 'boolean') {
     errors.push('verified must be a boolean');
   }
-  if (updates.featured != null && typeof updates.featured !== 'boolean') {
+  if (hasField(updates, 'featured') && typeof updates.featured !== 'boolean') {
     errors.push('featured must be a boolean');
   }
-  if (updates.featuredRank != null && !isFiniteNonNegativeNumber(updates.featuredRank)) {
-    errors.push('featuredRank must be a non-negative number');
+  // null is valid here: it means "unranked".
+  if (hasField(updates, 'featuredRank') && updates.featuredRank !== null && !isFiniteNonNegativeNumber(updates.featuredRank)) {
+    errors.push('featuredRank must be null or a non-negative number');
   }
-  if (updates.city != null && !isNonEmptyString(updates.city)) {
+  if (hasField(updates, 'city') && (typeof updates.city !== 'string' || updates.city.trim().length === 0)) {
     errors.push('city must be a non-empty string');
   }
-  if (updates.intent != null && !PROPERTY_INTENTS.includes(updates.intent)) {
+  if (hasField(updates, 'intent') && !PROPERTY_INTENTS.includes(updates.intent)) {
     errors.push(`intent must be one of: ${PROPERTY_INTENTS.join(', ')}`);
   }
-  if (updates.propertyType != null && !PROPERTY_TYPES.includes(updates.propertyType)) {
+  if (hasField(updates, 'propertyType') && !PROPERTY_TYPES.includes(updates.propertyType)) {
     errors.push(`propertyType must be one of: ${PROPERTY_TYPES.join(', ')}`);
   }
 

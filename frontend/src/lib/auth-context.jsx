@@ -1,15 +1,16 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { api, tokenStore, setUnauthorizedHandler } from "@/lib/api";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { api, setUnauthorizedHandler } from "@/lib/api";
 
 // Single source of truth for the session: the public site and /admin both read
-// from here, share one token (tokenStore) and one 401 handler.
+// from here and share one 401 handler.
 const AuthContext = createContext(null);
 // Session keys from earlier auth implementations. Nothing reads or writes them
 // any more; they are removed on load and on logout so stale credentials/user
 // blobs don't linger in browsers that used the old builds.
 const LEGACY_SESSION_KEYS = [
+  "auth_token",
   "homenest_auth_token",
   "admin",
   "admin_token",
@@ -24,48 +25,50 @@ function removeLegacySessionKeys() {
 }
 
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(null);
+  const [hasSession, setHasSession] = useState(false);
+  const [sessionVersion, setSessionVersion] = useState(0);
+  const sessionVersionRef = useRef(0);
   const [user, setUser] = useState(null);
-  // True until the stored session (if any) has been checked against /me.
+  // True until the cookie-backed session has been checked against /me.
   const [loading, setLoading] = useState(true);
-  // Set when a stored token could not be checked because /me failed for a
-  // reason other than 401 (backend down, 500). The token is kept, user stays
-  // null, and screens that need the user can offer verifySession as a retry.
+  // Set when /me could not be checked for a reason other than 401.
   const [sessionError, setSessionError] = useState(null);
 
+  const advanceSessionVersion = useCallback(() => {
+    sessionVersionRef.current += 1;
+    setSessionVersion(sessionVersionRef.current);
+    return sessionVersionRef.current;
+  }, []);
+
   const clearSession = useCallback(() => {
-    tokenStore.clear();
     removeLegacySessionKeys();
-    setToken(null);
+    advanceSessionVersion();
+    setHasSession(false);
     setUser(null);
     setSessionError(null);
-  }, []);
+  }, [advanceSessionVersion]);
 
-  const verifySession = useCallback(() => {
-    const storedToken = tokenStore.get();
-    if (!storedToken) {
-      setLoading(false);
-      return;
-    }
-
-    // Optimistic: treat the stored token as valid while /me is in flight so
-    // the UI doesn't flash logged-out. A 401 clears it via the unauthorized
-    // handler; a network failure keeps the session so a flaky connection
-    // doesn't log the user out.
-    setToken(storedToken);
+  const verifySession = useCallback(async () => {
     setLoading(true);
     setSessionError(null);
-    api
-      .get("/api/auth/me")
-      .then(({ user: currentUser }) => setUser(currentUser))
-      .catch((error) => {
-        if (error?.status !== 401) setSessionError(error?.message || "Could not verify your session.");
-      })
-      .finally(() => setLoading(false));
-  }, []);
+    try {
+      const { user: currentUser } = await api.get("/api/auth/me");
+      advanceSessionVersion();
+      setUser(currentUser);
+      setHasSession(true);
+    } catch (error) {
+      setUser(null);
+      setHasSession(false);
+      if (error?.status !== 401) {
+        setSessionError(error?.message || "Could not verify your session.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [advanceSessionVersion]);
 
   useEffect(() => {
-    // Any 401 on a request that carried a token means the session is gone.
+    // Any 401 on an authenticated request means the cookie-backed session is gone.
     setUnauthorizedHandler(clearSession);
 
     removeLegacySessionKeys();
@@ -77,37 +80,53 @@ export function AuthProvider({ children }) {
 
   const value = useMemo(
     () => ({
-      isLoggedIn: Boolean(token),
+      isLoggedIn: hasSession,
+      sessionVersion,
       loading,
-      token,
       user,
       sessionError,
       verifySession,
       login: async ({ email, password, name, mode }) => {
         const isRegister = mode === "register";
+        if (isRegister) {
+          // Registering takes no password and never starts a session: the
+          // password is chosen on the /verify-email page the emailed link opens,
+          // and the server answers the same way whether or not the address was
+          // already taken.
+          const { message } = await api.post("/api/auth/register", { email, name }, { auth: false });
+          return { registered: true, message };
+        }
         const result = await api.post(
-          isRegister ? "/api/auth/register" : "/api/auth/login",
-          { email, password, ...(isRegister ? { name } : {}) },
+          "/api/auth/login",
+          { email, password },
           { auth: false }
         );
-        tokenStore.set(result.token);
-        setToken(result.token);
+        const nextSessionVersion = advanceSessionVersion();
+        setHasSession(true);
         setUser(result.user);
         setSessionError(null);
-        return result;
+        return { ...result, sessionVersion: nextSessionVersion };
       },
-      logout: clearSession,
+      logout: async () => {
+        try {
+          await api.post("/api/auth/logout", {}, { auth: false });
+        } catch {
+          // Network failure or server error: the UI must still be cleared.
+        } finally {
+          clearSession();
+        }
+      },
       // Account-management hooks: keep the one shared session in sync after the
-      // server changes the user (profile/email) or re-issues the token
-      // (password change invalidates every earlier token).
+      // server changes the user (profile/email) or re-issues the cookie
+      // (password change invalidates every earlier session cookie).
       updateUser: setUser,
-      replaceSession: ({ token: nextToken, user: nextUser }) => {
-        tokenStore.set(nextToken);
-        setToken(nextToken);
+      replaceSession: ({ user: nextUser }) => {
+        advanceSessionVersion();
+        setHasSession(true);
         setUser(nextUser);
       },
     }),
-    [token, user, loading, sessionError, verifySession, clearSession]
+    [hasSession, sessionVersion, user, loading, sessionError, verifySession, clearSession, advanceSessionVersion]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

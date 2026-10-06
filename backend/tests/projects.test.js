@@ -1,4 +1,5 @@
 process.env.MONGODB_DB_NAME = 'homenest_test_projects';
+const { tokenFromResponse, registerVerified } = require('./helpers/auth');
 
 const request = require('supertest');
 const mongoose = require('mongoose');
@@ -11,10 +12,8 @@ const app = createApp();
 
 async function registerUser() {
   const email = `project-${new mongoose.Types.ObjectId()}@example.com`;
-  const response = await request(app)
-    .post('/api/auth/register')
-    .send({ name: 'Project Tester', email, password: 'password123' });
-  return { token: response.body.token, user: response.body.user };
+  const response = await registerVerified(app, { name: 'Project Tester', email, password: 'password123' });
+  return { token: tokenFromResponse(response), user: response.body.user };
 }
 
 async function promoteToAdmin(userId) {
@@ -102,7 +101,7 @@ describe('admin projects', () => {
     const token = await createAdmin();
     const response = await request(app)
       .post('/api/v1/admin/projects')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ name: 'New Heights', developer: 'Acme Builders', city: 'Pune', startingPriceInRupees: 3500000 });
 
     expect(response.status).toBe(201);
@@ -114,7 +113,7 @@ describe('admin projects', () => {
     const token = await createAdmin();
     const response = await request(app)
       .post('/api/v1/admin/projects')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ name: 'Missing Fields' });
 
     expect(response.status).toBe(400);
@@ -127,11 +126,11 @@ describe('admin projects', () => {
 
     const first = await request(app)
       .patch(publishUrl)
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
     const firstPublishedAt = first.body.project.publishedAt;
     const second = await request(app)
       .patch(publishUrl)
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     expect(first.status).toBe(200);
     expect(first.body.project.status).toBe('published');
@@ -142,7 +141,7 @@ describe('admin projects', () => {
   it('reverts to draft through PATCH while preserving publishedAt', async () => {
     const token = await createAdmin();
     const project = await createProject();
-    const headers = { Authorization: `Bearer ${token}` };
+    const headers = { Cookie: `token=${token}` };
     const originalPublishedAt = project.publishedAt.toISOString();
 
     const response = await request(app)
@@ -158,7 +157,7 @@ describe('admin projects', () => {
   it('lists all statuses and supports updates and deletion', async () => {
     const token = await createAdmin();
     const project = await createProject({ status: 'archived' });
-    const headers = { Authorization: `Bearer ${token}` };
+    const headers = { Cookie: `token=${token}` };
 
     const list = await request(app).get('/api/v1/admin/projects').set(headers);
     expect(list.status).toBe(200);

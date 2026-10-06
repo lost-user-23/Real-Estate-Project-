@@ -11,7 +11,7 @@ function AdminShellInner({ children }) {
   const { isAuthenticated, loading, sessionError, retrySession, logout } = useAdminAuth();
 
   // Avoid flashing the login gate while the session is still being restored
-  // from localStorage.
+  // by checking the auth cookie against /api/auth/me.
   if (loading) return <div className="p-8 text-sm text-text-muted">Loading…</div>;
 
   if (sessionError) {

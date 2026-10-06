@@ -1,4 +1,5 @@
 process.env.MONGODB_DB_NAME = 'homenest_test_properties_mine';
+const { tokenFromResponse, registerVerified } = require('./helpers/auth');
 
 const request = require('supertest');
 const mongoose = require('mongoose');
@@ -9,11 +10,11 @@ const Property = require('../src/models/Property');
 const PropertyImage = require('../src/models/PropertyImage');
 
 const app = createApp();
-const auth = (token) => ({ Authorization: `Bearer ${token}` });
+const auth = (token) => ({ Cookie: `token=${token}` });
 
 async function registerUser(email) {
-  const res = await request(app).post('/api/auth/register').send({ email, password: 'password123' });
-  return { token: res.body.token, id: res.body.user.id };
+  const res = await registerVerified(app, { email, password: 'password123' });
+  return { token: tokenFromResponse(res), id: res.body.user.id };
 }
 
 let counter = 0;

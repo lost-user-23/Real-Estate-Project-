@@ -18,16 +18,19 @@ const propertyImageSchema = new Schema(
     url: {
       type: String,
       default: null,
+      maxlength: 2048,
     },
     // Cloudinary public_id, kept so the asset can be deleted with the listing.
     // Optional: older rows have none and fall back to the id in the URL.
     publicId: {
       type: String,
       default: null,
+      maxlength: 500,
     },
     alt: {
       type: String,
       default: '',
+      maxlength: 300,
     },
     displayOrder: {
       type: Number,

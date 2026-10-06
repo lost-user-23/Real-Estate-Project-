@@ -29,7 +29,8 @@ function isSafePublicId(publicId, ownerId) {
 // extension), or null. Only https://res.cloudinary.com/<our cloud>/image/upload/[v123/]<folder>/...
 // is understood; a URL with transformations, another cloud, or a path outside
 // the upload folder yields null and is therefore never deleted.
-function parseOwnUrl(url) {
+function parseOwnDeliveryPath(url) {
+  // Fails closed: without a configured cloud name no URL counts as ours.
   if (typeof url !== 'string' || !config.cloudinaryCloudName) return null;
 
   let parsed;
@@ -39,11 +40,28 @@ function parseOwnUrl(url) {
     return null;
   }
   if (parsed.protocol !== 'https:' || parsed.hostname !== 'res.cloudinary.com') return null;
+  // No user:pass@ tricks and no explicit port (the default 443 parses to '').
+  if (parsed.username || parsed.password || parsed.port) return null;
 
   const base = `/${config.cloudinaryCloudName}/image/upload/`;
   if (!parsed.pathname.startsWith(base)) return null;
+  return parsed.pathname.slice(base.length);
+}
 
-  let rest = parsed.pathname.slice(base.length).replace(/^v\d+\//, '');
+// Single source of truth for "is this one of our own Cloudinary image URLs",
+// used to validate client input and, via parseOwnUrl, to gate deletions.
+function isOwnCloudinaryImageUrl(url) {
+  const rest = parseOwnDeliveryPath(url);
+  if (!rest) return false;
+  const segments = rest.split('/');
+  return segments.every((segment) => segment !== '' && segment !== '.' && segment !== '..');
+}
+
+function parseOwnUrl(url) {
+  const path = parseOwnDeliveryPath(url);
+  if (path === null) return null;
+
+  let rest = path.replace(/^v\d+\//, '');
   try {
     rest = decodeURIComponent(rest);
   } catch {
@@ -115,4 +133,4 @@ async function deleteAssetsForImages(images, ownerId) {
   }
 }
 
-module.exports = { resolvePublicId, deleteAssetsByPublicIds, deleteAssetsForImages, DELETE_BATCH_SIZE };
+module.exports = { isOwnCloudinaryImageUrl, resolvePublicId, deleteAssetsByPublicIds, deleteAssetsForImages, DELETE_BATCH_SIZE };

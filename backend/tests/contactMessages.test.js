@@ -1,4 +1,5 @@
 process.env.MONGODB_DB_NAME = 'homenest_test_contact_messages';
+const { tokenFromResponse, registerVerified } = require('./helpers/auth');
 
 const express = require('express');
 const request = require('supertest');
@@ -25,10 +26,8 @@ const validBody = (overrides = {}) => ({
 
 async function registerUser() {
   const email = `contact-${new mongoose.Types.ObjectId()}@example.com`;
-  const response = await request(app)
-    .post('/api/auth/register')
-    .send({ name: 'Contact Tester', email, password: 'password123' });
-  return { token: response.body.token, user: response.body.user };
+  const response = await registerVerified(app, { name: 'Contact Tester', email, password: 'password123' });
+  return { token: tokenFromResponse(response), user: response.body.user };
 }
 
 async function createAdmin() {
@@ -190,7 +189,7 @@ describe('admin contact messages access control', () => {
   it('rejects a normal user token with 403', async () => {
     const { token } = await registerUser();
     const message = await createMessage();
-    const headers = { Authorization: `Bearer ${token}` };
+    const headers = { Cookie: `token=${token}` };
 
     const list = await request(app).get(ADMIN_URL).set(headers);
     const update = await request(app).patch(`${ADMIN_URL}/${message._id}`).set(headers).send({ status: 'read' });
@@ -204,7 +203,7 @@ describe('admin contact messages access control', () => {
 describe('admin contact messages list', () => {
   const get = async (query = '') => {
     const token = await createAdmin();
-    return request(app).get(`${ADMIN_URL}${query}`).set('Authorization', `Bearer ${token}`);
+    return request(app).get(`${ADMIN_URL}${query}`).set('Cookie', `token=${token}`);
   };
 
   it('returns messages newest first with meta and no ipAddress', async () => {
@@ -266,7 +265,7 @@ describe('admin contact messages list', () => {
 describe('admin contact messages update', () => {
   const patch = async (id, body) => {
     const token = await createAdmin();
-    return request(app).patch(`${ADMIN_URL}/${id}`).set('Authorization', `Bearer ${token}`).send(body);
+    return request(app).patch(`${ADMIN_URL}/${id}`).set('Cookie', `token=${token}`).send(body);
   };
 
   it('updates the status and returns the message without ipAddress', async () => {

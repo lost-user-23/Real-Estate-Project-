@@ -9,6 +9,9 @@ const {
   transformProject,
   transformArticle,
 } = require('./seedData/transform');
+const { rewriteImageUrls, collectImageUrls } = require('./seedData/imageUrls');
+const config = require('../src/config');
+const { isOwnCloudinaryImageUrl } = require('../src/services/cloudinaryAssets.service');
 const { connectToDatabase, disconnectFromDatabase } = require('../src/db/connection');
 const { User, Property, PropertyImage, Location, Category, Project, Article } = require('../src/models');
 
@@ -71,6 +74,9 @@ async function seedDevAdmin(summary) {
       name: 'HomeNest Dev Admin (seed)',
       role: 'admin',
       passwordHash: unusablePasswordHash,
+      // Seeded by the operator on a reserved .local address; there is no inbox
+      // to confirm, and the account cannot log in until given a real password.
+      emailVerified: true,
     }
   );
   tally(summary, 'users', outcome);
@@ -133,12 +139,21 @@ function printSummary(summary) {
 }
 
 async function main() {
+  if (!config.cloudinaryCloudName) {
+    console.error(
+      '[seed] CLOUDINARY_CLOUD_NAME is not set. Seed images are served from our own Cloudinary account, ' +
+        'so set it in backend/.env (or the environment) and run again. Aborting before any database writes.'
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   console.log('[seed] loading mock data from frontend/src/lib/mockData.js');
   const mockData = loadMockData();
 
   let transformed;
   try {
-    transformed = transformAll(mockData);
+    transformed = rewriteImageUrls(transformAll(mockData), config.cloudinaryCloudName);
   } catch (error) {
     if (error instanceof SeedValidationError) {
       console.error(`[seed] invalid mock data, aborting before any database writes:\n  ${error.message}`);
@@ -146,6 +161,14 @@ async function main() {
       return;
     }
     throw error;
+  }
+
+  const rejected = collectImageUrls(transformed).filter((url) => !isOwnCloudinaryImageUrl(url));
+  if (rejected.length > 0) {
+    console.error(`[seed] ${rejected.length} image URL(s) are not own-Cloudinary URLs, aborting before any database writes:`);
+    for (const url of new Set(rejected)) console.error(`  ${url}`);
+    process.exitCode = 1;
+    return;
   }
 
   try {

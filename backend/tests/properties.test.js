@@ -1,4 +1,6 @@
 process.env.MONGODB_DB_NAME = 'homenest_test_properties';
+process.env.CLOUDINARY_CLOUD_NAME = 'demo';
+const { tokenFromResponse, registerVerified } = require('./helpers/auth');
 
 const request = require('supertest');
 const mongoose = require('mongoose');
@@ -25,10 +27,8 @@ const validImages = Array.from({ length: 5 }, (_, index) => ({
 
 async function registerUser(overrides = {}) {
   const email = overrides.email || `property-${new mongoose.Types.ObjectId()}@example.com`;
-  const response = await request(app)
-    .post('/api/auth/register')
-    .send({ name: 'Property Tester', email, password: 'password123', ...overrides });
-  return { token: response.body.token, user: response.body.user };
+  const response = await registerVerified(app, { name: 'Property Tester', email, password: 'password123', ...overrides });
+  return { token: tokenFromResponse(response), user: response.body.user };
 }
 
 async function promoteToAdmin(userId) {
@@ -75,18 +75,84 @@ describe('POST /api/v1/properties', () => {
     const { token } = await registerUser();
     const response = await request(app)
       .post('/api/v1/properties')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ ...validPayload, images: validImages.slice(0, 4) });
 
     expect(response.status).toBe(400);
     expect(response.body.error.details).toContain('images must contain at least 5 images');
   });
 
+  describe('image and description validation', () => {
+    const post = (token, body) =>
+      request(app).post('/api/v1/properties').set('Cookie', `token=${token}`).send({ ...validPayload, ...body });
+    const own = (path) => `https://res.cloudinary.com/demo/image/upload/v1/${path}`;
+    const withFirst = (url) => [{ url }, ...validImages.slice(1)];
+
+    it.each([
+      ['another cloud', 'https://res.cloudinary.com/other/image/upload/v1/a.jpg'],
+      ['an arbitrary website', 'https://example.com/a.jpg'],
+      ['a lookalike host', 'https://res.cloudinary.com.evil.com/demo/image/upload/v1/a.jpg'],
+      ['plain http', 'http://res.cloudinary.com/demo/image/upload/v1/a.jpg'],
+      ['embedded credentials', 'https://user:pw@res.cloudinary.com/demo/image/upload/v1/a.jpg'],
+      ['a non-default port', 'https://res.cloudinary.com:8443/demo/image/upload/v1/a.jpg'],
+    ])('rejects an image URL with %s', async (_label, url) => {
+      const { token } = await registerUser();
+      const response = await post(token, { images: withFirst(url) });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.details).toContain('images[0].url must be a valid Cloudinary image URL');
+      expect(await Property.countDocuments()).toBe(0);
+    });
+
+    it('rejects every Cloudinary URL when no cloud name is configured', async () => {
+      const { token } = await registerUser();
+      const config = require('../src/config');
+      const original = config.cloudinaryCloudName;
+      config.cloudinaryCloudName = '';
+      try {
+        const response = await post(token, { images: validImages });
+        expect(response.status).toBe(400);
+      } finally {
+        config.cloudinaryCloudName = original;
+      }
+    });
+
+    it('rejects 21 images and accepts 20', async () => {
+      const { token } = await registerUser();
+      const images = Array.from({ length: 21 }, (_, i) => ({ url: own(`property-images/${i}.jpg`) }));
+
+      const tooMany = await post(token, { images });
+      expect(tooMany.status).toBe(400);
+      expect(tooMany.body.error.details).toContain('images must contain at most 20 images');
+
+      const ok = await post(token, { images: images.slice(0, 20) });
+      expect(ok.status).toBe(201);
+    });
+
+    it('rejects an over-long image alt', async () => {
+      const { token } = await registerUser();
+      const response = await post(token, { images: [{ ...validImages[0], alt: 'a'.repeat(301) }, ...validImages.slice(1)] });
+      expect(response.status).toBe(400);
+    });
+
+    it('rejects a description over 2000 characters and accepts exactly 2000', async () => {
+      const { token } = await registerUser();
+
+      const tooLong = await post(token, { description: 'a'.repeat(2001), images: validImages });
+      expect(tooLong.status).toBe(400);
+      expect(tooLong.body.error.details).toContain('description must be at most 2000 characters');
+      expect(await Property.countDocuments()).toBe(0);
+
+      const ok = await post(token, { description: 'a'.repeat(2000), images: validImages });
+      expect(ok.status).toBe(201);
+    });
+  });
+
   it('creates an owned draft and links all submitted images even when published status is requested', async () => {
     const { token, user } = await registerUser();
     const response = await request(app)
       .post('/api/v1/properties')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ ...validPayload, status: 'published', images: validImages });
 
     expect(response.status).toBe(201);
@@ -106,7 +172,7 @@ describe('POST /api/v1/properties', () => {
     const submit = () =>
       request(app)
         .post('/api/v1/properties')
-        .set('Authorization', `Bearer ${token}`)
+        .set('Cookie', `token=${token}`)
         .send({ ...validPayload, images: validImages });
 
     const first = await submit();
@@ -150,7 +216,7 @@ describe('POST /api/v1/properties', () => {
 
       const response = await request(app)
         .post('/api/v1/properties')
-        .set('Authorization', `Bearer ${token}`)
+        .set('Cookie', `token=${token}`)
         .send({ ...validPayload, images: validImages });
 
       expect(response.status).toBe(201);
@@ -169,7 +235,7 @@ describe('POST /api/v1/properties', () => {
 
       const response = await request(app)
         .post('/api/v1/properties')
-        .set('Authorization', `Bearer ${token}`)
+        .set('Cookie', `token=${token}`)
         .send({ ...validPayload, images: validImages });
 
       expect(response.status).toBe(409);
@@ -185,7 +251,7 @@ describe('POST /api/v1/properties', () => {
 
       const response = await request(app)
         .post('/api/v1/properties')
-        .set('Authorization', `Bearer ${token}`)
+        .set('Cookie', `token=${token}`)
         .send({ ...validPayload, images: validImages });
 
       expect(response.status).toBe(409);
@@ -197,12 +263,30 @@ describe('POST /api/v1/properties', () => {
     const { token } = await registerUser();
     const response = await request(app)
       .post('/api/v1/properties')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ ...validPayload, images: [{ alt: 'missing url' }, ...validImages.slice(1)] });
 
     expect(response.status).toBe(400);
     expect(response.body.error.message).toBe('Validation failed');
-    expect(response.body.error.details).toContain('images[0].url must be a non-empty string');
+    expect(response.body.error.details).toContain('images[0].url must be a valid Cloudinary image URL');
+  });
+
+  it('rejects non-Cloudinary image URLs', async () => {
+    const { token } = await registerUser();
+    const response = await request(app)
+      .post('/api/v1/properties')
+      .set('Cookie', `token=${token}`)
+      .send({
+        ...validPayload,
+        images: [
+          'https://images.example.com/house.jpg',
+          ...validImages.slice(1),
+        ],
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.message).toBe('Validation failed');
+    expect(response.body.error.details).toContain('images[0] must be a valid Cloudinary image URL');
   });
 
   it.each([
@@ -216,7 +300,7 @@ describe('POST /api/v1/properties', () => {
     const { token } = await registerUser();
     const response = await request(app)
       .post('/api/v1/properties')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ ...validPayload, ...override, images: validImages });
 
     expect(response.status).toBe(400);
@@ -381,12 +465,35 @@ describe('PATCH /api/v1/properties/:id', () => {
     const property = await createProperty({ ownerId: user.id, status: 'draft' });
     const response = await request(app)
       .patch(`/api/v1/properties/${property._id}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ title: 'Updated Property', priceInRupees: 2000000 });
 
     expect(response.status).toBe(200);
     expect(response.body.property.title).toBe('Updated Property');
     expect(response.body.property.priceInRupees).toBe(2000000);
+  });
+
+  it('rejects an over-long description, a foreign-cloud image and 21 images on update', async () => {
+    const { token, user } = await registerUser();
+    const property = await createProperty({ ownerId: user.id, status: 'draft', description: 'original' });
+    const patch = (body) =>
+      request(app).patch(`/api/v1/properties/${property._id}`).set('Cookie', `token=${token}`).send(body);
+
+    const longDescription = await patch({ description: 'a'.repeat(2001) });
+    expect(longDescription.status).toBe(400);
+
+    const foreign = await patch({ images: [{ url: 'https://res.cloudinary.com/other/image/upload/v1/a.jpg' }] });
+    expect(foreign.status).toBe(400);
+
+    const tooMany = await patch({
+      images: Array.from({ length: 21 }, (_, i) => ({ url: `https://res.cloudinary.com/demo/image/upload/v1/p/${i}.jpg` })),
+    });
+    expect(tooMany.status).toBe(400);
+
+    expect((await Property.findById(property._id)).description).toBe('original');
+
+    const ok = await patch({ description: 'a'.repeat(2000) });
+    expect(ok.status).toBe(200);
   });
 
   it('lets an owner replace their property images', async () => {
@@ -397,7 +504,7 @@ describe('PATCH /api/v1/properties/:id', () => {
     const newUrl = 'https://res.cloudinary.com/demo/image/upload/v1/property-images/new.jpg';
     const response = await request(app)
       .patch(`/api/v1/properties/${property._id}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ images: [{ url: newUrl, alt: 'Front view' }] });
 
     expect(response.status).toBe(200);
@@ -415,7 +522,7 @@ describe('PATCH /api/v1/properties/:id', () => {
     const property = await createProperty({ ownerId: user.id, status: 'draft' });
     const response = await request(app)
       .patch(`/api/v1/properties/${property._id}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ status: 'published', verified: true, featured: true });
 
     expect(response.status).toBe(200);
@@ -429,7 +536,7 @@ describe('PATCH /api/v1/properties/:id', () => {
     const property = await createProperty({ ownerId: user.id });
     const response = await request(app)
       .patch(`/api/v1/properties/${property._id}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ title: 'Hijacked' });
 
     expect(response.status).toBe(403);
@@ -439,7 +546,7 @@ describe('PATCH /api/v1/properties/:id', () => {
     const { token } = await registerUser();
     const response = await request(app)
       .patch(`/api/v1/properties/${new mongoose.Types.ObjectId()}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ title: 'Missing' });
 
     expect(response.status).toBe(404);
@@ -454,7 +561,7 @@ describe('DELETE /api/v1/properties/:id', () => {
 
     const response = await request(app)
       .delete(`/api/v1/properties/${property._id}`)
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     expect(response.status).toBe(204);
     expect(await PropertyImage.find({ propertyId: property._id })).toHaveLength(0);
@@ -465,7 +572,7 @@ describe('DELETE /api/v1/properties/:id', () => {
     const property = await createProperty({ ownerId: user.id, status: 'draft' });
     const response = await request(app)
       .delete(`/api/v1/properties/${property._id}`)
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     expect(response.status).toBe(204);
     expect(await Property.findById(property._id)).toBeNull();
@@ -476,7 +583,7 @@ describe('DELETE /api/v1/properties/:id', () => {
     const property = await createProperty({ ownerId: user.id, status: 'published' });
     const response = await request(app)
       .delete(`/api/v1/properties/${property._id}`)
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     expect(response.status).toBe(204);
     expect(await Property.findById(property._id)).toBeNull();
@@ -489,7 +596,7 @@ describe('DELETE /api/v1/properties/:id', () => {
     const property = await createProperty({ ownerId: user.id });
     const response = await request(app)
       .delete(`/api/v1/properties/${property._id}`)
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     expect(response.status).toBe(204);
   });
@@ -500,7 +607,7 @@ describe('DELETE /api/v1/properties/:id', () => {
     const property = await createProperty({ ownerId: user.id, status: 'draft' });
     const response = await request(app)
       .delete(`/api/v1/properties/${property._id}`)
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     expect(response.status).toBe(403);
   });
@@ -509,7 +616,7 @@ describe('DELETE /api/v1/properties/:id', () => {
     const { token } = await registerUser();
     const response = await request(app)
       .delete(`/api/v1/properties/${new mongoose.Types.ObjectId()}`)
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     expect(response.status).toBe(404);
   });
@@ -520,7 +627,7 @@ describe('GET /api/v1/admin/properties', () => {
     const { token } = await registerUser();
     const response = await request(app)
       .get('/api/v1/admin/properties')
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     expect(response.status).toBe(403);
   });
@@ -539,7 +646,7 @@ describe('GET /api/v1/admin/properties', () => {
 
     const response = await request(app)
       .get('/api/v1/admin/properties')
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     expect(response.status).toBe(200);
     expect(response.body.properties.map((property) => property.slug).sort()).toEqual(
@@ -557,7 +664,7 @@ describe('GET /api/v1/admin/properties', () => {
     const response = await request(app)
       .get('/api/v1/admin/properties')
       .query({ status: 'draft' })
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     expect(response.status).toBe(200);
     expect(response.body.properties.map((property) => property.slug)).toEqual(['draft-two']);
@@ -570,7 +677,7 @@ describe('GET /api/v1/admin/properties', () => {
     const response = await request(app)
       .get('/api/v1/admin/properties')
       .query({ status: 'not-a-status' })
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     expect(response.status).toBe(400);
   });
@@ -585,7 +692,7 @@ describe('GET /api/v1/admin/properties', () => {
     const response = await request(app)
       .get('/api/v1/admin/properties')
       .query({ page: 1, limit: 2 })
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     expect(response.status).toBe(200);
     expect(response.body.properties).toHaveLength(2);

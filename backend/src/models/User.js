@@ -13,7 +13,9 @@ const userSchema = new Schema(
       lowercase: true,
       trim: true,
     },
-    // Set for password-based accounts; omitted for external-auth identities.
+    // Set for password-based accounts. Absent for an account that registered
+    // but has not verified yet: the password is chosen on the verify step, so
+    // whoever registers an address first never gets to pick its password.
     passwordHash: {
       type: String,
       select: false,
@@ -35,6 +37,47 @@ const userSchema = new Schema(
     // by the protect middleware.
     passwordChangedAt: {
       type: Date,
+    },
+    // Accounts that predate verification are backfilled to true
+    // (npm run backfill:email-verified).
+    emailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    // SHA-256 of the emailed token; the raw token is never stored.
+    verifyTokenHash: {
+      type: String,
+      select: false,
+    },
+    verifyTokenExpiry: {
+      type: Date,
+      select: false,
+    },
+    // Which flow the outstanding token completes. Decides whether verifying
+    // also sets the password ('register') or moves pendingEmail ('email-change').
+    verifyTokenPurpose: {
+      type: String,
+      enum: ['register', 'email-change'],
+      select: false,
+    },
+    // When the last verification mail went out; drives the per-account cooldown.
+    verifyTokenSentAt: {
+      type: Date,
+      select: false,
+    },
+    // When the last "someone tried to register your address" notice went out;
+    // a separate cooldown so it never delays a verification mail.
+    accountNoticeSentAt: {
+      type: Date,
+      select: false,
+    },
+    // Address awaiting confirmation. It never replaces `email` until the link
+    // sent to it is used, and is re-checked for uniqueness at that moment.
+    pendingEmail: {
+      type: String,
+      lowercase: true,
+      trim: true,
+      select: false,
     },
     role: {
       type: String,

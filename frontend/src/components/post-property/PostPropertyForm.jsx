@@ -131,7 +131,7 @@ export function PostPropertyForm() {
     }
 
     if (!isLoggedIn) {
-      // login stores the token in the shared session before this runs
+      // login establishes the shared cookie-backed session before this runs
       requestLogin(() => submitListing());
       return;
     }

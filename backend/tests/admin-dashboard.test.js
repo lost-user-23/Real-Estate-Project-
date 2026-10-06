@@ -1,4 +1,5 @@
 process.env.MONGODB_DB_NAME = 'homenest_test_admin_dashboard';
+const { tokenFromResponse, registerVerified } = require('./helpers/auth');
 
 const request = require('supertest');
 const mongoose = require('mongoose');
@@ -15,10 +16,8 @@ const app = createApp();
 
 async function registerUser() {
   const email = `dashboard-${new mongoose.Types.ObjectId()}@example.com`;
-  const response = await request(app)
-    .post('/api/auth/register')
-    .send({ name: 'Dashboard Tester', email, password: 'password123' });
-  return { token: response.body.token, user: response.body.user };
+  const response = await registerVerified(app, { name: 'Dashboard Tester', email, password: 'password123' });
+  return { token: tokenFromResponse(response), user: response.body.user };
 }
 
 async function createAdminToken() {
@@ -94,7 +93,7 @@ describe('GET /api/v1/admin/dashboard', () => {
     const { token } = await registerUser();
     const response = await request(app)
       .get('/api/v1/admin/dashboard')
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
     expect(response.status).toBe(403);
   });
 
@@ -102,7 +101,7 @@ describe('GET /api/v1/admin/dashboard', () => {
     const token = await createAdminToken();
     const response = await request(app)
       .get('/api/v1/admin/dashboard')
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     expect(response.status).toBe(200);
     expect(response.body.stats).toEqual({
@@ -151,7 +150,7 @@ describe('GET /api/v1/admin/dashboard', () => {
 
     const response = await request(app)
       .get('/api/v1/admin/dashboard')
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     expect(response.status).toBe(200);
     expect(response.body.stats).toEqual({

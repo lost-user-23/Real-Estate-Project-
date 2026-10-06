@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth-context";
 import { AdminField, adminFieldInputClass } from "@/components/admin/AdminField";
 import { Modal } from "@/components/admin/Modal";
 import { useFormAction } from "@/components/account/useFormAction";
+import { CheckInbox } from "@/components/account/CheckInbox";
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -112,8 +113,7 @@ export function ChangePasswordForm() {
     if (newPassword !== confirmPassword) return;
     const { ok } = await action.run(async () => {
       const session = await api.post("/api/auth/change-password", { currentPassword, newPassword });
-      // The server invalidated every earlier token; store the fresh one the same
-      // way login does so this session keeps working.
+      // The server replaces the HTTP-only cookie so this session keeps working.
       replaceSession(session);
     }, "Password changed. Other devices have been signed out.");
     if (ok) {
@@ -170,18 +170,21 @@ export function ChangePasswordForm() {
 }
 
 export function ChangeEmailForm() {
-  const { user, updateUser } = useAuth();
+  const { user } = useAuth();
   const [newEmail, setNewEmail] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
+  // The address a confirmation link was requested for. The account keeps its
+  // current email until that link is used.
+  const [requestedEmail, setRequestedEmail] = useState("");
   const action = useFormAction();
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     const { ok } = await action.run(async () => {
-      const { user: updated } = await api.patch("/api/auth/change-email", { currentPassword, newEmail });
-      updateUser(updated);
-    }, "Email updated.");
+      await api.patch("/api/auth/change-email", { currentPassword, newEmail });
+    }, "");
     if (ok) {
+      setRequestedEmail(newEmail.trim());
       setNewEmail("");
       setCurrentPassword("");
     }
@@ -189,6 +192,14 @@ export function ChangeEmailForm() {
 
   return (
     <Section title="Change email" description={`Current email: ${user?.email ?? "—"}`}>
+      {requestedEmail ? (
+        <CheckInbox email={requestedEmail} title="Confirm your new email">
+          <p className="text-text-muted">Your email stays {user?.email} until you open that link.</p>
+          <button type="button" onClick={() => { setRequestedEmail(""); action.reset(); }} className="self-start text-primary underline">
+            Use a different address
+          </button>
+        </CheckInbox>
+      ) : (
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <AdminField label="New email">
           <input
@@ -215,6 +226,7 @@ export function ChangeEmailForm() {
           <FormFeedback status={action.status} message={action.message} />
         </div>
       </form>
+      )}
     </Section>
   );
 }

@@ -18,9 +18,9 @@ The backend is mounted at `http://localhost:4000` by default. The frontend API c
 | Browse the home page | Browse the hero, featured properties, popular locations, categories, projects, builders, insights, and static information. Popular locations, categories, projects, and builder data use the API. Featured properties and insights remain mock-backed. |
 | Search properties | `/search` calls `GET /api/v1/properties` with intent, city, locality, property type, price range, and pagination query parameters. It displays API results, loading/error/empty states, and pagination. This is the primary public flow currently backed by live property data. |
 | Get location suggestions | The home search autocomplete calls `GET /api/v1/locations/suggestions`, debounces input, and supports keyboard selection. The API returns up to six suggestions. |
-| Create an account or log in | The login prompt calls `POST /api/auth/register` or `POST /api/auth/login`. The JWT is stored under one localStorage key (`auth_token`) and checked through `GET /api/auth/me` on reload. Logging out, or any 401 on a request that carried a token, clears it. The navbar shows the signed-in user's name (plus an `admin` label for admins), Profile and Log out. |
+| Create an account or log in | The login prompt calls `POST /api/auth/register` or `POST /api/auth/login`. The API sets a 7-day HTTP-only `token` cookie, checked through `GET /api/auth/me` on reload. `POST /api/auth/logout` clears the cookie; a 401 on an authenticated API request clears the local session state. The navbar shows the signed-in user's name (plus an `admin` label for admins), Profile and Log out. |
 | Submit a property | The Post Property form requires login and at least five images. It requests signed Cloudinary upload parameters, uploads the files, then calls `POST /api/v1/properties`. The backend creates the listing as a `draft`; it is not automatically public. |
-| Manage account and listings | `/profile` (login required) lets a user edit name and phone, change password (the server re-issues a token, which replaces the session), change email, delete the account, and list their own listings from `GET /api/v1/properties/mine` with edit and delete through `PATCH`/`DELETE /api/v1/properties/:id`. |
+| Manage account and listings | `/profile` (login required) lets a user edit name and phone, change password (the server replaces the session cookie and invalidates earlier tokens), change email, delete the account, and list their own listings from `GET /api/v1/properties/mine` with edit and delete through `PATCH`/`DELETE /api/v1/properties/:id`. |
 | Save a property | Users can toggle a favorite and are prompted to log in first. Saves are persisted per account through `/api/v1/saved-properties` and survive refresh and new sessions. `/saved` (login required) lists the user's saved properties 20 at a time with a Load more button; un-hearting a card there keeps it on the page until the next load. Saves are removed automatically when a property or the saving account is deleted. |
 | View owner contact | Contact numbers are shown to logged-in users only. Logged out, `ContactOwnerCard` shows "Log in to view contact details", opens the login prompt and reveals the number after a successful login. Logged in, "Show contact number" calls `GET /api/v1/properties/:id/contact` through `api.js`. Rate limiting (429), missing listings (404) and other errors show a message in the card. The number is hidden again on logout. Owners also see their own numbers under My listings on `/profile`. |
 | Report a listing | `/report` submits `{ listingUrlOrId, reason, details }` to `POST /api/v1/reports` (the reporter is attached when logged in). The button is disabled while sending, server errors are shown, and success appears only after the request succeeds. Reports appear on the admin Reports page. |
@@ -46,7 +46,7 @@ The tracking wrapper logs events to the developer console outside production. No
 
 ### In the Admin Web UI
 
-The admin area at `/admin` is backed by the real API. It uses the same single shared session as the public site (`auth-context.jsx`, one token in `auth_token`). `/admin` shows a login form until the signed-in user has `role: "admin"`; signing in through it with a non-admin account shows "This account is not an admin" and logs that account out again. The role check in the UI is a convenience only: the backend enforces `protect` plus `restrictTo('admin')` on every admin route.
+The admin area at `/admin` is backed by the real API. It uses the same cookie-backed session as the public site (`auth-context.jsx`). `/admin` shows a login form until the signed-in user has `role: "admin"`; signing in through it with a non-admin account shows "This account is not an admin" and logs that account out again. The role check in the UI is a convenience only: the backend enforces `protect` plus `restrictTo('admin')` on every admin route.
 
 | Admin screen | Actions available | API |
 |---|---|---|
@@ -83,9 +83,9 @@ All routes below are registered by the current backend. Unless noted, API routes
 | Method and path | Purpose / access |
 |---|---|
 | `GET /health` | Health and MongoDB connection state; public |
-| `POST /api/auth/register`, `POST /api/auth/login` | Account creation and login; return `{ token, user }`. Rate limited to 10 attempts per 15 minutes per client IP. |
-| `GET /api/auth/me`, `PATCH /api/auth/me`, `DELETE /api/auth/me` | Current user; update name and phone; delete the account (needs the current password; the last admin cannot be deleted). Bearer token required. |
-| `POST /api/auth/change-password`, `PATCH /api/auth/change-email` | Need the current password; change-password returns a fresh token and invalidates all earlier tokens. Bearer token required. |
+| `POST /api/auth/register`, `POST /api/auth/login`, `POST /api/auth/logout` | Account creation/login set the HTTP-only auth cookie and return `{ user }`; logout clears that cookie. Register/login are rate limited to 10 attempts per 15 minutes per client IP. |
+| `GET /api/auth/me`, `PATCH /api/auth/me`, `DELETE /api/auth/me` | Current user; update name and phone; delete the account (needs the current password; the last admin cannot be deleted). Cookie authentication required. |
+| `POST /api/auth/change-password`, `PATCH /api/auth/change-email` | Need the current password; change-password replaces the cookie and invalidates all earlier tokens. Cookie authentication required. |
 | Account rate limit | `DELETE /api/auth/me`, change-password and change-email: 10 attempts per 15 minutes per user, separate from the login limiter. |
 | `GET /api/v1/properties` | Public published-property search/list with filters and pagination |
 | `GET /api/v1/properties/:slug` | Public published property detail |
@@ -133,6 +133,7 @@ The frontend defaults to `http://localhost:4000` for the API. Set `NEXT_PUBLIC_A
 - `MONGODB_DB_NAME`, `PORT` and `CORS_ORIGIN` fall back to local defaults in development.
 - Cloudinary settings (`CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `CLOUDINARY_FOLDER`) are needed for photo uploads.
 - `TRUST_PROXY_HOPS` (backend, default `0`): number of reverse proxies in front of the API, passed to Express `trust proxy` as a hop count. Never `true`.
+- `COOKIE_SAMESITE` (backend, default `lax`): SameSite policy for the HTTP-only auth cookie.
 - Frontend (see `frontend/.env.example`): `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:4000`) and `NEXT_PUBLIC_SITE_URL`, the public origin for canonical URLs, Open Graph tags, robots.txt and the sitemap. It falls back to `http://localhost:3000`, so set it for every deployed build.
 
 `npm run seed` imports the shared mock content into MongoDB; `npm run db:setup` synchronizes model indexes.
@@ -142,7 +143,7 @@ The frontend defaults to `http://localhost:4000` for the API. Set `NEXT_PUBLIC_A
 - Run the backend with `NODE_ENV=production` and set `JWT_SECRET`, `MONGODB_URI` and `CORS_ORIGIN`.
 - The login rate limiter keys on the client IP. Behind a reverse proxy or load balancer, set `TRUST_PROXY_HOPS` to the real number of proxies (usually `1`); otherwise every request appears to come from the proxy and all users share one budget.
 - Set `NEXT_PUBLIC_SITE_URL` when building the frontend.
-- The session token lives in browser localStorage; serve the site over HTTPS.
+- The auth token is held in an HTTP-only cookie; production cookies are `Secure`, so serve the site over HTTPS.
 
 Backend checks: `npm test` and `npm run lint` from `backend/`. Frontend checks: `npm run lint` and `npm run build` from `frontend/`; there is no frontend test script in `frontend/package.json` at this time.
 
@@ -177,7 +178,7 @@ Backend checks: `npm test` and `npm run lint` from `backend/`. Frontend checks: 
 | `backend/src/config/cloudinary.js` | Configures the Cloudinary SDK from environment values. |
 | `backend/src/db/connection.js` | Owns MongoDB connect/disconnect lifecycle and reports connection state. |
 | `backend/src/controllers/article.controller.js` | Validates public/admin article requests and formats response envelopes. |
-| `backend/src/controllers/auth.controller.js` | Registers users, verifies login, issues tokens, returns the current user, and handles profile/password/email/account changes. |
+| `backend/src/controllers/auth.controller.js` | Registers users, verifies login, issues and clears the HTTP-only auth cookie, returns the current user, and handles profile/password/email/account changes. |
 | `backend/src/controllers/category.controller.js` | Lists public categories and handles protected category CRUD requests. |
 | `backend/src/controllers/dashboard.controller.js` | Admin dashboard counts. |
 | `backend/src/controllers/facility.controller.js` | Lists facilities by location and handles admin facility CRUD. |
@@ -209,7 +210,7 @@ Backend checks: `npm test` and `npm run lint` from `backend/`. Frontend checks: 
 | `backend/src/routes/admin-report.routes.js` | Admin report list/detail/status route declarations. |
 | `backend/src/routes/admin.router.js` | Applies admin protection to admin route groups and mounts location/facility/property bulk operations. |
 | `backend/src/routes/article.routes.js` | Public article list and slug detail routes. |
-| `backend/src/routes/auth.routes.js` | Register/login rate limit; current-user, profile update, change password/email and account deletion routes. |
+| `backend/src/routes/auth.routes.js` | Register/login rate limit; login/logout, current-user, profile update, change password/email and account deletion routes. |
 | `backend/src/routes/category.routes.js` | Public category list plus protected admin CRUD routes. |
 | `backend/src/routes/health.routes.js` | Public health endpoint declaration. |
 | `backend/src/routes/index.js` | Mounts feature routers under `/api/v1`. |
@@ -384,7 +385,7 @@ Backend checks: `npm test` and `npm run lint` from `backend/`. Frontend checks: 
 |---|---|
 | `frontend/src/lib/admin-auth-context.jsx` | Admin view of the shared session; rejects non-admin logins with "This account is not an admin". |
 | `frontend/src/lib/admin-store.jsx` | Admin data store and write actions, all through `api.js`. |
-| `frontend/src/lib/api.js` | The authenticated client: base URL, the single `auth_token` key, bearer header, 401 handling. `api.delete(path, { body })` accepts a body. A request that gets no response throws `ApiError` with status `0` and a "Could not reach the server" message; validation details from the backend are appended to the error message. |
+| `frontend/src/lib/api.js` | The API client: base URL, cookie credentials, 401 handling. `api.delete(path, { body })` accepts a body. A request that gets no response throws `ApiError` with status `0` and a "Could not reach the server" message; validation details from the backend are appended to the error message. |
 | `frontend/src/lib/site.js` | Site URL (from `NEXT_PUBLIC_SITE_URL`, falling back to `http://localhost:3000`), site name and default share image used by layout, page metadata, robots.txt and the sitemap. |
 | `frontend/src/lib/amenities.js` | Amenity options, display priority, and card selection helpers. |
 | `frontend/src/lib/api-client.js` | Unauthenticated `fetch` wrapper for public and server-side reads. |

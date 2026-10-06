@@ -1,4 +1,6 @@
 process.env.MONGODB_DB_NAME = 'homenest_test_projects_admin';
+process.env.CLOUDINARY_CLOUD_NAME = 'demo';
+const { tokenFromResponse, registerVerified } = require('./helpers/auth');
 
 const request = require('supertest');
 const mongoose = require('mongoose');
@@ -11,10 +13,8 @@ const app = createApp();
 
 async function registerUser() {
   const email = `project-admin-${new mongoose.Types.ObjectId()}@example.com`;
-  const response = await request(app)
-    .post('/api/auth/register')
-    .send({ name: 'Project Admin Tester', email, password: 'password123' });
-  return { token: response.body.token, user: response.body.user };
+  const response = await registerVerified(app, { name: 'Project Admin Tester', email, password: 'password123' });
+  return { token: tokenFromResponse(response), user: response.body.user };
 }
 
 async function createAdminToken() {
@@ -59,7 +59,7 @@ describe('admin projects: access control', () => {
   it('forbids a non-admin user on every admin project route', async () => {
     const { token } = await registerUser();
     const project = await makeProject();
-    const headers = { Authorization: `Bearer ${token}` };
+    const headers = { Cookie: `token=${token}` };
     const base = '/api/v1/admin/projects';
 
     const responses = await Promise.all([
@@ -97,7 +97,7 @@ describe('admin projects: reads', () => {
 
     const response = await request(app)
       .get(`/api/v1/admin/projects/${project._id}`)
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     expect(response.status).toBe(200);
     expect(response.body.project).toMatchObject({ name: 'Test Project', status: 'draft' });
@@ -105,7 +105,7 @@ describe('admin projects: reads', () => {
 
   it('returns 404 for an unknown id and 400 for a malformed one', async () => {
     const token = await createAdminToken();
-    const headers = { Authorization: `Bearer ${token}` };
+    const headers = { Cookie: `token=${token}` };
 
     const missing = await request(app)
       .get(`/api/v1/admin/projects/${new mongoose.Types.ObjectId()}`)
@@ -118,7 +118,7 @@ describe('admin projects: reads', () => {
 
   it('paginates the admin list newest first and validates page params', async () => {
     const token = await createAdminToken();
-    const headers = { Authorization: `Bearer ${token}` };
+    const headers = { Cookie: `token=${token}` };
     await makeProject({ name: 'Oldest', status: 'draft', publishedAt: null });
     await makeProject({ name: 'Middle', status: 'archived', publishedAt: null });
     await makeProject({ name: 'Newest' });
@@ -140,7 +140,7 @@ describe('admin projects: writes', () => {
 
     const response = await request(app)
       .post('/api/v1/admin/projects')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ ...validBody, status: 'published' });
 
     expect(response.status).toBe(201);
@@ -159,7 +159,7 @@ describe('admin projects: writes', () => {
 
     const response = await request(app)
       .post('/api/v1/admin/projects')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ ...validBody, ...override });
 
     expect(response.status).toBe(400);
@@ -172,7 +172,7 @@ describe('admin projects: writes', () => {
 
     const response = await request(app)
       .patch(`/api/v1/admin/projects/${project._id}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ status: 'live', startingPriceInRupees: -5 });
 
     expect(response.status).toBe(400);
@@ -181,13 +181,59 @@ describe('admin projects: writes', () => {
     expect(stored.startingPriceInRupees).toBe(5000000);
   });
 
+  describe('imageUrl', () => {
+    const ownUrl = 'https://res.cloudinary.com/demo/image/upload/v1/project-images/a.jpg';
+    const foreignUrls = [
+      'https://res.cloudinary.com/other/image/upload/v1/a.jpg',
+      'https://picsum.photos/600/400',
+      'https://res.cloudinary.com:8443/demo/image/upload/v1/a.jpg',
+      'https://user:pw@res.cloudinary.com/demo/image/upload/v1/a.jpg',
+    ];
+
+    it.each(foreignUrls)('rejects %s on create and on PATCH', async (imageUrl) => {
+      const token = await createAdminToken();
+      const project = await makeProject();
+
+      const created = await request(app)
+        .post('/api/v1/admin/projects')
+        .set('Cookie', `token=${token}`)
+        .send({ ...validBody, imageUrl });
+      expect(created.status).toBe(400);
+      expect(await Project.countDocuments()).toBe(1);
+
+      const patched = await request(app)
+        .patch(`/api/v1/admin/projects/${project._id}`)
+        .set('Cookie', `token=${token}`)
+        .send({ imageUrl });
+      expect(patched.status).toBe(400);
+      expect((await Project.findById(project._id)).imageUrl).toBeNull();
+    });
+
+    it('accepts an own-cloud URL, and null to clear it', async () => {
+      const token = await createAdminToken();
+
+      const created = await request(app)
+        .post('/api/v1/admin/projects')
+        .set('Cookie', `token=${token}`)
+        .send({ ...validBody, imageUrl: ownUrl });
+      expect(created.status).toBe(201);
+      expect(created.body.project.imageUrl).toBe(ownUrl);
+
+      const cleared = await request(app)
+        .patch(`/api/v1/admin/projects/${created.body.project._id}`)
+        .set('Cookie', `token=${token}`)
+        .send({ imageUrl: null });
+      expect(cleared.status).toBe(200);
+    });
+  });
+
   it('ignores fields that are not editable', async () => {
     const token = await createAdminToken();
     const project = await makeProject();
 
     const response = await request(app)
       .patch(`/api/v1/admin/projects/${project._id}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ possessionLabel: 'Dec 2027', publishedAt: '2000-01-01T00:00:00.000Z' });
 
     expect(response.status).toBe(200);
@@ -197,7 +243,7 @@ describe('admin projects: writes', () => {
 
   it('returns 404 when updating, publishing or deleting an unknown project', async () => {
     const token = await createAdminToken();
-    const headers = { Authorization: `Bearer ${token}` };
+    const headers = { Cookie: `token=${token}` };
     const url = `/api/v1/admin/projects/${new mongoose.Types.ObjectId()}`;
 
     const responses = await Promise.all([
@@ -233,7 +279,7 @@ describe('public projects never expose non-published items', () => {
 
     await request(app)
       .patch(`/api/v1/admin/projects/${project._id}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ status: 'archived' });
 
     expect((await request(app).get(publicUrl)).status).toBe(404);
@@ -245,7 +291,7 @@ describe('public projects never expose non-published items', () => {
 
     const deletion = await request(app)
       .delete(`/api/v1/admin/projects/${project._id}`)
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     expect(deletion.status).toBe(204);
     expect((await request(app).get(`/api/v1/projects/${project._id}`)).status).toBe(404);

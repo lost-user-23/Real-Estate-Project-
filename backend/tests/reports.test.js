@@ -1,4 +1,5 @@
 process.env.MONGODB_DB_NAME = 'homenest_test_reports';
+const { tokenFromResponse, registerVerified } = require('./helpers/auth');
 
 const request = require('supertest');
 const mongoose = require('mongoose');
@@ -14,10 +15,8 @@ const app = createApp();
 
 async function registerUser() {
   const email = `report-${new mongoose.Types.ObjectId()}@example.com`;
-  const response = await request(app)
-    .post('/api/auth/register')
-    .send({ name: 'Report Tester', email, password: 'password123' });
-  return { token: response.body.token, user: response.body.user };
+  const response = await registerVerified(app, { name: 'Report Tester', email, password: 'password123' });
+  return { token: tokenFromResponse(response), user: response.body.user };
 }
 
 async function promoteToAdmin(userId) {
@@ -84,7 +83,7 @@ describe('public reports', () => {
     const { token, user } = await registerUser();
     const response = await request(app)
       .post('/api/v1/reports')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ listingUrlOrId: 'listing-abc', reason: 'Spam listing' });
 
     expect(response.status).toBe(201);
@@ -98,7 +97,7 @@ describe('public reports', () => {
   ])('never fails the request when the token is %s', async (_label, tokenOrFactory) => {
     const token = typeof tokenOrFactory === 'function' ? tokenOrFactory() : tokenOrFactory;
     const req = request(app).post('/api/v1/reports');
-    if (token) req.set('Authorization', `Bearer ${token}`);
+    if (token) req.set('Cookie', `token=${token}`);
 
     const response = await req.send({ listingUrlOrId: 'listing-abc', reason: 'Spam listing' });
 
@@ -125,7 +124,7 @@ describe('admin reports', () => {
 
     const response = await request(app)
       .get('/api/v1/admin/reports')
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     expect(response.status).toBe(200);
     expect(response.body.reports).toHaveLength(2);
@@ -141,7 +140,7 @@ describe('admin reports', () => {
 
     const response = await request(app)
       .get('/api/v1/admin/reports')
-      .set('Authorization', `Bearer ${token}`);
+      .set('Cookie', `token=${token}`);
 
     expect(response.status).toBe(200);
     expect(response.body.reports).toHaveLength(1);
@@ -156,7 +155,7 @@ describe('admin reports', () => {
   it('updates only the status field', async () => {
     const token = await createAdmin();
     const report = await createReport();
-    const headers = { Authorization: `Bearer ${token}` };
+    const headers = { Cookie: `token=${token}` };
 
     const update = await request(app)
       .patch(`/api/v1/admin/reports/${report._id}`)
@@ -173,7 +172,7 @@ describe('admin reports', () => {
 
     const response = await request(app)
       .patch(`/api/v1/admin/reports/${report._id}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ status: 'resolved', reason: 'tampered' });
 
     expect(response.status).toBe(400);
@@ -185,7 +184,7 @@ describe('admin reports', () => {
 
     const response = await request(app)
       .patch(`/api/v1/admin/reports/${report._id}`)
-      .set('Authorization', `Bearer ${token}`)
+      .set('Cookie', `token=${token}`)
       .send({ status: 'not-a-status' });
 
     expect(response.status).toBe(400);
@@ -270,7 +269,7 @@ describe('admin reports with property', () => {
     const token = await createAdmin();
     const property = await createProperty({ status: 'archived' });
     const report = await createReport({ propertyId: property._id });
-    const headers = { Authorization: `Bearer ${token}` };
+    const headers = { Cookie: `token=${token}` };
     const expected = {
       id: String(property._id),
       slug: property.slug,
@@ -297,7 +296,7 @@ describe('admin reports with property', () => {
     const unlinked = await createReport({ listingUrlOrId: 'nothing' });
     await Property.deleteOne({ _id: property._id });
 
-    const res = await request(app).get('/api/v1/admin/reports').set('Authorization', `Bearer ${token}`);
+    const res = await request(app).get('/api/v1/admin/reports').set('Cookie', `token=${token}`);
     const byId = Object.fromEntries(res.body.reports.map((r) => [r._id, r]));
 
     expect(byId[String(deleted._id)].property).toBeNull();
