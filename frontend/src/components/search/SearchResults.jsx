@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { PROPERTY_TYPE_LABELS } from "@/lib/propertyTypes";
 import { formatPrice } from "@/lib/format";
@@ -10,9 +10,19 @@ import { PropertyCard } from "@/components/home/PropertyCard";
 import { Container } from "@/components/ui/Container";
 
 const PAGE_SIZE = 12;
+const SORT_OPTIONS = [
+  { value: "newest", label: "Newest" },
+  { value: "featured", label: "Featured first" },
+  { value: "verified", label: "Verified first" },
+  { value: "price-asc", label: "Price: low to high" },
+  { value: "price-desc", label: "Price: high to low" },
+];
 
 export function SearchResults() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const requestedSort = searchParams.get("sort");
+  const sort = SORT_OPTIONS.some((o) => o.value === requestedSort) ? requestedSort : "newest";
   const intent = searchParams.get("intent");
   const city = searchParams.get("city");
   const locality = searchParams.get("locality");
@@ -26,10 +36,11 @@ export function SearchResults() {
     for (const [key, value] of Object.entries({ intent, city, locality, propertyType, minPrice, maxPrice })) {
       if (value) params.set(key, value);
     }
+    if (sort !== "newest") params.set("sort", sort);
     params.set("page", String(page));
     params.set("limit", String(PAGE_SIZE));
     return params.toString();
-  }, [intent, city, locality, propertyType, minPrice, maxPrice, page]);
+  }, [intent, city, locality, propertyType, minPrice, maxPrice, sort, page]);
   const [state, setState] = useState({ status: "loading", properties: [], meta: null, error: "" });
   const [retryCount, setRetryCount] = useState(0);
   const requestKey = `${queryString}:${retryCount}`;
@@ -66,6 +77,14 @@ export function SearchResults() {
     const params = new URLSearchParams(searchParams.toString());
     params.set("page", String(nextPage));
     return `/search?${params.toString()}`;
+  };
+
+  const changeSort = (value) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value === "newest") params.delete("sort");
+    else params.set("sort", value);
+    params.delete("page");
+    router.push(`/search?${params.toString()}`);
   };
 
   const locationLabel = locality || city;
@@ -114,6 +133,20 @@ export function SearchResults() {
               Clear filters
             </Link>
           ) : null}
+          <label className="ml-auto flex items-center gap-2 text-sm text-text-muted">
+            Sort by
+            <select
+              value={sort}
+              onChange={(e) => changeSort(e.target.value)}
+              className="rounded-full border border-border bg-surface px-3 py-1.5 text-sm text-text"
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         {visibleState.status === "loading" ? (

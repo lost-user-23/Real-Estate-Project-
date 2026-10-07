@@ -16,6 +16,14 @@ const INITIAL_FORM = {
   city: "",
   locality: "",
   bhk: "",
+  bathrooms: "",
+  balconies: "",
+  floor: "",
+  furnished: "",
+  facing: "",
+  ownership: "",
+  yearOfConstruction: "",
+  isLuxury: false,
   areaSqft: "",
   price: "",
   amenities: [],
@@ -107,6 +115,14 @@ export function PostPropertyForm() {
         city: form.city.trim(),
         locality: form.locality.trim(),
         bhk: form.bhk === "" ? null : Number(form.bhk),
+        bathrooms: form.bathrooms === "" ? null : Number(form.bathrooms),
+        balconies: form.balconies === "" ? null : Number(form.balconies),
+        floor: form.floor === "" ? null : Number(form.floor),
+        furnished: form.furnished || null,
+        facing: form.facing || null,
+        ownership: form.ownership.trim() || null,
+        yearOfConstruction: form.yearOfConstruction === "" ? null : Number(form.yearOfConstruction),
+        isLuxury: form.isLuxury,
         areaSqft: Number(form.areaSqft),
         priceInRupees: Number(form.price),
         amenities: form.amenities,
@@ -220,6 +236,11 @@ export function PostPropertyForm() {
         </div>
 
         {imageError ? <p className="mt-3 text-sm text-danger">{imageError}</p> : null}
+        {!hasMinimumImages && form.images.length > 0 ? (
+          <p role="alert" className="mt-3 text-sm font-medium text-danger">
+            You&apos;ve added {form.images.length} photo{form.images.length === 1 ? "" : "s"}. Please upload at least 5 photos.
+          </p>
+        ) : null}
         {!hasMinimumImages ? (
           <p className="mt-3 text-xs text-text-muted">Minimum 5 photos required to submit this listing.</p>
         ) : null}
@@ -282,6 +303,95 @@ export function PostPropertyForm() {
             className="w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm outline-none focus:border-primary"
           />
         </Field>
+
+        <Field label="Bathrooms">
+          <input
+            type="number"
+            min={0}
+            value={form.bathrooms}
+            onChange={(e) => update({ bathrooms: e.target.value })}
+            className="w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm outline-none focus:border-primary"
+          />
+        </Field>
+
+        <Field label="Balconies">
+          <input
+            type="number"
+            min={0}
+            value={form.balconies}
+            onChange={(e) => update({ balconies: e.target.value })}
+            className="w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm outline-none focus:border-primary"
+          />
+        </Field>
+
+        <Field label="Floor">
+          <input
+            type="number"
+            min={-1}
+            value={form.floor}
+            onChange={(e) => update({ floor: e.target.value })}
+            className="w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm outline-none focus:border-primary"
+          />
+        </Field>
+
+        <Field label="Furnishing">
+          <select
+            value={form.furnished}
+            onChange={(e) => update({ furnished: e.target.value })}
+            className="w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm outline-none focus:border-primary"
+          >
+            <option value="">Not specified</option>
+            <option value="furnished">Furnished</option>
+            <option value="semi-furnished">Semi-furnished</option>
+            <option value="unfurnished">Unfurnished</option>
+          </select>
+        </Field>
+
+        <Field label="Facing">
+          <select
+            value={form.facing}
+            onChange={(e) => update({ facing: e.target.value })}
+            className="w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm outline-none focus:border-primary"
+          >
+            <option value="">Not specified</option>
+            <option value="north">North</option>
+            <option value="south">South</option>
+            <option value="east">East</option>
+            <option value="west">West</option>
+            <option value="north-east">North-East</option>
+            <option value="north-west">North-West</option>
+            <option value="south-east">South-East</option>
+            <option value="south-west">South-West</option>
+          </select>
+        </Field>
+
+        <Field label="Ownership (e.g. Freehold)">
+          <input
+            type="text"
+            value={form.ownership}
+            onChange={(e) => update({ ownership: e.target.value })}
+            className="w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm outline-none focus:border-primary"
+          />
+        </Field>
+
+        <Field label="Year of construction">
+          <input
+            type="number"
+            min={1800}
+            value={form.yearOfConstruction}
+            onChange={(e) => update({ yearOfConstruction: e.target.value })}
+            className="w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm outline-none focus:border-primary"
+          />
+        </Field>
+
+        <label className="flex items-center gap-2 self-end pb-2.5 text-sm">
+          <input
+            type="checkbox"
+            checked={form.isLuxury}
+            onChange={(e) => update({ isLuxury: e.target.checked })}
+          />
+          Luxury property
+        </label>
 
         <Field label="City" required>
           <input
@@ -368,9 +478,9 @@ export function PostPropertyForm() {
 
       <button
         type="submit"
-        disabled={!hasMinimumImages || isSubmitting}
+        disabled={isSubmitting}
         className={`self-start rounded-full px-6 py-2.5 text-sm font-semibold transition-colors ${
-          hasMinimumImages && !isSubmitting
+          !isSubmitting
             ? "bg-primary text-white hover:bg-primary-dark"
             : "cursor-not-allowed bg-border text-text-muted"
         }`}

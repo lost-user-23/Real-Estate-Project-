@@ -47,7 +47,7 @@ curl http://localhost:4000/health
 - `npm run lint` - ESLint over the backend source.
 - `npm test` - Jest + Supertest (needs a reachable MongoDB).
 - `npm run db:setup` - create/sync MongoDB indexes for every model.
-- `npm run seed` - load `frontend/src/lib/mockData.js` into MongoDB.
+- `npm run seed` - import every CSV in the `DataSet/` folder into MongoDB (properties, plus locations and categories derived from them). Pass `-- --replace-seeded` to first delete the old mock/seeded data (ownerless properties and all locations, categories, projects, articles). The longer "Seeding the database" section below predates this and describes the removed mock-data seed.
 - `npm run admin:create` - create an admin account (see `scripts/create-admin.js`).
 
 ## API overview

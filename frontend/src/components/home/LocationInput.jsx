@@ -9,7 +9,7 @@ function suggestionLabel(s) {
   return s.locality ? `${s.locality}, ${s.city}` : s.city;
 }
 
-export function LocationInput({ value, onSelect }) {
+export function LocationInput({ value, onSelect, onTextChange }) {
   const [query, setQuery] = useState(value ? suggestionLabel(value) : "");
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -50,12 +50,14 @@ export function LocationInput({ value, onSelect }) {
   const commitSelection = (suggestion) => {
     onSelect({ city: suggestion.city, locality: suggestion.locality });
     setQuery(suggestionLabel(suggestion));
+    onTextChange?.(suggestionLabel(suggestion));
     setIsOpen(false);
     setActiveIndex(-1);
   };
 
   const handleChange = (next) => {
     setQuery(next);
+    onTextChange?.(next);
     setIsOpen(true);
     setActiveIndex(-1);
     if (next.trim().length === 0) {
@@ -110,7 +112,7 @@ export function LocationInput({ value, onSelect }) {
           onChange={(e) => handleChange(e.target.value)}
           onFocus={() => setIsOpen(true)}
           onKeyDown={handleKeyDown}
-          className="w-full bg-transparent text-sm outline-none placeholder:text-text-muted"
+          className="w-full bg-transparent text-sm outline-none focus-visible:outline-none placeholder:text-text-muted"
         />
       </div>
 
@@ -119,7 +121,7 @@ export function LocationInput({ value, onSelect }) {
           id={listboxId}
           role="listbox"
           aria-label="Location suggestions"
-          className="absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-border bg-surface shadow-lg"
+          className="absolute z-30 mt-2 max-h-72 w-full overflow-y-auto rounded-xl border border-border bg-surface shadow-lg"
         >
           {suggestions.length > 0 ? (
             suggestions.map((suggestion, index) => (

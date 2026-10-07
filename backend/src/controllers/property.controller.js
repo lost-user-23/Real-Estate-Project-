@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const Property = require('../models/Property');
-const { PROPERTY_INTENTS, PROPERTY_TYPES, PROPERTY_STATUSES } = Property;
+const { PROPERTY_INTENTS, PROPERTY_TYPES, PROPERTY_STATUSES, FURNISHING_OPTIONS, FACING_OPTIONS } = Property;
 const propertyService = require('../services/property.service');
 const { BULK_UPDATABLE_FIELDS } = propertyService;
 const asyncHandler = require('../utils/asyncHandler');
@@ -116,9 +116,31 @@ function validateCreateInput(body) {
   return errors;
 }
 
+// Optional listing details; null/undefined means "not provided".
+function validateDetailFields(body) {
+  const errors = [];
+  for (const key of ['bathrooms', 'balconies']) {
+    if (body[key] != null && !isFiniteNonNegativeNumber(body[key])) errors.push(`${key} must be a non-negative number`);
+  }
+  if (body.floor != null && !Number.isFinite(body.floor)) errors.push('floor must be a number');
+  if (body.yearOfConstruction != null
+    && !(Number.isInteger(body.yearOfConstruction) && body.yearOfConstruction >= 1800 && body.yearOfConstruction <= new Date().getFullYear() + 5)) {
+    errors.push('yearOfConstruction must be a valid year');
+  }
+  if (body.furnished != null && !FURNISHING_OPTIONS.includes(body.furnished)) {
+    errors.push(`furnished must be one of: ${FURNISHING_OPTIONS.join(', ')}`);
+  }
+  if (body.facing != null && !FACING_OPTIONS.includes(body.facing)) {
+    errors.push(`facing must be one of: ${FACING_OPTIONS.join(', ')}`);
+  }
+  if (body.ownership != null && typeof body.ownership !== 'string') errors.push('ownership must be a string');
+  if (body.isLuxury != null && typeof body.isLuxury !== 'boolean') errors.push('isLuxury must be a boolean');
+  return errors;
+}
+
 const createProperty = asyncHandler(async (req, res) => {
   const body = req.body || {};
-  const errors = [...validateCreateInput(body), ...validateImagesInput(body.images, 5)];
+  const errors = [...validateCreateInput(body), ...validateDetailFields(body), ...validateImagesInput(body.images, 5)];
   if (errors.length > 0) {
     throw AppError.badRequest('Validation failed', errors);
   }
@@ -156,6 +178,14 @@ function parseListFilters(query) {
       errors.push('featured must be true or false');
     } else {
       filters.featured = query.featured === 'true';
+    }
+  }
+
+  if (query.sort != null) {
+    if (!propertyService.LIST_SORTS.includes(query.sort)) {
+      errors.push(`sort must be one of: ${propertyService.LIST_SORTS.join(', ')}`);
+    } else {
+      filters.sort = query.sort;
     }
   }
 
@@ -314,7 +344,7 @@ const getPropertyContact = asyncHandler(async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) {
     throw AppError.notFound('Property not found');
   }
-  const result = await propertyService.findPublishedContactById(req.params.id);
+  const result = await propertyService.findPublishedContactById(req.params.id, req.user);
   if (!result.found) {
     throw AppError.notFound('Property not found');
   }
@@ -384,7 +414,7 @@ const updateProperty = asyncHandler(async (req, res) => {
   const isAdmin = req.user.role === 'admin';
   const body = req.body || {};
   const { errors } = validateUpdateInput(body, isAdmin);
-  errors.push(...validateImagesInput(body.images));
+  errors.push(...validateDetailFields(body), ...validateImagesInput(body.images));
   if (errors.length > 0) {
     throw AppError.badRequest('Validation failed', errors);
   }

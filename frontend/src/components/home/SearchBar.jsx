@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { getLocationSuggestions } from "@/lib/locationSuggestions";
 import { getBudgetPresets } from "@/lib/budgetPresets";
 import { PROPERTY_TYPE_LABELS, PROPERTY_TYPE_OPTIONS_BY_INTENT } from "@/lib/propertyTypes";
 import { LocationInput } from "@/components/home/LocationInput";
@@ -8,18 +10,47 @@ import { SearchIcon } from "@/components/icons";
 export function SearchBar({ intent, value, onChange, onSubmit }) {
   const propertyTypeOptions = PROPERTY_TYPE_OPTIONS_BY_INTENT[intent];
   const budgetPresets = getBudgetPresets(intent);
+  const [typedText, setTypedText] = useState("");
+  const [resolving, setResolving] = useState(false);
+  const canSubmit = Boolean(value.location) || typedText.trim().length > 0;
+
+  // The user may type a place and press Search without picking a suggestion.
+  // Resolve the text to the best matching suggestion, else treat it as a city.
+  const resolveAndSubmit = async () => {
+    if (value.location) {
+      onSubmit(value);
+      return;
+    }
+    const text = typedText.trim();
+    if (!text) return;
+    setResolving(true);
+    let location = { city: text, locality: null };
+    try {
+      const suggestions = await getLocationSuggestions(text);
+      if (suggestions?.length > 0) {
+        location = { city: suggestions[0].city, locality: suggestions[0].locality ?? null };
+      }
+    } catch {
+      // fall back to the typed text as a city
+    }
+    setResolving(false);
+    const next = { ...value, location };
+    onChange(next);
+    onSubmit(next);
+  };
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (value.location) onSubmit();
+        if (canSubmit && !resolving) resolveAndSubmit();
       }}
       className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 shadow-sm sm:flex-row sm:items-end sm:gap-3"
     >
       <LocationInput
         value={value.location}
         onSelect={(location) => onChange({ ...value, location })}
+        onTextChange={setTypedText}
       />
 
       <div className="flex-1">
@@ -62,7 +93,7 @@ export function SearchBar({ intent, value, onChange, onSubmit }) {
 
       <button
         type="submit"
-        disabled={!value.location}
+        disabled={!canSubmit || resolving}
         className="flex items-center justify-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:bg-border disabled:text-text-muted"
       >
         <SearchIcon className="h-4 w-4" />

@@ -24,6 +24,31 @@ const getProperty = cache(async (slug) => {
 
 const META_DESCRIPTION_MAX = 160;
 
+function titleCase(value) {
+  return value.replace(/(^|-)([a-z])/g, (_, sep, ch) => (sep ? "-" : "") + ch.toUpperCase());
+}
+
+function floorLabel(floor) {
+  if (floor === 0) return "Ground";
+  if (floor < 0) return "Basement";
+  return String(floor);
+}
+
+// Optional details; a row only appears when the listing has a value for it.
+function buildDetailRows(property) {
+  const has = (value) => value !== null && value !== undefined && value !== "";
+  return [
+    has(property.bathrooms) ? ["Bathrooms", property.bathrooms] : null,
+    has(property.balconies) ? ["Balconies", property.balconies] : null,
+    has(property.furnished) ? ["Furnishing", titleCase(property.furnished)] : null,
+    has(property.floor) ? ["Floor", floorLabel(property.floor)] : null,
+    has(property.facing) ? ["Facing", titleCase(property.facing)] : null,
+    has(property.ownership) ? ["Ownership", property.ownership] : null,
+    has(property.yearOfConstruction) ? ["Year built", property.yearOfConstruction] : null,
+    property.isLuxury ? ["Category", "Luxury"] : null,
+  ].filter(Boolean);
+}
+
 function buildDescription(property, location) {
   const summary = `${property.title} in ${location}. ${formatArea(property.areaSqft)}, ${formatPrice(property.priceInRupees)}${property.intent === "rent" ? "/mo" : ""}.`;
   const detail = property.description?.trim();
@@ -78,6 +103,7 @@ export default async function PropertyDetailPage({ params }) {
   const propertyId = String(property._id);
   const galleryImages = (property.images ?? []).filter((image) => image.url);
   const location = property.locality ? `${property.locality}, ${property.city}` : property.city;
+  const detailRows = buildDetailRows(property);
   const typeLabel = property.bhk
     ? `${property.bhk} BHK ${PROPERTY_TYPE_LABELS[property.propertyType]}`
     : PROPERTY_TYPE_LABELS[property.propertyType];
@@ -161,6 +187,20 @@ export default async function PropertyDetailPage({ params }) {
                   <dd className="mt-1 font-medium">{property.verified ? "Verified" : "Under review"}</dd>
                 </div>
               </dl>
+
+              {detailRows.length ? (
+                <div className="mt-6">
+                  <h2 className="text-lg font-semibold">Property details</h2>
+                  <dl className="mt-3 grid grid-cols-2 gap-4 rounded-2xl border border-border bg-surface p-5 sm:grid-cols-4">
+                    {detailRows.map(([label, value]) => (
+                      <div key={label}>
+                        <dt className="text-xs text-text-muted">{label}</dt>
+                        <dd className="mt-1 font-medium">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              ) : null}
 
               {property.amenities?.length ? (
                 <div className="mt-6">

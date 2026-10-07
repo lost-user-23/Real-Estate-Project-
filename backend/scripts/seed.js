@@ -1,175 +1,84 @@
-const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
-const { loadMockData } = require('./seedData/loadMockData');
-const {
-  SeedValidationError,
-  transformProperty,
-  transformLocation,
-  transformCategory,
-  transformProject,
-  transformArticle,
-} = require('./seedData/transform');
-const { rewriteImageUrls, collectImageUrls } = require('./seedData/imageUrls');
-const config = require('../src/config');
-const { isOwnCloudinaryImageUrl } = require('../src/services/cloudinaryAssets.service');
+const { parseCsv } = require('./seedData/parseCsv');
+const { buildProjects } = require('./seedData/builders');
+const { transformRow, buildImages, deriveLocations, deriveCategories } = require('./seedData/transformDataset');
 const { connectToDatabase, disconnectFromDatabase } = require('../src/db/connection');
-const { User, Property, PropertyImage, Location, Category, Project, Article } = require('../src/models');
+const { Property, PropertyImage, Location, Category, Project, Article } = require('../src/models');
 
-// Identifies the single dev admin account this script manages. Never a real
-// person's address; used only so reruns upsert the same document.
-const DEV_ADMIN_EMAIL = 'dev-admin@homenest.local';
+const DATASET_DIR = path.resolve(__dirname, '../../DataSet');
+const BATCH_SIZE = 1000;
 
-const COLLECTIONS = ['users', 'properties', 'propertyImages', 'locations', 'categories', 'projects', 'articles'];
+// Mumbai has far more rows than every other city, so by default only every
+// second Mumbai row is imported (slugs keep the original row number, so the
+// kept rows are stable). --full-mumbai imports all of them.
+const HALVED_FILE_PREFIX = 'mumbai';
 
-function makeSummary() {
-  const summary = {};
-  for (const name of COLLECTIONS) {
-    summary[name] = { inserted: 0, updated: 0 };
-  }
-  return summary;
-}
-
-function tally(summary, collection, outcome) {
-  summary[collection][outcome] += 1;
-}
-
-// Upsert-by-natural-key: every call site passes a filter built from a field
-// that is already unique (or unique within this dataset), so reruns update
-// the same document instead of creating duplicates. No documents are ever
-// deleted here.
-async function upsert(Model, filter, doc) {
-  const existing = await Model.exists(filter);
-  await Model.findOneAndUpdate(filter, { $set: doc }, {
-    upsert: true,
-    returnDocument: 'after',
-    setDefaultsOnInsert: true,
-  });
-  return existing ? 'updated' : 'inserted';
-}
-
-function transformAll(mockData) {
+// Usage: npm run seed -- [file.csv] [--replace-seeded] [--full-mumbai]
+//   file.csv          CSV inside the DataSet folder (default: every .csv there)
+//   --replace-seeded  first deletes previously seeded/mock data: properties with
+//                     no owner (and their images), plus all locations,
+//                     categories, projects and articles.
+function parseArgs(argv) {
   return {
-    properties: mockData.MOCK_PROPERTIES.map(transformProperty),
-    locations: mockData.MOCK_LOCATIONS.map(transformLocation),
-    categories: mockData.MOCK_CATEGORIES.map(transformCategory),
-    projects: mockData.MOCK_PROJECTS.map(transformProject),
-    articles: mockData.MOCK_ARTICLES.map(transformArticle),
+    replace: argv.includes('--replace-seeded'),
+    fullMumbai: argv.includes('--full-mumbai'),
+    files: argv.filter((a) => !a.startsWith('--')),
   };
 }
 
-async function seedDevAdmin(summary) {
-  // The User schema has no password-hashing pipeline yet (no auth
-  // implemented), so there is no real hash to store. Storing a plaintext
-  // password would violate the "no plaintext" requirement, so instead this
-  // stores a random value that cannot ever validate against any real
-  // password check once one exists. It must be replaced through a real
-  // credential-setting flow before this account can log in.
-  const unusablePasswordHash = `unusable-seed-placeholder:${crypto.randomBytes(24).toString('hex')}`;
-
-  const outcome = await upsert(
-    User,
-    { email: DEV_ADMIN_EMAIL },
-    {
-      email: DEV_ADMIN_EMAIL,
-      name: 'HomeNest Dev Admin (seed)',
-      role: 'admin',
-      passwordHash: unusablePasswordHash,
-      // Seeded by the operator on a reserved .local address; there is no inbox
-      // to confirm, and the account cannot log in until given a real password.
-      emailVerified: true,
-    }
-  );
-  tally(summary, 'users', outcome);
+function resolveFiles(files) {
+  if (files.length > 0) return files.map((f) => path.resolve(DATASET_DIR, f));
+  return fs
+    .readdirSync(DATASET_DIR)
+    .filter((f) => f.toLowerCase().endsWith('.csv'))
+    .map((f) => path.join(DATASET_DIR, f));
 }
 
-async function seedCategories(summary, categories) {
-  for (const { doc } of categories) {
-    const outcome = await upsert(Category, { slug: doc.slug }, doc);
-    tally(summary, 'categories', outcome);
+async function bulkUpsert(Model, ops, label) {
+  let done = 0;
+  for (let i = 0; i < ops.length; i += BATCH_SIZE) {
+    await Model.bulkWrite(ops.slice(i, i + BATCH_SIZE), { ordered: false });
+    done += Math.min(BATCH_SIZE, ops.length - i);
+    process.stdout.write(`\r[seed] ${label}: ${done}/${ops.length}`);
   }
-}
-
-async function seedLocations(summary, locations) {
-  for (const { doc } of locations) {
-    const outcome = await upsert(Location, { city: doc.city, locality: doc.locality }, doc);
-    tally(summary, 'locations', outcome);
-  }
-}
-
-async function seedProjects(summary, projects) {
-  for (const { doc } of projects) {
-    // Project has no unique field in the schema; `name` is unique across the
-    // 5 mock projects, so it is used as the natural upsert key here.
-    const outcome = await upsert(Project, { name: doc.name }, doc);
-    tally(summary, 'projects', outcome);
-  }
-}
-
-async function seedArticles(summary, articles) {
-  for (const { doc } of articles) {
-    const outcome = await upsert(Article, { slug: doc.slug }, doc);
-    tally(summary, 'articles', outcome);
-  }
-}
-
-async function seedPropertiesAndImages(summary, properties) {
-  for (const { doc, image } of properties) {
-    const propertyOutcome = await upsert(Property, { slug: doc.slug }, doc);
-    tally(summary, 'properties', propertyOutcome);
-
-    if (!image) continue;
-
-    const property = await Property.findOne({ slug: doc.slug }).select('_id').lean();
-    const imageDoc = { propertyId: property._id, url: image.url, alt: image.alt, displayOrder: image.displayOrder };
-    const imageOutcome = await upsert(
-      PropertyImage,
-      { propertyId: property._id, displayOrder: image.displayOrder },
-      imageDoc
-    );
-    tally(summary, 'propertyImages', imageOutcome);
-  }
-}
-
-function printSummary(summary) {
-  console.log('\n[seed] summary:');
-  for (const collection of COLLECTIONS) {
-    const { inserted, updated } = summary[collection];
-    console.log(`  ${collection.padEnd(15)} inserted: ${inserted}  updated: ${updated}  total: ${inserted + updated}`);
-  }
+  if (ops.length > 0) process.stdout.write('\n');
 }
 
 async function main() {
-  if (!config.cloudinaryCloudName) {
-    console.error(
-      '[seed] CLOUDINARY_CLOUD_NAME is not set. Seed images are served from our own Cloudinary account, ' +
-        'so set it in backend/.env (or the environment) and run again. Aborting before any database writes.'
-    );
+  const { replace, fullMumbai, files } = parseArgs(process.argv.slice(2));
+  const csvFiles = resolveFiles(files);
+  if (csvFiles.length === 0) {
+    console.error(`[seed] no .csv files found in ${DATASET_DIR}`);
     process.exitCode = 1;
     return;
   }
 
-  console.log('[seed] loading mock data from frontend/src/lib/mockData.js');
-  const mockData = loadMockData();
-
-  let transformed;
-  try {
-    transformed = rewriteImageUrls(transformAll(mockData), config.cloudinaryCloudName);
-  } catch (error) {
-    if (error instanceof SeedValidationError) {
-      console.error(`[seed] invalid mock data, aborting before any database writes:\n  ${error.message}`);
-      process.exitCode = 1;
-      return;
+  const properties = [];
+  const skipped = new Map();
+  let rowNumber = 0;
+  for (const file of csvFiles) {
+    const fileName = path.basename(file);
+    const halve = !fullMumbai && fileName.toLowerCase().startsWith(HALVED_FILE_PREFIX);
+    // Slugs are keyed per file so adding a file never renumbers another's rows.
+    const slugPrefix = halve ? '' : `${fileName.split('_')[0].toLowerCase()}-`;
+    console.log(`[seed] reading ${fileName}${halve ? ' (every 2nd row)' : ''}`);
+    let fileRow = 0;
+    for (const row of parseCsv(fs.readFileSync(file, 'utf8'))) {
+      rowNumber += 1;
+      fileRow += 1;
+      if (halve && fileRow % 2 === 0) {
+        skipped.set('Mumbai halved', (skipped.get('Mumbai halved') || 0) + 1);
+        continue;
+      }
+      const result = transformRow(row, rowNumber, `${slugPrefix}${fileRow}`);
+      if (result.doc) properties.push(result.doc);
+      else skipped.set(result.skipped, (skipped.get(result.skipped) || 0) + 1);
     }
-    throw error;
   }
-
-  const rejected = collectImageUrls(transformed).filter((url) => !isOwnCloudinaryImageUrl(url));
-  if (rejected.length > 0) {
-    console.error(`[seed] ${rejected.length} image URL(s) are not own-Cloudinary URLs, aborting before any database writes:`);
-    for (const url of new Set(rejected)) console.error(`  ${url}`);
-    process.exitCode = 1;
-    return;
-  }
+  console.log(`[seed] ${properties.length} listings ready, ${rowNumber - properties.length} skipped`);
+  for (const [reason, count] of skipped) console.log(`  skipped ${count}: ${reason}`);
 
   try {
     await connectToDatabase();
@@ -179,15 +88,80 @@ async function main() {
     return;
   }
 
-  const summary = makeSummary();
-
   try {
-    await seedDevAdmin(summary);
-    await seedCategories(summary, transformed.categories);
-    await seedLocations(summary, transformed.locations);
-    await seedProjects(summary, transformed.projects);
-    await seedArticles(summary, transformed.articles);
-    await seedPropertiesAndImages(summary, transformed.properties);
+    if (replace) {
+      const seeded = await Property.find({ ownerId: null }).select('_id').lean();
+      await PropertyImage.deleteMany({ propertyId: { $in: seeded.map((p) => p._id) } });
+      const removed = await Property.deleteMany({ ownerId: null });
+      await Promise.all([Location.deleteMany({}), Category.deleteMany({}), Project.deleteMany({}), Article.deleteMany({})]);
+      console.log(`[seed] removed ${removed.deletedCount} seeded properties and all locations/categories/projects/articles`);
+    }
+
+    const publishedAt = new Date();
+    await bulkUpsert(
+      Property,
+      properties.map((doc) => ({
+        updateOne: { filter: { slug: doc.slug }, update: { $set: doc, $setOnInsert: { publishedAt } }, upsert: true },
+      })),
+      'properties'
+    );
+    // Re-create each listing's photos: look the ids up by slug (upserts above
+    // don't return ids for existing rows), clear old photos, insert fresh ones.
+    const imagesBySlug = new Map(properties.map((doc) => [doc.slug, buildImages(doc)]));
+    const slugs = [...imagesBySlug.keys()];
+    let imageCount = 0;
+    for (let i = 0; i < slugs.length; i += BATCH_SIZE) {
+      const batch = await Property.find({ slug: { $in: slugs.slice(i, i + BATCH_SIZE) } })
+        .select('_id slug')
+        .lean();
+      await PropertyImage.deleteMany({ propertyId: { $in: batch.map((p) => p._id) } });
+      const docs = batch.flatMap((p) => imagesBySlug.get(p.slug).map((image) => ({ ...image, propertyId: p._id })));
+      await PropertyImage.insertMany(docs, { ordered: false });
+      imageCount += docs.length;
+      process.stdout.write(`[seed] images: ${imageCount}`);
+    }
+    if (imageCount > 0) process.stdout.write('\n');
+    await bulkUpsert(
+      Location,
+      deriveLocations(properties).map((doc) => ({
+        updateOne: {
+          filter: { cityLower: doc.cityLower, localityLower: doc.localityLower },
+          update: { $set: doc },
+          upsert: true,
+        },
+      })),
+      'locations'
+    );
+    // Projects feed the builders directory (grouped by developer). Localities
+    // come from the listings seeded for the same city, most common first.
+    const localityCounts = new Map();
+    for (const { city, locality } of properties) {
+      if (!locality) continue;
+      const counts = localityCounts.get(city) || new Map();
+      counts.set(locality, (counts.get(locality) || 0) + 1);
+      localityCounts.set(city, counts);
+    }
+    const localitiesByCity = new Map(
+      [...localityCounts].map(([city, counts]) => [city, [...counts].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name]) => name)])
+    );
+    await bulkUpsert(
+      Project,
+      buildProjects(localitiesByCity, publishedAt).map(({ publishedAt: at, ...doc }) => ({
+        updateOne: {
+          filter: { name: doc.name, cityLower: doc.cityLower },
+          update: { $set: doc, $setOnInsert: { publishedAt: at } },
+          upsert: true,
+        },
+      })),
+      'projects'
+    );
+    await bulkUpsert(
+      Category,
+      deriveCategories(properties).map((doc) => ({
+        updateOne: { filter: { slug: doc.slug }, update: { $set: doc }, upsert: true },
+      })),
+      'categories'
+    );
   } catch (error) {
     console.error('[seed] failed while writing to MongoDB:', error);
     process.exitCode = 1;
@@ -196,8 +170,7 @@ async function main() {
     await disconnectFromDatabase();
   }
 
-  printSummary(summary);
-  console.log('\n[seed] done.');
+  console.log('[seed] done.');
 }
 
 main().catch((error) => {

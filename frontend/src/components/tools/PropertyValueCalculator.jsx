@@ -1,12 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { MOCK_LOCATIONS } from "@/lib/mockData";
 import { PROPERTY_TYPE_LABELS } from "@/lib/propertyTypes";
 import { CITY_RATE_PER_SQFT, DEFAULT_RATE_PER_SQFT, PROPERTY_TYPE_MULTIPLIER, ageMultiplier } from "@/lib/cityRates";
 import { formatPrice } from "@/lib/format";
 
-const CITIES = [...MOCK_LOCATIONS].map((l) => l.city).sort();
+const CITIES = Object.keys(CITY_RATE_PER_SQFT).sort();
 const TYPES = Object.keys(PROPERTY_TYPE_MULTIPLIER);
 
 const fieldLabel = "mb-1.5 block text-xs font-medium text-text-muted";

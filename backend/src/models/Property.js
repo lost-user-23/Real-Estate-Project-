@@ -12,6 +12,20 @@ const PROPERTY_TYPES = [
   'plot',
   'pg-hostel',
   'commercial',
+  'studio',
+  'penthouse',
+];
+
+const FURNISHING_OPTIONS = ['furnished', 'semi-furnished', 'unfurnished'];
+const FACING_OPTIONS = [
+  'north',
+  'south',
+  'east',
+  'west',
+  'north-east',
+  'north-west',
+  'south-east',
+  'south-west',
 ];
 
 // Matches the statuses the frontend currently uses (docs/backend-architecture.md
@@ -77,6 +91,16 @@ const propertySchema = new Schema(
       default: null,
       trim: true,
     },
+    bathrooms: { type: Number, default: null, min: 0 },
+    furnished: { type: String, enum: [...FURNISHING_OPTIONS, null], default: null },
+    balconies: { type: Number, default: null, min: 0 },
+    floor: { type: Number, default: null },
+    ownership: { type: String, default: null, trim: true },
+    facing: { type: String, enum: [...FACING_OPTIONS, null], default: null },
+    yearOfConstruction: { type: Number, default: null, min: 1800 },
+    isLuxury: { type: Boolean, default: false },
+    // Filename of the listing photo from the imported dataset; not a URL.
+    imageFile: { type: String, default: null },
     amenities: {
       type: [String],
       default: [],
@@ -133,3 +157,5 @@ module.exports = mongoose.model('Property', propertySchema);
 module.exports.PROPERTY_INTENTS = PROPERTY_INTENTS;
 module.exports.PROPERTY_TYPES = PROPERTY_TYPES;
 module.exports.PROPERTY_STATUSES = PROPERTY_STATUSES;
+module.exports.FURNISHING_OPTIONS = FURNISHING_OPTIONS;
+module.exports.FACING_OPTIONS = FACING_OPTIONS;

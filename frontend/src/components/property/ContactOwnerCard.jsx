@@ -82,7 +82,7 @@ export function ContactOwnerCard({ propertyId }) {
     body = (
       <button
         type="button"
-        onClick={fetchContact}
+        onClick={() => fetchContact()}
         disabled={isLoading}
         className="mt-4 w-full rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary-dark disabled:opacity-60"
       >

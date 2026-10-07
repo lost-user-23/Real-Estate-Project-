@@ -2,12 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useCity } from "@/lib/city-context";
-import { isSameCity } from "@/lib/city";
-import { MOCK_LOCATIONS } from "@/lib/mockData";
+import { isSameCity, SUPPORTED_CITIES } from "@/lib/city";
 import { ChevronDownIcon, MapPinIcon } from "@/components/icons";
 
-// Sorted once at module scope - MOCK_LOCATIONS doesn't change at runtime.
-const CITIES = [...MOCK_LOCATIONS].sort((a, b) => b.activeListingCount - a.activeListingCount);
 
 export function CitySelector({ transparent = false }) {
   const { city, setCity } = useCity();
@@ -68,19 +65,18 @@ export function CitySelector({ transparent = false }) {
           >
             All India
           </button>
-          {CITIES.map((location) => (
+          {SUPPORTED_CITIES.map((cityName) => (
             <button
-              key={location.id}
+              key={cityName}
               type="button"
               role="option"
-              aria-selected={isSameCity(city, location.city)}
-              onClick={() => select(location.city)}
+              aria-selected={isSameCity(city, cityName)}
+              onClick={() => select(cityName)}
               className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-bg ${
-                isSameCity(city, location.city) ? "font-semibold text-primary" : ""
+                isSameCity(city, cityName) ? "font-semibold text-primary" : ""
               }`}
             >
-              <span>{location.city}</span>
-              <span className="text-xs text-text-muted">{location.activeListingCount.toLocaleString("en-IN")}</span>
+              <span>{cityName}</span>
             </button>
           ))}
         </div>

@@ -13,6 +13,14 @@ const EDITABLE_FIELDS = [
   'locality',
   'amenities',
   'contactNumber',
+  'bathrooms',
+  'furnished',
+  'balconies',
+  'floor',
+  'ownership',
+  'facing',
+  'yearOfConstruction',
+  'isLuxury',
 ];
 
 const ADMIN_ONLY_FIELDS = ['status', 'verified', 'featured', 'featuredRank'];
@@ -150,6 +158,14 @@ function insertProperty({ ownerId, input, slug }) {
     city: input.city,
     locality: input.locality ?? null,
     amenities: input.amenities ?? [],
+    bathrooms: input.bathrooms ?? null,
+    furnished: input.furnished ?? null,
+    balconies: input.balconies ?? null,
+    floor: input.floor ?? null,
+    ownership: input.ownership ?? null,
+    facing: input.facing ?? null,
+    yearOfConstruction: input.yearOfConstruction ?? null,
+    isLuxury: Boolean(input.isLuxury),
     description: input.description ?? '',
     contactNumber: input.contactNumber,
     status: 'draft',
@@ -186,9 +202,29 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// `featured` / `verified` put those listings first across the whole result
+// set (not just the current page); every sort ends on a stable tiebreaker.
+const LIST_SORTS = ['newest', 'featured', 'verified', 'price-asc', 'price-desc'];
+
+function buildListSort({ sort, admin }) {
+  const recency = admin ? { createdAt: -1 } : { publishedAt: -1 };
+  switch (sort) {
+    case 'featured':
+      return { featured: -1, verified: -1, ...recency, _id: 1 };
+    case 'verified':
+      return { verified: -1, featured: -1, ...recency, _id: 1 };
+    case 'price-asc':
+      return { priceInRupees: 1, ...recency, _id: 1 };
+    case 'price-desc':
+      return { priceInRupees: -1, ...recency, _id: 1 };
+    default:
+      return recency;
+  }
+}
+
 async function findProperties({ filters, page, limit }) {
   const filter = buildListFilter(filters);
-  const sort = filters.admin ? { createdAt: -1 } : { publishedAt: -1 };
+  const sort = buildListSort(filters);
   const skip = (page - 1) * limit;
 
   const [properties, total] = await Promise.all([
@@ -261,11 +297,13 @@ async function findPublishedBySlug(slug) {
 
 // Contact number of a published listing, or null when there is no published
 // listing with this id. `found` separates "no listing" from "no number".
-async function findPublishedContactById(id) {
-  const property = await Property.findOne({ _id: id, status: 'published' })
-    .select('+contactNumber')
-    .lean();
+async function findPublishedContactById(id, user = null) {
+  const property = await Property.findById(id).select('+contactNumber').lean();
   if (!property) return { found: false };
+  // Unpublished listings are visible only to their owner and to admins.
+  if (property.status !== 'published' && !(user && isOwnerOrAdmin(property, user))) {
+    return { found: false };
+  }
   return { found: true, contactNumber: property.contactNumber || null };
 }
 
@@ -382,6 +420,7 @@ module.exports = {
   findPropertiesByOwner,
   findPublishedBySlug,
   findPublishedContactById,
+  LIST_SORTS,
   findById,
   updatePropertyById,
   deletePropertyById,

@@ -1,7 +1,5 @@
 // Indicative average sale rate (rupees per sq.ft) per city, for the property
-// value estimator only. Broadly consistent with MOCK_PROPERTIES so the
-// estimator's numbers don't contradict the listings shown elsewhere on the
-// site. Not a real valuation model - swap for a priced-data API later.
+// value estimator only.  Not a real valuation model - swap for a priced-data API later.
 export const CITY_RATE_PER_SQFT = {
   Mumbai: 18000,
   "Delhi NCR": 9500,
@@ -14,6 +12,8 @@ export const CITY_RATE_PER_SQFT = {
   Kochi: 5000,
   Coimbatore: 4500,
   Nagpur: 4000,
+  Jaipur: 5200,
+  Chandigarh: 7800,
 };
 
 export const DEFAULT_RATE_PER_SQFT = 7000;
@@ -27,6 +27,8 @@ export const PROPERTY_TYPE_MULTIPLIER = {
   "independent-house": 1.05,
   plot: 0.65,
   commercial: 1.35,
+  studio: 0.9,
+  penthouse: 1.4,
 };
 
 export function ageMultiplier(ageInYears) {

@@ -1,3 +1,6 @@
+// Cities that currently have listings (see DataSet/ and backend/scripts/seed.js).
+export const SUPPORTED_CITIES = ["Mumbai", "Delhi NCR", "Bengaluru", "Pune", "Hyderabad", "Chennai", "Kolkata", "Ahmedabad", "Kochi", "Coimbatore", "Nagpur", "Jaipur", "Chandigarh"];
+
 // Mirrors backend/src/utils/normalizeCity.js: trim, collapse inner whitespace, lowercase.
 export function normalizeCity(value) {
   if (typeof value !== "string") return "";
