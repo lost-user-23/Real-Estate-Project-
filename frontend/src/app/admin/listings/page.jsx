@@ -89,10 +89,17 @@ export default function AdminListingsPage() {
   const [selectedIds, setSelectedIds] = useState([]);
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState("");
+  const [sort, setSort] = useState("newest");
 
   const reload = useCallback(
-    () => loadProperties({ page, limit: PAGE_SIZE, ...(statusFilter ? { status: statusFilter } : {}) }),
-    [loadProperties, page, statusFilter]
+    () =>
+      loadProperties({
+        page,
+        limit: PAGE_SIZE,
+        ...(statusFilter ? { status: statusFilter } : {}),
+        ...(sort !== "newest" ? { sort } : {}),
+      }),
+    [loadProperties, page, statusFilter, sort]
   );
 
   useEffect(() => {
@@ -233,6 +240,21 @@ export default function AdminListingsPage() {
             <option value="draft">Draft</option>
             <option value="published">Published</option>
             <option value="archived">Archived</option>
+          </select>
+          <select
+            value={sort}
+            onChange={(e) => {
+              setSort(e.target.value);
+              setPage(1);
+            }}
+            aria-label="Sort listings"
+            className="rounded-xl border border-border bg-surface px-3 py-2 text-sm"
+          >
+            <option value="newest">Sort: Newest</option>
+            <option value="featured">Featured first</option>
+            <option value="verified">Verified first</option>
+            <option value="price-asc">Price: low to high</option>
+            <option value="price-desc">Price: high to low</option>
           </select>
           <input
             type="search"

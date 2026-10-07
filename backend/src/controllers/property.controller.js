@@ -311,12 +311,21 @@ const listAdminProperties = asyncHandler(async (req, res) => {
     }
   }
 
+  let sort;
+  if (query.sort != null) {
+    if (!propertyService.LIST_SORTS.includes(query.sort)) {
+      errors.push(`sort must be one of: ${propertyService.LIST_SORTS.join(', ')}`);
+    } else {
+      sort = query.sort;
+    }
+  }
+
   if (errors.length > 0) {
     throw AppError.badRequest('Validation failed', errors);
   }
 
   const { properties, total, totalPages } = await propertyService.findProperties({
-    filters: { status, admin: true },
+    filters: { status, sort, admin: true },
     page,
     limit,
   });
