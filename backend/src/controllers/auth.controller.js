@@ -301,10 +301,12 @@ async function refresh(req, res, next) {
       throw AppError.unauthorized();
     }
 
-    const userId = await consumeRefreshToken(presented);
+    const { userId, inGrace } = await consumeRefreshToken(presented);
     const user = userId ? await User.findById(userId) : null;
     if (!user) {
-      clearRefreshCookie(res);
+      // A lost race between two tabs: the other response is setting the live
+      // cookie, so this one must not clear it.
+      if (!inGrace) clearRefreshCookie(res);
       throw AppError.unauthorized();
     }
 

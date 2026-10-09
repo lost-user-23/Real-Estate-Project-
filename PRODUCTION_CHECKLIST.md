@@ -18,7 +18,7 @@ With `NODE_ENV=production` the server refuses to start (clear error naming the v
 | `APP_URL` | Public frontend URL; verification emails link to `<APP_URL>/verify-email` | Yes |
 | `SMTP_HOST` | SMTP server for verification emails | Yes |
 | `SMTP_PORT` | SMTP port (default `587`; `465` uses TLS) | No |
-| `SMTP_USER` / `SMTP_PASS` | SMTP credentials, if the provider needs them | No (provider-dependent) |
+| `SMTP_USER` / `SMTP_PASS` | SMTP credentials | Yes (the server refuses to start without them) |
 | `MAIL_FROM` | From address, for example `HomeNest <no-reply@your-domain>` | Yes |
 | `CLOUDINARY_CLOUD_NAME` | Cloudinary account name (image upload) | Yes |
 | `CLOUDINARY_API_KEY` | Cloudinary API key | Yes |

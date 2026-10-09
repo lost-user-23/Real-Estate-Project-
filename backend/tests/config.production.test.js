@@ -9,6 +9,9 @@ const KEYS = [
   'TRUST_PROXY_HOPS',
   'APP_URL',
   'SMTP_HOST',
+  'SMTP_USER',
+  'SMTP_PASS',
+  'COOKIE_SAMESITE',
   'MAIL_FROM',
   'CLOUDINARY_CLOUD_NAME',
   'CLOUDINARY_API_KEY',
@@ -23,6 +26,9 @@ const VALID = {
   TRUST_PROXY_HOPS: '1',
   APP_URL: 'https://www.example.com',
   SMTP_HOST: 'smtp.fake.invalid',
+  SMTP_USER: 'fake-smtp-user',
+  SMTP_PASS: 'fake-smtp-pass',
+  COOKIE_SAMESITE: 'strict',
   MAIL_FROM: 'HomeNest <no-reply@fake.invalid>',
   CLOUDINARY_CLOUD_NAME: 'fake-cloud',
   CLOUDINARY_API_KEY: '000000000000000',
@@ -34,7 +40,10 @@ describe('production config validation', () => {
 
   beforeAll(() => KEYS.forEach((key) => { saved[key] = process.env[key]; }));
   afterEach(() => {
-    KEYS.forEach((key) => { process.env[key] = saved[key]; });
+    KEYS.forEach((key) => {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    });
     jest.resetModules();
   });
 
@@ -50,8 +59,31 @@ describe('production config validation', () => {
     expect(config.mongodbUri).toBe(VALID.MONGODB_URI);
   });
 
-  it.each(KEYS.filter((key) => key !== 'NODE_ENV'))('refuses to start without %s', (key) => {
+  it.each(KEYS.filter((key) => key !== 'NODE_ENV' && key !== 'COOKIE_SAMESITE'))('refuses to start without %s', (key) => {
     expect(() => load({ [key]: '' })).toThrow(`Missing required environment variables in production: ${key}`);
+  });
+
+  describe('cookie and proxy settings', () => {
+    it.each(['strikt', 'None ok', 'true'])('rejects COOKIE_SAMESITE=%s', (value) => {
+      expect(() => load({ COOKIE_SAMESITE: value })).toThrow(/COOKIE_SAMESITE/);
+    });
+
+    it.each(['lax', 'strict', 'none', 'NONE', ''])('accepts COOKIE_SAMESITE=%j', (value) => {
+      expect(() => load({ COOKIE_SAMESITE: value })).not.toThrow();
+    });
+
+    it.each(['one', '-1', '1.5', 'true'])('rejects TRUST_PROXY_HOPS=%s', (value) => {
+      expect(() => load({ TRUST_PROXY_HOPS: value })).toThrow(/TRUST_PROXY_HOPS/);
+    });
+
+    it('accepts 0 and 1 hops', () => {
+      expect(() => load({ TRUST_PROXY_HOPS: '0' })).not.toThrow();
+      expect(() => load({ TRUST_PROXY_HOPS: '2' })).not.toThrow();
+    });
+
+    it('does not validate them outside production', () => {
+      expect(() => load({ NODE_ENV: 'development', COOKIE_SAMESITE: 'bogus', TRUST_PROXY_HOPS: 'x' })).not.toThrow();
+    });
   });
 
   it('never falls back to localhost for MongoDB in production', () => {

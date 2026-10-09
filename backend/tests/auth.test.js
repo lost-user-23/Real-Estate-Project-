@@ -456,7 +456,10 @@ describe('refresh tokens', () => {
     // Outside the grace window for races between tabs.
     await RefreshToken.updateMany({ usedAt: { $ne: null } }, { $set: { usedAt: new Date(Date.now() - 60 * 1000) } });
 
-    expect((await refresh(stolen)).status).toBe(401);
+    const replay = await refresh(stolen);
+    expect(replay.status).toBe(401);
+    // A real replay ends the session: the browser's cookie is cleared too.
+    expect(replay.headers['set-cookie'][0]).toMatch(/^refreshToken=;/);
     expect(await RefreshToken.countDocuments({})).toBe(0);
     expect((await refresh(refreshCookieFromResponse(rotated))).status).toBe(401);
     expect((await refresh(refreshCookieFromResponse(other))).status).toBe(401);
@@ -466,8 +469,36 @@ describe('refresh tokens', () => {
     const reg = await registerVerified(app, creds);
     const first = refreshCookieFromResponse(reg);
     const rotated = await refresh(first);
-    expect((await refresh(first)).status).toBe(401);
+    const replay = await refresh(first);
+    expect(replay.status).toBe(401);
+    // Inside the grace window the cookie must NOT be cleared: the other tab's
+    // response carries the live replacement and a clear could erase it.
+    expect(replay.headers['set-cookie']).toBeUndefined();
     expect((await refresh(refreshCookieFromResponse(rotated))).status).toBe(200);
+  });
+
+  it('two parallel refreshes with one cookie: the loser never clears the winner\'s cookie', async () => {
+    const reg = await registerVerified(app, creds);
+    const cookie = refreshCookieFromResponse(reg);
+    const [a, b] = await Promise.all([refresh(cookie), refresh(cookie)]);
+    const [winner, loser] = a.status === 200 ? [a, b] : [b, a];
+
+    expect(winner.status).toBe(200);
+    expect(loser.status).toBe(401);
+    expect(winner.headers['set-cookie'].some((c) => /^refreshToken=[0-9a-f]{128};/.test(c))).toBe(true);
+    expect((loser.headers['set-cookie'] || []).some((c) => c.startsWith('refreshToken='))).toBe(false);
+    // The winner's new cookie keeps working and no session was revoked.
+    expect((await refresh(refreshCookieFromResponse(winner))).status).toBe(200);
+  });
+
+  it('keeps at most 10 live sessions per user and drops the oldest', async () => {
+    const first = await registerVerified(app, creds);
+    const oldest = refreshCookieFromResponse(first);
+    for (let i = 0; i < 11; i += 1) {
+      await request(app).post('/api/auth/login').send({ email: creds.email, password: creds.password });
+    }
+    expect(await RefreshToken.countDocuments({ usedAt: null })).toBe(10);
+    expect((await refresh(oldest)).status).toBe(401);
   });
 
   it('rejects an expired refresh token', async () => {

@@ -9,6 +9,8 @@ const REQUIRED_IN_PRODUCTION = [
   'TRUST_PROXY_HOPS',
   'APP_URL',
   'SMTP_HOST',
+  'SMTP_USER',
+  'SMTP_PASS',
   'MAIL_FROM',
   'CLOUDINARY_CLOUD_NAME',
   'CLOUDINARY_API_KEY',
@@ -99,6 +101,19 @@ if (config.env === 'production') {
 
 // Non-production keeps the local-frontend default when CORS_ORIGIN is unset.
 config.corsOrigins = parseCorsOrigins(process.env.CORS_ORIGIN || 'http://localhost:3000');
+
+// These two are read straight from process.env elsewhere and would otherwise
+// degrade silently: a typo in COOKIE_SAMESITE becomes "strict" and a bad
+// TRUST_PROXY_HOPS becomes 0 (every client sharing the proxy's rate-limit key).
+if (config.env === 'production') {
+  const sameSite = String(process.env.COOKIE_SAMESITE || '').trim().toLowerCase();
+  if (sameSite && !['lax', 'strict', 'none'].includes(sameSite)) {
+    throw new Error('Invalid environment variable in production: COOKIE_SAMESITE must be lax, strict or none');
+  }
+  if (!/^\d+$/.test(String(process.env.TRUST_PROXY_HOPS).trim())) {
+    throw new Error('Invalid environment variable in production: TRUST_PROXY_HOPS must be a whole number of proxy hops (0, 1, 2, ...)');
+  }
+}
 
 if (config.env === 'production') {
   const problem = jwtSecretProblem(config.jwtSecret);

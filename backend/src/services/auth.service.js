@@ -58,6 +58,21 @@ function isTokenStale(user, decoded) {
   );
 }
 
+// At most this many live (unspent) refresh tokens per user. Spent records are
+// kept for replay detection and expire on their own.
+const MAX_ACTIVE_REFRESH_TOKENS = 10;
+
+async function pruneOldSessions(userId) {
+  const surplus = await RefreshToken.find({ userId, usedAt: null })
+    .sort({ createdAt: -1, _id: -1 })
+    .skip(MAX_ACTIVE_REFRESH_TOKENS)
+    .select('_id')
+    .lean();
+  if (surplus.length > 0) {
+    await RefreshToken.deleteMany({ _id: { $in: surplus.map((row) => row._id) } });
+  }
+}
+
 // Creates a refresh token for the user and returns the raw value (for the
 // cookie). Only its hash is stored.
 async function createRefreshToken(userId, req) {
@@ -69,12 +84,16 @@ async function createRefreshToken(userId, req) {
     userAgent: String(req?.get?.('user-agent') || '').slice(0, 255),
     ip: String(req?.ip || ''),
   });
+  await pruneOldSessions(userId);
   return token;
 }
 
-// Redeems a refresh token exactly once. Returns the userId on success, or null
-// when the token is unknown, expired or already used. A token that was already
-// used outside the grace window is a replay, so every session of that user is
+// Redeems a refresh token exactly once. Returns { userId } on success.
+// Otherwise { userId: null, inGrace } where inGrace is true only for a token
+// that was spent less than REFRESH_REUSE_GRACE_MS ago: that is a lost race
+// between two tabs, and the caller must not clear the cookie because the
+// winning response carries the live replacement. A token that was already used
+// outside the grace window is a replay, so every session of that user is
 // revoked.
 async function consumeRefreshToken(token) {
   const tokenHash = hashToken(token);
@@ -86,13 +105,16 @@ async function consumeRefreshToken(token) {
     { tokenHash, usedAt: null, expiresAt: { $gt: now } },
     { $set: { usedAt: now } }
   );
-  if (claimed) return claimed.userId;
+  if (claimed) return { userId: claimed.userId, inGrace: false };
 
   const record = await RefreshToken.findOne({ tokenHash });
-  if (record?.usedAt && now - record.usedAt > REFRESH_REUSE_GRACE_MS) {
+  if (record?.usedAt && now - record.usedAt <= REFRESH_REUSE_GRACE_MS) {
+    return { userId: null, inGrace: true };
+  }
+  if (record?.usedAt) {
     await RefreshToken.deleteMany({ userId: record.userId });
   }
-  return null;
+  return { userId: null, inGrace: false };
 }
 
 function revokeRefreshToken(token) {

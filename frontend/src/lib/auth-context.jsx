@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api, refreshSession, setAccessToken, setUnauthorizedHandler } from "@/lib/api";
+import { clearSessionHint, hasSessionHint, setSessionHint } from "@/lib/sessionHint.mjs";
 
 // Single source of truth for the session: the public site and /admin both read
 // from here and share one 401 handler.
@@ -42,6 +43,7 @@ export function AuthProvider({ children }) {
 
   const clearSession = useCallback(() => {
     removeLegacySessionKeys();
+    clearSessionHint(window.localStorage);
     setAccessToken(null);
     advanceSessionVersion();
     setHasSession(false);
@@ -49,20 +51,31 @@ export function AuthProvider({ children }) {
     setSessionError(null);
   }, [advanceSessionVersion]);
 
-  const verifySession = useCallback(async () => {
+  // `force` skips the hint check, for callers that know the server just started
+  // a session (the verify-email page).
+  const verifySession = useCallback(async ({ force = false } = {}) => {
     setLoading(true);
     setSessionError(null);
     try {
-      // The access token is memory-only, so every page load restores the
-      // session from the httpOnly refresh cookie.
+      // The access token is memory-only, so a page load restores the session
+      // from the httpOnly refresh cookie. Without the hint nobody has logged in
+      // here, so the call would only produce a 401.
+      if (force !== true && !hasSessionHint(window.localStorage)) {
+        setUser(null);
+        setHasSession(false);
+        return;
+      }
       const { user: currentUser } = await refreshSession();
+      setSessionHint(window.localStorage);
       advanceSessionVersion();
       setUser(currentUser);
       setHasSession(true);
     } catch (error) {
       setUser(null);
       setHasSession(false);
-      if (error?.status !== 401) {
+      if (error?.status === 401) {
+        clearSessionHint(window.localStorage);
+      } else {
         setSessionError(error?.message || "Could not verify your session.");
       }
     } finally {
@@ -105,6 +118,7 @@ export function AuthProvider({ children }) {
           { auth: false }
         );
         setAccessToken(result.accessToken);
+        setSessionHint(window.localStorage);
         const nextSessionVersion = advanceSessionVersion();
         setHasSession(true);
         setUser(result.user);
@@ -126,6 +140,7 @@ export function AuthProvider({ children }) {
       updateUser: setUser,
       replaceSession: ({ user: nextUser, accessToken: nextAccessToken }) => {
         setAccessToken(nextAccessToken);
+        setSessionHint(window.localStorage);
         advanceSessionVersion();
         setHasSession(true);
         setUser(nextUser);

@@ -44,7 +44,7 @@ export function VerifyEmailContent() {
       setState({ status: "success", message: "", flow: result?.flow || "" });
       // A registration sets the session cookie; an email change updates the
       // signed-in user. Either way, reload the session from /me.
-      verifySession();
+      verifySession({ force: true });
     } catch (error) {
       // A password problem leaves the link usable, so keep the form on screen.
       setState({ status: "error", message: error?.message || "Could not verify this link.", flow: "" });
