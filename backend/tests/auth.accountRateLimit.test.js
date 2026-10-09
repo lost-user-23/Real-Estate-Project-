@@ -45,7 +45,7 @@ describe('account endpoint rate limiting (limiter active)', () => {
     let lastStatus;
     for (let i = 0; i < 11; i += 1) {
       const res = await request(app)[method](path)
-        .set('Cookie', `token=${tokenFromResponse(reg)}`)
+        .set('Authorization', `Bearer ${tokenFromResponse(reg)}`)
         .send(body);
       lastStatus = res.status;
       if (i < 10) expect(res.status).toBe(400);
@@ -58,7 +58,7 @@ describe('account endpoint rate limiting (limiter active)', () => {
     for (let i = 0; i < 12; i += 1) {
       const res = await request(app)
         .patch('/api/auth/me')
-        .set('Cookie', `token=${token}`)
+        .set('Authorization', `Bearer ${token}`)
         .send({ name: `Name ${i}` });
       lastStatus = res.status;
     }

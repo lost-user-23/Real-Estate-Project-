@@ -63,6 +63,7 @@ const projectSchema = new Schema(
 
 projectSchema.index({ status: 1, cityLower: 1, publishedAt: -1 });
 projectSchema.index({ publishedAt: -1 });
+projectSchema.index({ status: 1, developer: 1, publishedAt: -1, _id: -1 });
 
 projectSchema.plugin(normalizedLocationPlugin);
 

@@ -13,7 +13,7 @@ const propertyService = require('../src/services/property.service');
 
 const app = createApp();
 const BASE = '/api/v1/saved-properties';
-const auth = (token) => ({ Cookie: `token=${token}` });
+const auth = (token) => ({ Authorization: `Bearer ${token}` });
 
 async function registerUser(email) {
   const res = await registerVerified(app, { email, password: 'password123' });

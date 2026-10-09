@@ -189,7 +189,7 @@ describe('admin contact messages access control', () => {
   it('rejects a normal user token with 403', async () => {
     const { token } = await registerUser();
     const message = await createMessage();
-    const headers = { Cookie: `token=${token}` };
+    const headers = { Authorization: `Bearer ${token}` };
 
     const list = await request(app).get(ADMIN_URL).set(headers);
     const update = await request(app).patch(`${ADMIN_URL}/${message._id}`).set(headers).send({ status: 'read' });
@@ -203,7 +203,7 @@ describe('admin contact messages access control', () => {
 describe('admin contact messages list', () => {
   const get = async (query = '') => {
     const token = await createAdmin();
-    return request(app).get(`${ADMIN_URL}${query}`).set('Cookie', `token=${token}`);
+    return request(app).get(`${ADMIN_URL}${query}`).set('Authorization', `Bearer ${token}`);
   };
 
   it('returns messages newest first with meta and no ipAddress', async () => {
@@ -265,7 +265,7 @@ describe('admin contact messages list', () => {
 describe('admin contact messages update', () => {
   const patch = async (id, body) => {
     const token = await createAdmin();
-    return request(app).patch(`${ADMIN_URL}/${id}`).set('Cookie', `token=${token}`).send(body);
+    return request(app).patch(`${ADMIN_URL}/${id}`).set('Authorization', `Bearer ${token}`).send(body);
   };
 
   it('updates the status and returns the message without ipAddress', async () => {

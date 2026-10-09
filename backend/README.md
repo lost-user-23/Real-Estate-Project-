@@ -67,11 +67,15 @@ Protected routes use the HTTP-only `token` cookie set by login or registration.
 | Uploads | `POST /uploads/image` (auth; multipart field `image`, max 5 MB, jpg/jpeg/png/webp; the server picks the Cloudinary folder `<CLOUDINARY_FOLDER>/<userId>`) |
 | Admin (role `admin`) | `/admin/dashboard`, `/admin/properties` (+ `/bulk`), `/admin/locations`, `/admin/facilities`, `/admin/projects`, `/admin/articles`, `/admin/reports` |
 
-Authentication is one JWT (7 days) shared by the public site and the admin
-area; admin access is the `role` on the user. A password change re-issues the
-HTTP-only cookie and invalidates every earlier token. The browser sends the
-cookie with API requests; `COOKIE_SAMESITE` configures its SameSite policy
-(defaults to `lax`). Slugs for new properties come from the title, with a
+Authentication is a 15-minute JWT access token (returned in the JSON body and
+sent as `Authorization: Bearer`) plus a 7-day rotating refresh token. The
+refresh token is an HTTP-only cookie scoped to `/api/auth`; only its SHA-256
+hash is stored (`RefreshToken`, with a TTL index). `POST /api/auth/refresh`
+rotates it, `POST /api/auth/logout` revokes it, `POST /api/auth/logout-all`
+revokes every session, and replaying a spent token revokes all of that user's
+sessions. Admin access is the `role` on the user. A password change revokes
+every session and starts a new one. `COOKIE_SAMESITE` configures the cookie's
+SameSite policy (defaults to `strict`). Slugs for new properties come from the title, with a
 random hex suffix added when the slug is already taken. If two
 creates race and the insert still hits a duplicate slug, it is retried with a
 new suffix up to 3 times, then answered with 409. Existing slugs never change.
@@ -247,8 +251,8 @@ See `.env.example`.
 - `TRUST_PROXY_HOPS` (default `0`) is the number of reverse proxies in front of
   the server. It is passed to Express `trust proxy` as a hop count; anything
   that is not a positive whole number (including `true`) is treated as `0`.
-- `COOKIE_SAMESITE` (default `lax`) configures the SameSite policy for the
-  HTTP-only authentication cookie.
+- `COOKIE_SAMESITE` (default `strict`) configures the SameSite policy for the
+  HTTP-only refresh-token cookie.
 - `RATE_LIMIT_MAX` (default `200`) and `RATE_LIMIT_WINDOW_MS` (default
   `900000`, 15 minutes) set the global per-IP limit that sits under the
   stricter per-route limiters.

@@ -24,7 +24,7 @@ With `NODE_ENV=production` the server refuses to start (clear error naming the v
 | `CLOUDINARY_API_KEY` | Cloudinary API key | Yes |
 | `CLOUDINARY_API_SECRET` | Cloudinary API secret, used to sign uploads | Yes |
 | `CLOUDINARY_FOLDER` | Upload folder (default `property-images`) | No |
-| `COOKIE_SAMESITE` | `lax` (default), `strict` or `none` for the auth cookie. Use `none` only if frontend and API are on different sites | No |
+| `COOKIE_SAMESITE` | `strict` (default), `lax` or `none` for the refresh-token cookie. Use `none` only if frontend and API are on different sites | No |
 | `RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW_MS` | Global per-IP rate limit (defaults 200 per 15 min) | No |
 
 ## Frontend environment (build time)
@@ -33,7 +33,7 @@ With `NODE_ENV=production` the server refuses to start (clear error naming the v
 | --- | --- | --- |
 | `NEXT_PUBLIC_API_URL` | Public https URL of the backend API | Yes |
 | `NEXT_PUBLIC_SITE_URL` | Public origin of the site (canonical URLs, sitemap) | Yes |
-| `NEXT_PUBLIC_GA_MEASUREMENT_ID` | Google Analytics 4 ID; empty disables analytics | No |
+| `NEXT_PUBLIC_GA_MEASUREMENT_ID` | Google Analytics 4 ID (`G-XXXXXXXXXX`). Empty disables analytics entirely: no banner, no script, no events. | No |
 
 `NEXT_PUBLIC_*` values are inlined by `next build`. Set them before building and rebuild after any change; changing them on a running server does nothing. A build made without `NEXT_PUBLIC_API_URL` calls `http://localhost:4000`.
 
@@ -69,3 +69,11 @@ Replace `$API` and `$APP` with the deployed API and frontend origins.
 5. **Signed Cloudinary upload**: logged in as a verified user, upload an image through the "post property" form. Confirm the image appears in the Cloudinary folder (`CLOUDINARY_FOLDER/<user id>`) and renders on the listing.
 6. **Verification email**: register a new account and confirm the email arrives from `MAIL_FROM` and the link opens `<APP_URL>/verify-email`, then verifies the account.
 7. **Startup guard**: on a staging copy, remove one required variable and confirm the process exits with an error naming it.
+
+## Analytics and consent
+
+- Analytics is opt-in. With `NEXT_PUBLIC_GA_MEASUREMENT_ID` empty, the banner, the GA script and all events are off.
+- With an ID set, the banner appears on every page until the visitor chooses. Nothing loads and `trackEvent` sends nothing until they click Accept. Decline stores the choice and keeps everything off; the banner does not return.
+- The choice is stored in `localStorage` as `homenest_analytics_consent` (`granted` or `denied`). Clearing site data asks again. The older "Got it" flag does not count as consent.
+- Events never include the search keyword, emails or phone numbers. `trackEvent` strips those keys even if a caller passes them.
+- Verify: set a test ID in `frontend/.env.local`, restart `npm run dev`, click Accept, and look for `collect?v=2` requests in the Network tab (and the events in GA DebugView). After Decline, or with the ID empty, no `googletagmanager.com` or `collect` request should appear.

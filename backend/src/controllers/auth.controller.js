@@ -10,30 +10,54 @@ const mailer = require("../services/mailer.service");
 const config = require("../config");
 const { generateVerificationToken, hashToken } = require("../utils/verificationToken");
 const {
+  generateResetOtp,
+  verifyResetOtp: verifyResetOtpHash,
+  MAX_OTP_ATTEMPTS,
+  RESET_TOKEN_TTL_MS,
+} = require("../utils/resetOtp");
+const {
   hashPassword,
   comparePasswords,
   generateToken,
+  REFRESH_TOKEN_TTL_MS,
+  createRefreshToken,
+  consumeRefreshToken,
+  revokeRefreshToken,
+  revokeAllRefreshTokens,
 } = require("../services/auth.service");
 
 const SAME_SITE_VALUES = ["lax", "strict", "none"];
+const REFRESH_COOKIE = "refreshToken";
 
 // Built per call so NODE_ENV / COOKIE_SAMESITE are read when the cookie is
-// issued. An unknown COOKIE_SAMESITE falls back to "lax". SameSite=None is
+// issued. An unknown COOKIE_SAMESITE falls back to "strict". SameSite=None is
 // rejected by browsers unless the cookie is Secure, so it forces secure.
+// The path covers /api/auth so the browser sends the cookie to /refresh and
+// /logout (which needs it to revoke the right record) and to no other route.
 function getCookieOptions() {
   const requested = String(process.env.COOKIE_SAMESITE || "").trim().toLowerCase();
-  const sameSite = SAME_SITE_VALUES.includes(requested) ? requested : "lax";
+  const sameSite = SAME_SITE_VALUES.includes(requested) ? requested : "strict";
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production" || sameSite === "none",
     sameSite,
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-    path: "/",
+    maxAge: REFRESH_TOKEN_TTL_MS,
+    path: "/api/auth",
   };
 }
 
-function setAuthCookie(res, token) {
-  res.cookie("token", token, getCookieOptions());
+function clearRefreshCookie(res) {
+  const options = getCookieOptions();
+  delete options.maxAge;
+  res.clearCookie(REFRESH_COOKIE, options);
+}
+
+// Starts a session: a new refresh token goes out as the cookie and a fresh
+// access token is returned for the response body.
+async function startSession(req, res, user) {
+  const refreshToken = await createRefreshToken(user._id, req);
+  res.cookie(REFRESH_COOKIE, refreshToken, getCookieOptions());
+  return generateToken(user);
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -74,6 +98,17 @@ const RESEND_MESSAGE =
   "If this address is waiting for verification, we've sent a new link to it.";
 const INVALID_LINK_MESSAGE = "This verification link is invalid or has expired";
 const MAIL_FAILED_MESSAGE = "We could not send the verification email. Please try again.";
+const FORGOT_PASSWORD_MESSAGE =
+  "If this email is registered, we've sent a password reset code to it.";
+const INVALID_OTP_MESSAGE = "Invalid or expired code";
+
+const RESET_OTP_FIELDS = { resetOtpHash: 1, resetOtpExpiry: 1, resetOtpAttempts: 1 };
+const RESET_COOLDOWN_MS = 60 * 1000;
+
+function resetOtpError(reason) {
+  console.warn(`[auth] password reset OTP rejected: ${reason}`);
+  return new AppError(INVALID_OTP_MESSAGE, 400);
+}
 
 const VERIFICATION_COOLDOWN_MS = 60 * 1000;
 const VERIFY_TOKEN_FIELDS = { verifyTokenHash: 1, verifyTokenExpiry: 1, verifyTokenPurpose: 1 };
@@ -249,19 +284,59 @@ async function login(req, res, next) {
       throw new AppError("Invalid credentials", 401);
     }
 
-    const token = generateToken(user);
-    setAuthCookie(res, token);
-    return res.status(200).json({ user: serializeUser(user) });
+    const accessToken = await startSession(req, res, user);
+    return res.status(200).json({ user: serializeUser(user), accessToken });
   } catch (err) {
     return next(err);
   }
 }
 
-function logout(req, res) {
-  const options = getCookieOptions();
-  delete options.maxAge;
-  res.clearCookie("token", options);
-  return res.status(200).json({ message: "Logged out" });
+// Rotates the refresh token: the presented one is spent and a new one replaces
+// it. A replay of an already-spent token revokes every session of that user.
+async function refresh(req, res, next) {
+  try {
+    const presented = req.cookies?.[REFRESH_COOKIE];
+    if (typeof presented !== "string" || !presented) {
+      throw AppError.unauthorized();
+    }
+
+    const userId = await consumeRefreshToken(presented);
+    const user = userId ? await User.findById(userId) : null;
+    if (!user) {
+      clearRefreshCookie(res);
+      throw AppError.unauthorized();
+    }
+
+    const accessToken = await startSession(req, res, user);
+    return res.status(200).json({ user: serializeUser(user), accessToken });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function logout(req, res, next) {
+  try {
+    const presented = req.cookies?.[REFRESH_COOKIE];
+    if (typeof presented === "string" && presented) {
+      await revokeRefreshToken(presented);
+    }
+    clearRefreshCookie(res);
+    return res.status(200).json({ message: "Logged out" });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+// Ends every session of the caller. Access tokens already issued stay valid
+// until they expire (at most 15 minutes) but can no longer be renewed.
+async function logoutAll(req, res, next) {
+  try {
+    await revokeAllRefreshTokens(req.user._id);
+    clearRefreshCookie(res);
+    return res.status(200).json({ message: "Logged out everywhere" });
+  } catch (err) {
+    return next(err);
+  }
 }
 
 async function getCurrentUser(req, res) {
@@ -344,10 +419,11 @@ async function changePassword(req, res, next) {
     user.passwordChangedAt = new Date();
     await user.save();
 
-    // Every earlier token is now rejected by protect; replace the cookie so
-    // this session keeps working.
-    setAuthCookie(res, generateToken(user));
-    return res.status(200).json({ user: serializeUser(user) });
+    // Every earlier access token is now rejected by protect and every refresh
+    // token is revoked; start a new session so this device keeps working.
+    await revokeAllRefreshTokens(user._id);
+    const accessToken = await startSession(req, res, user);
+    return res.status(200).json({ user: serializeUser(user), accessToken });
   } catch (err) {
     return next(err);
   }
@@ -441,8 +517,10 @@ async function verifyEmail(req, res, next) {
         throw new AppError(INVALID_LINK_MESSAGE, 400);
       }
       // The inbox owner just set the password: sign them in.
-      setAuthCookie(res, generateToken(user));
-      return res.status(200).json({ message: "Email verified", flow: "register", user: serializeUser(user) });
+      const accessToken = await startSession(req, res, user);
+      return res
+        .status(200)
+        .json({ message: "Email verified", flow: "register", user: serializeUser(user), accessToken });
     }
 
     const consumed = await User.findOneAndUpdate(
@@ -524,6 +602,8 @@ async function deleteAccount(req, res, next) {
       $or: [{ userId: user._id }, { propertyId: { $in: propertyIds } }],
     });
     await User.deleteOne({ _id: user._id });
+    await revokeAllRefreshTokens(user._id);
+    clearRefreshCookie(res);
 
     if (propertyIds.length > 0) {
       try {
@@ -541,10 +621,202 @@ async function deleteAccount(req, res, next) {
   }
 }
 
+// The response is always the same 202 with a generic message, so neither the
+// body nor the timing reveals whether the address is registered. The mail is
+// sent in the background after responding, matching the register pattern.
+async function forgotPassword(req, res, next) {
+  try {
+    const normalizedEmail = normalizeEmail(req.body?.email);
+    if (!normalizedEmail) {
+      throw new AppError("Email is required", 400);
+    }
+    if (!EMAIL_RE.test(normalizedEmail)) {
+      throw new AppError("Invalid email address", 400);
+    }
+
+    res.status(202).json({ message: FORGOT_PASSWORD_MESSAGE });
+
+    runInBackground("forgot-password", async () => {
+      const user = await User.findOne({ email: normalizedEmail })
+        .select("+resetOtpSentAt +resetOtpHash");
+      // Only verified, password-based accounts can reset.
+      if (!user || !user.emailVerified) return;
+
+      // One-minute per-account cooldown: prevents spamming the inbox.
+      const now = new Date();
+      if (user.resetOtpSentAt && now - user.resetOtpSentAt < RESET_COOLDOWN_MS) return;
+
+      const { otp, otpHash, expiresAt } = generateResetOtp(config.jwtSecret);
+      // Atomic conditional update so concurrent requests cannot both send.
+      const claimed = await User.updateOne(
+        {
+          _id: user._id,
+          ...outsideCooldown("resetOtpSentAt", now),
+        },
+        {
+          $set: {
+            resetOtpHash: otpHash,
+            resetOtpExpiry: expiresAt,
+            resetOtpAttempts: 0,
+            resetOtpSentAt: now,
+          },
+        }
+      );
+      if (claimed.modifiedCount !== 1) return;
+      await mailer.sendPasswordResetEmail(normalizedEmail, otp);
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+// Verifies the OTP. On success, clears the OTP fields and returns a short-lived
+// single-use "reset token" (a signed JWT with purpose=password-reset) that the
+// frontend passes to /reset-password. This ensures the new password can only be
+// set after the OTP was verified, without keeping the OTP alive.
+async function verifyResetOtp(req, res, next) {
+  try {
+    const normalizedEmail = normalizeEmail(req.body?.email);
+    const { code } = req.body ?? {};
+
+    if (!normalizedEmail || !code) {
+      throw resetOtpError("missing email or code");
+    }
+    if (typeof code !== "string" || !/^\d{6}$/.test(code)) {
+      throw resetOtpError("malformed code");
+    }
+
+    const user = await User.findOne({ email: normalizedEmail })
+      .select("+resetOtpHash +resetOtpExpiry +resetOtpAttempts");
+
+    if (!user || !user.resetOtpHash) {
+      // No user or no pending OTP — same generic error.
+      throw resetOtpError("no matching user or pending OTP");
+    }
+
+    // Expired?
+    if (!user.resetOtpExpiry || user.resetOtpExpiry <= new Date()) {
+      await User.updateOne({ _id: user._id }, { $unset: RESET_OTP_FIELDS });
+      throw resetOtpError("expired OTP");
+    }
+
+    // Too many attempts? Invalidate the OTP entirely — requesting a new code
+    // issues a fresh attempts counter, so this limit cannot be bypassed by
+    // requesting another code (the old one is overwritten).
+    if (user.resetOtpAttempts >= MAX_OTP_ATTEMPTS) {
+      await User.updateOne({ _id: user._id }, { $unset: RESET_OTP_FIELDS });
+      throw resetOtpError("attempt limit exceeded");
+    }
+
+    if (!verifyResetOtpHash(code, user.resetOtpHash, config.jwtSecret)) {
+      await User.updateOne(
+        {
+          _id: user._id,
+          resetOtpHash: user.resetOtpHash,
+          resetOtpExpiry: { $gt: new Date() },
+          resetOtpAttempts: { $lt: MAX_OTP_ATTEMPTS },
+        },
+        { $inc: { resetOtpAttempts: 1 } }
+      );
+      throw resetOtpError("incorrect code");
+    }
+
+    const jwt = require("jsonwebtoken");
+    const jti = require("crypto").randomBytes(32).toString("hex");
+    const now = new Date();
+    const resetToken = jwt.sign(
+      { id: user._id, purpose: "password-reset", jti },
+      config.jwtSecret,
+      { expiresIn: Math.floor(RESET_TOKEN_TTL_MS / 1000) }
+    );
+    const claimed = await User.updateOne(
+      {
+        _id: user._id,
+        resetOtpHash: user.resetOtpHash,
+        resetOtpExpiry: { $gt: now },
+        resetOtpAttempts: { $lt: MAX_OTP_ATTEMPTS },
+      },
+      {
+        $set: {
+          resetTokenHash: hashToken(jti),
+          resetTokenExpiry: new Date(now.getTime() + RESET_TOKEN_TTL_MS),
+        },
+        $unset: RESET_OTP_FIELDS,
+      }
+    );
+    if (claimed.modifiedCount !== 1) {
+      throw resetOtpError("OTP already consumed or no longer valid");
+    }
+
+    return res.status(200).json({ resetToken });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function resetPassword(req, res, next) {
+  try {
+    const { resetToken, newPassword } = req.body ?? {};
+
+    if (typeof resetToken !== "string" || !resetToken) {
+      throw new AppError("Reset token is required", 400);
+    }
+
+    const pwError = passwordError(newPassword);
+    if (pwError) {
+      throw new AppError(pwError.replace("Password", "New password"), 400);
+    }
+
+    const jwt = require("jsonwebtoken");
+    let decoded;
+    try {
+      decoded = jwt.verify(resetToken, config.jwtSecret);
+    } catch {
+      throw new AppError("Reset token is invalid or has expired", 400);
+    }
+
+    if (
+      decoded.purpose !== "password-reset" ||
+      typeof decoded.id !== "string" ||
+      typeof decoded.jti !== "string" ||
+      !/^[a-f\d]{64}$/i.test(decoded.jti)
+    ) {
+      throw new AppError("Reset token is invalid or has expired", 400);
+    }
+
+    const now = new Date();
+    const passwordHash = await hashPassword(newPassword);
+    const updated = await User.updateOne(
+      {
+        _id: decoded.id,
+        resetTokenHash: hashToken(decoded.jti),
+        resetTokenExpiry: { $gt: now },
+      },
+      {
+        $set: { passwordHash, passwordChangedAt: now },
+        $unset: { resetTokenHash: 1, resetTokenExpiry: 1 },
+      }
+    );
+    if (updated.modifiedCount !== 1) {
+      throw new AppError("Reset token is invalid or has expired", 400);
+    }
+
+    // Revoke every existing session: the password has changed.
+    await revokeAllRefreshTokens(decoded.id);
+    clearRefreshCookie(res);
+
+    return res.status(200).json({ message: "Password has been reset. Please log in." });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 module.exports = {
   register,
   login,
+  refresh,
   logout,
+  logoutAll,
   getCurrentUser,
   updateProfile,
   changePassword,
@@ -552,4 +824,7 @@ module.exports = {
   deleteAccount,
   verifyEmail,
   resendVerification,
+  forgotPassword,
+  verifyResetOtp,
+  resetPassword,
 };

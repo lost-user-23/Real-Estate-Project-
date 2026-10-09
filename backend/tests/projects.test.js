@@ -101,7 +101,7 @@ describe('admin projects', () => {
     const token = await createAdmin();
     const response = await request(app)
       .post('/api/v1/admin/projects')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ name: 'New Heights', developer: 'Acme Builders', city: 'Pune', startingPriceInRupees: 3500000 });
 
     expect(response.status).toBe(201);
@@ -113,7 +113,7 @@ describe('admin projects', () => {
     const token = await createAdmin();
     const response = await request(app)
       .post('/api/v1/admin/projects')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Missing Fields' });
 
     expect(response.status).toBe(400);
@@ -126,11 +126,11 @@ describe('admin projects', () => {
 
     const first = await request(app)
       .patch(publishUrl)
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
     const firstPublishedAt = first.body.project.publishedAt;
     const second = await request(app)
       .patch(publishUrl)
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
 
     expect(first.status).toBe(200);
     expect(first.body.project.status).toBe('published');
@@ -141,7 +141,7 @@ describe('admin projects', () => {
   it('reverts to draft through PATCH while preserving publishedAt', async () => {
     const token = await createAdmin();
     const project = await createProject();
-    const headers = { Cookie: `token=${token}` };
+    const headers = { Authorization: `Bearer ${token}` };
     const originalPublishedAt = project.publishedAt.toISOString();
 
     const response = await request(app)
@@ -157,7 +157,7 @@ describe('admin projects', () => {
   it('lists all statuses and supports updates and deletion', async () => {
     const token = await createAdmin();
     const project = await createProject({ status: 'archived' });
-    const headers = { Cookie: `token=${token}` };
+    const headers = { Authorization: `Bearer ${token}` };
 
     const list = await request(app).get('/api/v1/admin/projects').set(headers);
     expect(list.status).toBe(200);

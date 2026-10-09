@@ -93,7 +93,7 @@ describe('GET /api/v1/admin/dashboard', () => {
     const { token } = await registerUser();
     const response = await request(app)
       .get('/api/v1/admin/dashboard')
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
     expect(response.status).toBe(403);
   });
 
@@ -101,7 +101,7 @@ describe('GET /api/v1/admin/dashboard', () => {
     const token = await createAdminToken();
     const response = await request(app)
       .get('/api/v1/admin/dashboard')
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(200);
     expect(response.body.stats).toEqual({
@@ -150,7 +150,7 @@ describe('GET /api/v1/admin/dashboard', () => {
 
     const response = await request(app)
       .get('/api/v1/admin/dashboard')
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(200);
     expect(response.body.stats).toEqual({

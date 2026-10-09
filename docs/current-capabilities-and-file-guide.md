@@ -16,7 +16,7 @@ The backend is mounted at `http://localhost:4000` by default. The frontend API c
 | User workflow | Current behavior |
 |---|---|
 | Browse the home page | Browse the hero, featured properties, popular locations, categories, projects, builders, insights, and static information. Popular locations, categories, projects, and builder data use the API. Featured properties and insights remain mock-backed. |
-| Search properties | `/search` calls `GET /api/v1/properties` with intent, city, locality, property type, price range, and pagination query parameters. It displays API results, loading/error/empty states, and pagination. This is the primary public flow currently backed by live property data. |
+| Search properties | `/search` calls `GET /api/v1/properties` with intent, city, locality, property type, price range, keyword (`q`, max 100 chars, matches title/locality/city), BHK (`bhk`, e.g. `2,3` or `4+`), and pagination query parameters. The keyword and BHK chips live in the URL so refresh and back work. It displays API results, loading/error/empty states, and pagination. This is the primary public flow currently backed by live property data. |
 | Get location suggestions | The home search autocomplete calls `GET /api/v1/locations/suggestions`, debounces input, and supports keyboard selection. The API returns up to six suggestions. |
 | Create an account or log in | The login prompt calls `POST /api/auth/register` or `POST /api/auth/login`. The API sets a 7-day HTTP-only `token` cookie, checked through `GET /api/auth/me` on reload. `POST /api/auth/logout` clears the cookie; a 401 on an authenticated API request clears the local session state. The navbar shows the signed-in user's name (plus an `admin` label for admins), Profile and Log out. |
 | Submit a property | The Post Property form requires login and at least five images. It requests signed Cloudinary upload parameters, uploads the files, then calls `POST /api/v1/properties`. The backend creates the listing as a `draft`; it is not automatically public. |
@@ -37,7 +37,7 @@ The backend is mounted at `http://localhost:4000` by default. The frontend API c
 | Popular locations | `GET /api/v1/locations/popular` |
 | Property categories | `GET /api/v1/categories` |
 | New projects | `GET /api/v1/projects/new` |
-| Builders | Derived from published projects returned by `GET /api/v1/projects`; there is no separate Builder model/API |
+| Builders | Derived from published `Project` records; public paginated list/detail endpoints are `GET /api/v1/builders` and `GET /api/v1/builders/:slug` (no separate Builder model) |
 | Insights | Mock article data |
 
 The tracking wrapper logs events to the developer console outside production. No analytics vendor is configured, despite the consent banner copy.
@@ -133,7 +133,7 @@ The frontend defaults to `http://localhost:4000` for the API. Set `NEXT_PUBLIC_A
 - `MONGODB_DB_NAME`, `PORT` and `CORS_ORIGIN` fall back to local defaults in development.
 - Cloudinary settings (`CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `CLOUDINARY_FOLDER`) are needed for photo uploads.
 - `TRUST_PROXY_HOPS` (backend, default `0`): number of reverse proxies in front of the API, passed to Express `trust proxy` as a hop count. Never `true`.
-- `COOKIE_SAMESITE` (backend, default `lax`): SameSite policy for the HTTP-only auth cookie.
+- `COOKIE_SAMESITE` (backend, default `strict`): SameSite policy for the HTTP-only refresh-token cookie.
 - Frontend (see `frontend/.env.example`): `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:4000`) and `NEXT_PUBLIC_SITE_URL`, the public origin for canonical URLs, Open Graph tags, robots.txt and the sitemap. It falls back to `http://localhost:3000`, so set it for every deployed build.
 
 `npm run seed` imports the shared mock content into MongoDB; `npm run db:setup` synchronizes model indexes.
@@ -299,7 +299,7 @@ Backend checks: `npm test` and `npm run lint` from `backend/`. Frontend checks: 
 | `frontend/src/app/admin/locations/page.jsx` | `/admin/locations` popular-location toggles, ordering and facilities. |
 | `frontend/src/app/admin/profile/page.jsx` | `/admin/profile` admin profile page. |
 | `frontend/src/app/admin/projects/page.jsx` | `/admin/projects` project management. |
-| `frontend/src/app/builders/page.jsx` | `/builders` shell/header for the mock-backed builders directory. |
+| `frontend/src/app/builders/page.jsx` | `/builders` shell/header for the API-backed builders directory. |
 | `frontend/src/app/careers/page.jsx` | `/careers` static careers content. |
 | `frontend/src/app/contact/page.jsx` | `/contact` static contact details plus local-only contact form. |
 | `frontend/src/app/faqs/page.jsx` | `/faqs` static FAQs. |
@@ -321,7 +321,11 @@ Backend checks: `npm test` and `npm run lint` from `backend/`. Frontend checks: 
 
 | File | What it does / when it is used |
 |---|---|
-| `frontend/src/components/ConsentBanner.jsx` | Dismissible browser-local consent notice; analytics provider is not connected. |
+| `frontend/src/components/ConsentBanner.jsx` | Opt-in analytics banner (Accept / Decline), mounted in the root layout and shown only when `NEXT_PUBLIC_GA_MEASUREMENT_ID` is set. Choice is stored in `localStorage` (`homenest_analytics_consent`); the old "Got it" flag counts as undecided. |
+| `frontend/src/lib/consent.js` | Reads/writes the consent choice and exposes `useConsent()` and `hasAnalyticsConsent()`. |
+| `frontend/src/components/AnalyticsLoader.jsx` | Loads the GA4 script only after consent is granted. |
+| `frontend/src/lib/trackEvent.js` | Single analytics wrapper; forwards to `window.gtag` only with an ID and granted consent, and strips personal-data keys. |
+| `frontend/src/components/search/SearchAnalytics.jsx` | Fires `search_submitted` (filters used + result count, never the keyword). |
 | `frontend/src/components/icons.jsx` | Shared icon components used by navigation, cards, and controls. |
 | `frontend/src/components/PostPropertyButton.jsx` | Reusable post-property CTA with tracking and optional prefill/source. |
 | `frontend/src/components/Providers.jsx` | Mounts auth, toast, login prompt, saved-property, and city contexts. |
@@ -341,7 +345,7 @@ Backend checks: `npm test` and `npm run lint` from `backend/`. Frontend checks: 
 | `frontend/src/components/account/AccountSections.jsx` | Details, change-password, change-email and delete-account forms. |
 | `frontend/src/components/account/MyListings.jsx` | The user's own listings from `/properties/mine`, with their contact number, edit and delete. |
 | `frontend/src/components/account/useFormAction.js` | Shared submit/loading/error helper for the account forms. |
-| `frontend/src/components/builders/BuildersDirectory.jsx` | Groups mock projects by developer and offers builder/project links. |
+| `frontend/src/components/builders/BuildersDirectory.jsx` | Lists API-backed builders and loads a selected builder's published projects on demand. |
 | `frontend/src/components/contact/ContactForm.jsx` | Contact form with local confirmation; does not send a message. |
 | `frontend/src/components/home/AppPromotion.jsx` | Static planned-app promotion section. |
 | `frontend/src/components/home/BuildersPromo.jsx` | Home-page link/promotion to builders directory. |
@@ -393,7 +397,7 @@ Backend checks: `npm test` and `npm run lint` from `backend/`. Frontend checks: 
 | `frontend/src/lib/budgetPresets.js` | Buy/rent budget preset definitions and lookup. |
 | `frontend/src/lib/city-context.jsx` | Shared selected-city state stored in localStorage. |
 | `frontend/src/lib/cityRates.js` | City-level rates consumed by the value estimator. |
-| `frontend/src/lib/dataSource.js` | Home section fetchers; API-backed for locations, categories, new projects, and builders; mock-backed for featured properties and insights. |
+| `frontend/src/lib/dataSource.js` | Home section fetchers and public builder list/detail reads; API-backed for locations, categories, new projects, and builders; mock-backed for featured properties and insights. |
 | `frontend/src/lib/format.js` | Price, area, and date formatting helpers. |
 | `frontend/src/lib/locationSuggestions.js` | Calls location-suggestion API and groups/caps city/locality matches. |
 | `frontend/src/lib/login-prompt-context.jsx` | Login/register prompt and post-login continuation. The form state lives in `LoginPromptModal`, which unmounts on close, so typed values never persist. |

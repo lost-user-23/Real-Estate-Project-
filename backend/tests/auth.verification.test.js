@@ -17,7 +17,7 @@ const { backfillEmailVerified } = require('../scripts/backfill-email-verified');
 const app = createApp();
 
 const creds = { name: 'Verify User', email: 'verify@example.com', password: 'password123' };
-const auth = (token) => ({ Cookie: `token=${token}` });
+const auth = (token) => ({ Authorization: `Bearer ${token}` });
 const helpers = verificationHelpers(app, { mailer, User, password: creds.password });
 const { sleep, waitFor, lastLinkTo, endCooldown, verify } = helpers;
 const registerUnverified = (overrides = {}) =>
@@ -115,7 +115,7 @@ describe('POST /api/auth/verify-email (registration)', () => {
     const res = await verify(link);
     expect(res.status).toBe(200);
     expect(res.body.flow).toBe('register');
-    const cookie = res.headers['set-cookie'].find((c) => c.startsWith('token='));
+    const cookie = res.headers['set-cookie'].find((c) => c.startsWith('refreshToken='));
     expect(cookie).toMatch(/HttpOnly/i);
 
     const me = await request(app).get('/api/auth/me').set(auth(tokenFromResponse(res)));

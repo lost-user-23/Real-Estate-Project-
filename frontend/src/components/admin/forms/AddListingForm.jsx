@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useAdminStore } from "@/lib/admin-store";
-import { AMENITY_PRIORITY } from "@/lib/amenities";
+import { AmenityPicker } from "@/components/AmenityPicker";
 import { PROPERTY_TYPE_LABELS, PROPERTY_TYPE_OPTIONS_BY_INTENT } from "@/lib/propertyTypes";
 import { AdminField, adminFieldInputClass } from "@/components/admin/AdminField";
 
@@ -31,15 +31,6 @@ export function AddListingForm({ onDone }) {
   const [submitting, setSubmitting] = useState(false);
 
   const update = (patch) => setForm((prev) => ({ ...prev, ...patch }));
-
-  const toggleAmenity = (amenity) => {
-    setForm((prev) => ({
-      ...prev,
-      amenities: prev.amenities.includes(amenity)
-        ? prev.amenities.filter((a) => a !== amenity)
-        : [...prev.amenities, amenity],
-    }));
-  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -195,27 +186,7 @@ export function AddListingForm({ onDone }) {
         />
       </AdminField>
 
-      <fieldset>
-        <legend className="mb-2 text-sm font-medium">Amenities</legend>
-        <div className="flex flex-wrap gap-2">
-          {AMENITY_PRIORITY.map((amenity) => {
-            const checked = form.amenities.includes(amenity);
-            return (
-              <button
-                key={amenity}
-                type="button"
-                aria-pressed={checked}
-                onClick={() => toggleAmenity(amenity)}
-                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                  checked ? "border-primary bg-primary-light text-primary" : "border-border text-text-muted"
-                }`}
-              >
-                {amenity}
-              </button>
-            );
-          })}
-        </div>
-      </fieldset>
+      <AmenityPicker value={form.amenities} onChange={(amenities) => update({ amenities })} />
 
       <button
         type="submit"

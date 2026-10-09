@@ -175,7 +175,7 @@ function insertProperty({ ownerId, input, slug }) {
   });
 }
 
-function buildListFilter({ intent, city, locality, propertyType, minPrice, maxPrice, status, admin, featured }) {
+function buildListFilter({ intent, city, locality, propertyType, minPrice, maxPrice, status, admin, featured, q, bhk }) {
   const filter = {};
   if (admin) {
     // admin can see everything, optionally narrowed by ?status=
@@ -188,6 +188,20 @@ function buildListFilter({ intent, city, locality, propertyType, minPrice, maxPr
   if (propertyType) filter.propertyType = propertyType;
   if (city) filter.cityLower = normalizeCity(city);
   if (locality) filter.locality = new RegExp(`^${escapeRegExp(locality)}$`, 'i');
+
+  // No index for q: an unanchored regex cannot use one, and status + cityLower
+  // (or status alone) already narrows the set before the regex is evaluated.
+  if (q) {
+    const keyword = new RegExp(escapeRegExp(q), 'i');
+    filter.$or = [{ title: keyword }, { locality: keyword }, { city: keyword }];
+  }
+
+  if (bhk) {
+    const options = [];
+    if (bhk.values.length > 0) options.push({ bhk: { $in: bhk.values } });
+    if (bhk.min != null) options.push({ bhk: { $gte: bhk.min } });
+    filter.$and = [{ $or: options }];
+  }
 
   if (minPrice != null || maxPrice != null) {
     filter.priceInRupees = {};

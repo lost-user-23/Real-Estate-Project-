@@ -148,10 +148,19 @@ function LoginPromptModal({ onClose, onSuccess }) {
           {mode === "register" ? (
             <p className="text-xs text-text-muted">We&apos;ll email you a link to verify your address and choose a password.</p>
           ) : (
-            <label className="text-xs font-medium text-text-muted">
-              Password
-              <input required type="password" minLength={8} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1 block w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text" />
-            </label>
+            <>
+              <label className="text-xs font-medium text-text-muted">
+                Password
+                <input required type="password" minLength={8} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1 block w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text" />
+              </label>
+              <a
+                href="/forgot-password"
+                onClick={onClose}
+                className="self-end text-xs font-medium text-primary hover:text-primary-dark"
+              >
+                Forgot password?
+              </a>
+            </>
           )}
         </div>
         {error ? <p role="alert" className="mt-3 text-sm text-danger">{error}</p> : null}

@@ -88,14 +88,14 @@ describe('Admin facility API', () => {
 
     const nonAdmin = await request(app)
       .post('/api/v1/admin/facilities')
-      .set('Cookie', `token=${user.token}`)
+      .set('Authorization', `Bearer ${user.token}`)
       .send({ ...validFacility, locationId: location._id });
     expect(nonAdmin.status).toBe(403);
 
     await promoteToAdmin(user.user.id);
     const created = await request(app)
       .post('/api/v1/admin/facilities')
-      .set('Cookie', `token=${user.token}`)
+      .set('Authorization', `Bearer ${user.token}`)
       .send({ ...validFacility, locationId: location._id });
 
     expect(created.status).toBe(201);
@@ -104,7 +104,7 @@ describe('Admin facility API', () => {
 
     const invalidReference = await request(app)
       .post('/api/v1/admin/facilities')
-      .set('Cookie', `token=${user.token}`)
+      .set('Authorization', `Bearer ${user.token}`)
       .send({ ...validFacility, locationId: new mongoose.Types.ObjectId() });
     expect(invalidReference.status).toBe(404);
   });
@@ -117,7 +117,7 @@ describe('Admin facility API', () => {
 
     const updated = await request(app)
       .patch(`/api/v1/admin/facilities/${facility._id}`)
-      .set('Cookie', `token=${user.token}`)
+      .set('Authorization', `Bearer ${user.token}`)
       .send({ name: 'Updated School' });
 
     expect(updated.status).toBe(200);
@@ -127,7 +127,7 @@ describe('Admin facility API', () => {
 
     const invalid = await request(app)
       .patch(`/api/v1/admin/facilities/${facility._id}`)
-      .set('Cookie', `token=${user.token}`)
+      .set('Authorization', `Bearer ${user.token}`)
       .send({ type: 'airport' });
     expect(invalid.status).toBe(400);
   });
@@ -140,7 +140,7 @@ describe('Admin facility API', () => {
 
     const response = await request(app)
       .delete(`/api/v1/admin/facilities/${facility._id}`)
-      .set('Cookie', `token=${user.token}`);
+      .set('Authorization', `Bearer ${user.token}`);
 
     expect(response.status).toBe(204);
     expect(await Facility.findById(facility._id)).toBeNull();

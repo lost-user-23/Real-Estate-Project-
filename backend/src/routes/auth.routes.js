@@ -6,7 +6,9 @@ const {protect} = require("../middleware/auth.middleware");
 const {
   register,
   login,
+  refresh,
   logout,
+  logoutAll,
   getCurrentUser,
   updateProfile,
   changePassword,
@@ -14,6 +16,9 @@ const {
   deleteAccount,
   verifyEmail,
   resendVerification,
+  forgotPassword,
+  verifyResetOtp,
+  resetPassword,
 } = require('../controllers/auth.controller');
 
 const authLimiter = rateLimit({
@@ -50,15 +55,44 @@ const resendLimiter = rateLimit({
   handler: (req, res, next, options) => next(new AppError('Too many requests, please try again later', options.statusCode)),
 });
 
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  handler: (req, res, next, options) => next(new AppError('Too many requests, please try again later', options.statusCode)),
+});
+
+// OTP verification is a brute-force target: 6-digit codes have only 10^6
+// combinations. User-level attempt counting handles lockouts; IP limiter is skipped in tests.
+const otpVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  handler: (req, res, next, options) => next(new AppError('Too many attempts, please try again later', options.statusCode)),
+});
+
 router.post('/register', authLimiter, register);
 router.post('/verify-email', authLimiter, verifyEmail);
 router.post('/resend-verification', resendLimiter, resendVerification);
 router.post('/login', authLimiter, login);
+// No authLimiter on refresh: every page load and every 15-minute expiry calls
+// it, and it needs a valid unspent refresh token anyway. The global limiter applies.
+router.post('/refresh', refresh);
 router.post('/logout', logout);
+router.post('/logout-all', protect, logoutAll);
 
 router.get('/me', protect, getCurrentUser);
 router.patch('/me', protect, updateProfile);
 router.delete('/me', protect, accountLimiter, deleteAccount);
 router.post('/change-password', protect, accountLimiter, changePassword);
 router.patch('/change-email', protect, accountLimiter, changeEmail);
+
+// Password reset (unauthenticated)
+router.post('/forgot-password', forgotPasswordLimiter, forgotPassword);
+router.post('/verify-reset-otp', otpVerifyLimiter, verifyResetOtp);
+router.post('/reset-password', authLimiter, resetPassword);
 module.exports = router;

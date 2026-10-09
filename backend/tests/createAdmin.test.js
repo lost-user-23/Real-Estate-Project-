@@ -28,7 +28,7 @@ const listing = {
 async function login(email, password) {
   const res = await request(app).post('/api/auth/login').send({ email, password });
   expect(res.status).toBe(200);
-  return { Cookie: `token=${tokenFromResponse(res)}` };
+  return { Authorization: `Bearer ${tokenFromResponse(res)}` };
 }
 
 beforeAll(async () => {

@@ -54,4 +54,16 @@ async function sendAccountExistsEmail(to) {
   });
 }
 
-module.exports = { sendVerificationEmail, sendAccountExistsEmail };
+async function sendPasswordResetEmail(to, code) {
+  const text =
+    `Your password reset code is: ${code}\n\nIt expires in 10 minutes. If you did not request this, you can ignore this email — your password will not change.`;
+  await deliver({
+    to,
+    subject: 'Password reset code',
+    text,
+    html: `<p>Your password reset code is:</p><p style="font-size:24px;font-weight:bold;letter-spacing:4px">${code}</p><p>It expires in 10 minutes. If you did not request this, you can ignore this email — your password will not change.</p>`,
+  });
+}
+
+module.exports = { sendVerificationEmail, sendAccountExistsEmail, sendPasswordResetEmail };
+

@@ -11,6 +11,8 @@ const { serializeProperty,serializeProperties } = require('../utils/serializers/
 
 const MAX_LIMIT = 50;
 const DEFAULT_LIMIT = 20;
+const MAX_KEYWORD_LENGTH = 100;
+const MAX_BHK = 20;
 const MAX_TITLE_LENGTH = 200;
 const MAX_DESCRIPTION_LENGTH = 2000;
 const MAX_PROPERTY_IMAGES = 20;
@@ -153,6 +155,27 @@ const createProperty = asyncHandler(async (req, res) => {
   res.status(201).json({ property: serializeProperty(property, images) });
 });
 
+// "2,3" -> { values: [2, 3], min: null }; "4+" -> { values: [], min: 4 }.
+// Returns null for anything else, including more than one "N+" entry.
+function parseBhk(raw) {
+  if (typeof raw !== 'string') return null;
+  const values = [];
+  let min = null;
+  for (const part of raw.split(',').map((p) => p.trim())) {
+    const match = /^(\d{1,2})(\+?)$/.exec(part);
+    if (!match) return null;
+    const num = Number(match[1]);
+    if (num > MAX_BHK) return null;
+    if (match[2]) {
+      if (min !== null) return null;
+      min = num;
+    } else if (!values.includes(num)) {
+      values.push(num);
+    }
+  }
+  return { values, min };
+}
+
 function parseListFilters(query) {
   const errors = [];
   const filters = {};
@@ -191,6 +214,28 @@ function parseListFilters(query) {
 
   if (query.city != null) filters.city = query.city;
   if (query.locality != null) filters.locality = query.locality;
+
+  if (query.q != null) {
+    const q = typeof query.q === 'string' ? query.q.trim() : null;
+    if (q === null) {
+      errors.push('q must be a string');
+    } else if (q.length === 0) {
+      errors.push('q must not be empty');
+    } else if (q.length > MAX_KEYWORD_LENGTH) {
+      errors.push(`q must be at most ${MAX_KEYWORD_LENGTH} characters`);
+    } else {
+      filters.q = q;
+    }
+  }
+
+  if (query.bhk != null) {
+    const parsed = parseBhk(query.bhk);
+    if (parsed) {
+      filters.bhk = parsed;
+    } else {
+      errors.push(`bhk must be a comma-separated list of whole numbers 0-${MAX_BHK}, or N+ (for example 2,3 or 4+)`);
+    }
+  }
 
   for (const key of ['minPrice', 'maxPrice']) {
     if (query[key] != null) {

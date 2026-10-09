@@ -1,12 +1,21 @@
 const request = require('supertest');
 const { URL } = require('url');
 
+// The short-lived access token returned in the response body.
 function tokenFromResponse(response) {
-  const cookie = response.headers['set-cookie']?.find((value) => value.startsWith('token='));
-  if (!cookie) {
-    throw new Error('Auth response did not set the token cookie');
+  if (!response.body?.accessToken) {
+    throw new Error('Auth response did not include an accessToken');
   }
-  return cookie.slice('token='.length).split(';', 1)[0];
+  return response.body.accessToken;
+}
+
+// The refresh cookie as a "refreshToken=<value>" pair, ready for a Cookie header.
+function refreshCookieFromResponse(response) {
+  const cookie = response.headers['set-cookie']?.find((value) => value.startsWith('refreshToken='));
+  if (!cookie) {
+    throw new Error('Auth response did not set the refresh cookie');
+  }
+  return cookie.split(';', 1)[0];
 }
 
 // Registration takes no password and finishes in the background, and the
@@ -43,4 +52,4 @@ function tokenFromLink(link) {
   return new URL(link).searchParams.get('token');
 }
 
-module.exports = { tokenFromResponse, registerVerified, tokenFromLink };
+module.exports = { tokenFromResponse, refreshCookieFromResponse, registerVerified, tokenFromLink };

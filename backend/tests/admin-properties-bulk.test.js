@@ -66,7 +66,7 @@ describe('PATCH /api/v1/admin/properties/bulk', () => {
     const { token } = await registerUser();
     const response = await request(app)
       .patch('/api/v1/admin/properties/bulk')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ ids: [new mongoose.Types.ObjectId().toString()], updates: { verified: true } });
 
     expect(response.status).toBe(403);
@@ -82,7 +82,7 @@ describe('PATCH /api/v1/admin/properties/bulk', () => {
 
     const response = await request(app)
       .patch('/api/v1/admin/properties/bulk')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({
         ids: [propertyA._id.toString(), propertyB._id.toString()],
         updates: { verified: true, featured: true, status: 'published' },
@@ -113,7 +113,7 @@ describe('PATCH /api/v1/admin/properties/bulk', () => {
 
     const response = await request(app)
       .patch('/api/v1/admin/properties/bulk')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ ids: [property._id.toString()], updates: { status: 'published' } });
 
     expect(response.status).toBe(200);
@@ -127,7 +127,7 @@ describe('PATCH /api/v1/admin/properties/bulk', () => {
 
     const response = await request(app)
       .patch('/api/v1/admin/properties/bulk')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ ids: [], updates: { verified: true } });
 
     expect(response.status).toBe(400);
@@ -140,7 +140,7 @@ describe('PATCH /api/v1/admin/properties/bulk', () => {
 
     const response = await request(app)
       .patch('/api/v1/admin/properties/bulk')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ ids: ['not-an-id'], updates: { verified: true } });
 
     expect(response.status).toBe(400);
@@ -154,7 +154,7 @@ describe('PATCH /api/v1/admin/properties/bulk', () => {
 
     const response = await request(app)
       .patch('/api/v1/admin/properties/bulk')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ ids: [property._id.toString()], updates: { title: 'Hijacked' } });
 
     expect(response.status).toBe(400);
@@ -168,7 +168,7 @@ describe('PATCH /api/v1/admin/properties/bulk', () => {
 
     const response = await request(app)
       .patch('/api/v1/admin/properties/bulk')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ ids: [property._id.toString()], updates: {} });
 
     expect(response.status).toBe(400);
@@ -182,7 +182,7 @@ describe('PATCH /api/v1/admin/properties/bulk', () => {
 
     const response = await request(app)
       .patch('/api/v1/admin/properties/bulk')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ ids: [property._id.toString()], updates: { featuredRank: null } });
 
     expect(response.status).toBe(200);
@@ -206,7 +206,7 @@ describe('PATCH /api/v1/admin/properties/bulk', () => {
 
     const response = await request(app)
       .patch('/api/v1/admin/properties/bulk')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ ids: [property._id.toString()], updates });
 
     expect(response.status).toBe(400);
@@ -229,7 +229,7 @@ describe('PATCH /api/v1/admin/properties/bulk', () => {
     for (const featuredRank of [-1, 'high']) {
       const response = await request(app)
         .patch('/api/v1/admin/properties/bulk')
-        .set('Cookie', `token=${token}`)
+        .set('Authorization', `Bearer ${token}`)
         .send({ ids: [property._id.toString()], updates: { featuredRank } });
 
       expect(response.status).toBe(400);
@@ -245,7 +245,7 @@ describe('PATCH /api/v1/admin/properties/bulk', () => {
 
     const response = await request(app)
       .patch('/api/v1/admin/properties/bulk')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ ids: [property._id.toString()], updates: { status: 'archived', city: 'Mumbai' } });
 
     expect(response.status).toBe(200);
@@ -263,7 +263,7 @@ describe('PATCH /api/v1/admin/properties/bulk', () => {
 
     const response = await request(app)
       .patch('/api/v1/admin/properties/bulk')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ ids: [property._id.toString()], updates: { status: 'unknown', verified: 'yes' } });
 
     expect(response.status).toBe(400);
@@ -284,7 +284,7 @@ describe('DELETE /api/v1/admin/properties/bulk', () => {
     const { token } = await registerUser();
     const response = await request(app)
       .delete('/api/v1/admin/properties/bulk')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ ids: [new mongoose.Types.ObjectId().toString()] });
 
     expect(response.status).toBe(403);
@@ -301,7 +301,7 @@ describe('DELETE /api/v1/admin/properties/bulk', () => {
 
     const response = await request(app)
       .delete('/api/v1/admin/properties/bulk')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ ids: [propertyA._id.toString(), propertyB._id.toString()] });
 
     expect(response.status).toBe(200);
@@ -319,7 +319,7 @@ describe('DELETE /api/v1/admin/properties/bulk', () => {
 
     const response = await request(app)
       .delete('/api/v1/admin/properties/bulk')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ ids: [] });
 
     expect(response.status).toBe(400);
@@ -332,7 +332,7 @@ describe('DELETE /api/v1/admin/properties/bulk', () => {
 
     const response = await request(app)
       .delete('/api/v1/admin/properties/bulk')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ ids: ['not-an-id'] });
 
     expect(response.status).toBe(400);

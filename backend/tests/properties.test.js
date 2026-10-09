@@ -75,7 +75,7 @@ describe('POST /api/v1/properties', () => {
     const { token } = await registerUser();
     const response = await request(app)
       .post('/api/v1/properties')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ ...validPayload, images: validImages.slice(0, 4) });
 
     expect(response.status).toBe(400);
@@ -84,7 +84,7 @@ describe('POST /api/v1/properties', () => {
 
   describe('image and description validation', () => {
     const post = (token, body) =>
-      request(app).post('/api/v1/properties').set('Cookie', `token=${token}`).send({ ...validPayload, ...body });
+      request(app).post('/api/v1/properties').set('Authorization', `Bearer ${token}`).send({ ...validPayload, ...body });
     const own = (path) => `https://res.cloudinary.com/demo/image/upload/v1/${path}`;
     const withFirst = (url) => [{ url }, ...validImages.slice(1)];
 
@@ -152,7 +152,7 @@ describe('POST /api/v1/properties', () => {
     const { token, user } = await registerUser();
     const response = await request(app)
       .post('/api/v1/properties')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ ...validPayload, status: 'published', images: validImages });
 
     expect(response.status).toBe(201);
@@ -172,7 +172,7 @@ describe('POST /api/v1/properties', () => {
     const submit = () =>
       request(app)
         .post('/api/v1/properties')
-        .set('Cookie', `token=${token}`)
+        .set('Authorization', `Bearer ${token}`)
         .send({ ...validPayload, images: validImages });
 
     const first = await submit();
@@ -216,7 +216,7 @@ describe('POST /api/v1/properties', () => {
 
       const response = await request(app)
         .post('/api/v1/properties')
-        .set('Cookie', `token=${token}`)
+        .set('Authorization', `Bearer ${token}`)
         .send({ ...validPayload, images: validImages });
 
       expect(response.status).toBe(201);
@@ -235,7 +235,7 @@ describe('POST /api/v1/properties', () => {
 
       const response = await request(app)
         .post('/api/v1/properties')
-        .set('Cookie', `token=${token}`)
+        .set('Authorization', `Bearer ${token}`)
         .send({ ...validPayload, images: validImages });
 
       expect(response.status).toBe(409);
@@ -251,7 +251,7 @@ describe('POST /api/v1/properties', () => {
 
       const response = await request(app)
         .post('/api/v1/properties')
-        .set('Cookie', `token=${token}`)
+        .set('Authorization', `Bearer ${token}`)
         .send({ ...validPayload, images: validImages });
 
       expect(response.status).toBe(409);
@@ -263,7 +263,7 @@ describe('POST /api/v1/properties', () => {
     const { token } = await registerUser();
     const response = await request(app)
       .post('/api/v1/properties')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ ...validPayload, images: [{ alt: 'missing url' }, ...validImages.slice(1)] });
 
     expect(response.status).toBe(400);
@@ -275,7 +275,7 @@ describe('POST /api/v1/properties', () => {
     const { token } = await registerUser();
     const response = await request(app)
       .post('/api/v1/properties')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({
         ...validPayload,
         images: [
@@ -300,7 +300,7 @@ describe('POST /api/v1/properties', () => {
     const { token } = await registerUser();
     const response = await request(app)
       .post('/api/v1/properties')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ ...validPayload, ...override, images: validImages });
 
     expect(response.status).toBe(400);
@@ -411,6 +411,97 @@ describe('GET /api/v1/properties', () => {
     expect(response.body.meta).toMatchObject({ total: 0, totalPages: 1 });
   });
 
+  describe('keyword and bhk filters', () => {
+    const slugs = (response) => response.body.properties.map((property) => property.slug).sort();
+    const get = (query) => request(app).get('/api/v1/properties').query(query);
+
+    async function seed() {
+      const { user } = await registerUser();
+      const base = { ownerId: user.id };
+      await createProperty({ ...base, slug: 'one-koramangala', title: 'Cozy studio', bhk: 1, locality: 'Koramangala' });
+      await createProperty({ ...base, slug: 'two-indiranagar', title: 'Sunny flat', bhk: 2, locality: 'Indiranagar' });
+      await createProperty({ ...base, slug: 'three-pune', title: 'Garden Villa', bhk: 3, city: 'Pune', locality: 'Baner' });
+      await createProperty({ ...base, slug: 'five-bengaluru', title: 'Grand mansion', bhk: 5, locality: 'Whitefield' });
+      await createProperty({ ...base, slug: 'no-bhk', title: 'Retail shop', bhk: null, propertyType: 'commercial' });
+    }
+
+    it('matches the keyword against title, locality and city case-insensitively', async () => {
+      await seed();
+      expect(slugs(await get({ q: 'VILLA' }))).toEqual(['three-pune']);
+      expect(slugs(await get({ q: 'indira' }))).toEqual(['two-indiranagar']);
+      expect(slugs(await get({ q: 'pune' }))).toEqual(['three-pune']);
+      expect((await get({ q: '  villa  ' })).body.properties).toHaveLength(1);
+    });
+
+    it('does not match the keyword against other fields', async () => {
+      const { user } = await registerUser();
+      await createProperty({ ownerId: user.id, slug: 'desc-only', description: 'near the metro' });
+      expect((await get({ q: 'metro' })).body.properties).toEqual([]);
+    });
+
+    it('filters by a single bhk, several bhk values and 4+', async () => {
+      await seed();
+      expect(slugs(await get({ bhk: '2' }))).toEqual(['two-indiranagar']);
+      expect(slugs(await get({ bhk: '2,3' }))).toEqual(['three-pune', 'two-indiranagar']);
+      expect(slugs(await get({ bhk: '4+' }))).toEqual(['five-bengaluru']);
+      expect(slugs(await get({ bhk: '1,4+' }))).toEqual(['five-bengaluru', 'one-koramangala']);
+    });
+
+    it('combines the keyword and bhk with city and keeps total in meta', async () => {
+      await seed();
+      expect(slugs(await get({ city: 'Bengaluru', bhk: '1,2,3' }))).toEqual(['one-koramangala', 'two-indiranagar']);
+      const response = await get({ city: 'bengaluru', q: 'a', bhk: '2,5' });
+      expect(slugs(response)).toEqual(['five-bengaluru', 'two-indiranagar']);
+      expect(response.body.meta.total).toBe(2);
+    });
+
+    it('treats regex characters in the keyword literally', async () => {
+      const { user } = await registerUser();
+      await createProperty({ ownerId: user.id, slug: 'plain', title: 'Plain house' });
+      await createProperty({ ownerId: user.id, slug: 'special', title: 'Flat (A+) [corner] $5.00' });
+
+      // Unescaped, these would match everything or throw an invalid-regex error.
+      for (const q of ['.*', '\\', '^Plain', 'Plain|Flat', 'P.ain']) {
+        const response = await get({ q });
+        expect(response.status).toBe(200);
+        expect(response.body.properties).toEqual([]);
+      }
+      expect(slugs(await get({ q: '(' }))).toEqual(['special']);
+      expect(slugs(await get({ q: '[' }))).toEqual(['special']);
+      expect(slugs(await get({ q: '(A+) [corner] $5.00' }))).toEqual(['special']);
+    });
+
+    it('rejects invalid q and bhk with the standard 400 shape', async () => {
+      for (const query of [
+        { q: '   ' },
+        { q: 'x'.repeat(101) },
+        { q: ['a', 'b'] },
+        { bhk: 'abc' },
+        { bhk: '2,' },
+        { bhk: '-1' },
+        { bhk: '2.5' },
+        { bhk: '21' },
+        { bhk: '3+,4+' },
+        { bhk: ['2', '3'] },
+      ]) {
+        const response = await get(query);
+        expect(response.status).toBe(400);
+        expect(response.body.error.message).toBe('Validation failed');
+        expect(response.body.error.details.length).toBeGreaterThan(0);
+      }
+      expect((await get({ q: 'x'.repeat(100) })).status).toBe(200);
+    });
+
+    it('never returns drafts or archived listings for a matching keyword or bhk', async () => {
+      const { user } = await registerUser();
+      await createProperty({ ownerId: user.id, slug: 'pub', title: 'Match me', bhk: 2 });
+      await createProperty({ ownerId: user.id, slug: 'drf', title: 'Match me', bhk: 2, status: 'draft' });
+      await createProperty({ ownerId: user.id, slug: 'arc', title: 'Match me', bhk: 2, status: 'archived' });
+
+      expect(slugs(await get({ q: 'match', bhk: '2', status: 'draft' }))).toEqual(['pub']);
+    });
+  });
+
   it('never returns draft or archived properties even when ?status=draft is requested', async () => {
     const { user } = await registerUser();
     await createProperty({ ownerId: user.id, slug: 'still-draft', status: 'draft' });
@@ -465,7 +556,7 @@ describe('PATCH /api/v1/properties/:id', () => {
     const property = await createProperty({ ownerId: user.id, status: 'draft' });
     const response = await request(app)
       .patch(`/api/v1/properties/${property._id}`)
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ title: 'Updated Property', priceInRupees: 2000000 });
 
     expect(response.status).toBe(200);
@@ -477,7 +568,7 @@ describe('PATCH /api/v1/properties/:id', () => {
     const { token, user } = await registerUser();
     const property = await createProperty({ ownerId: user.id, status: 'draft', description: 'original' });
     const patch = (body) =>
-      request(app).patch(`/api/v1/properties/${property._id}`).set('Cookie', `token=${token}`).send(body);
+      request(app).patch(`/api/v1/properties/${property._id}`).set('Authorization', `Bearer ${token}`).send(body);
 
     const longDescription = await patch({ description: 'a'.repeat(2001) });
     expect(longDescription.status).toBe(400);
@@ -504,7 +595,7 @@ describe('PATCH /api/v1/properties/:id', () => {
     const newUrl = 'https://res.cloudinary.com/demo/image/upload/v1/property-images/new.jpg';
     const response = await request(app)
       .patch(`/api/v1/properties/${property._id}`)
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ images: [{ url: newUrl, alt: 'Front view' }] });
 
     expect(response.status).toBe(200);
@@ -522,7 +613,7 @@ describe('PATCH /api/v1/properties/:id', () => {
     const property = await createProperty({ ownerId: user.id, status: 'draft' });
     const response = await request(app)
       .patch(`/api/v1/properties/${property._id}`)
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ status: 'published', verified: true, featured: true });
 
     expect(response.status).toBe(200);
@@ -536,7 +627,7 @@ describe('PATCH /api/v1/properties/:id', () => {
     const property = await createProperty({ ownerId: user.id });
     const response = await request(app)
       .patch(`/api/v1/properties/${property._id}`)
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ title: 'Hijacked' });
 
     expect(response.status).toBe(403);
@@ -546,7 +637,7 @@ describe('PATCH /api/v1/properties/:id', () => {
     const { token } = await registerUser();
     const response = await request(app)
       .patch(`/api/v1/properties/${new mongoose.Types.ObjectId()}`)
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ title: 'Missing' });
 
     expect(response.status).toBe(404);
@@ -561,7 +652,7 @@ describe('DELETE /api/v1/properties/:id', () => {
 
     const response = await request(app)
       .delete(`/api/v1/properties/${property._id}`)
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(204);
     expect(await PropertyImage.find({ propertyId: property._id })).toHaveLength(0);
@@ -572,7 +663,7 @@ describe('DELETE /api/v1/properties/:id', () => {
     const property = await createProperty({ ownerId: user.id, status: 'draft' });
     const response = await request(app)
       .delete(`/api/v1/properties/${property._id}`)
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(204);
     expect(await Property.findById(property._id)).toBeNull();
@@ -583,7 +674,7 @@ describe('DELETE /api/v1/properties/:id', () => {
     const property = await createProperty({ ownerId: user.id, status: 'published' });
     const response = await request(app)
       .delete(`/api/v1/properties/${property._id}`)
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(204);
     expect(await Property.findById(property._id)).toBeNull();
@@ -596,7 +687,7 @@ describe('DELETE /api/v1/properties/:id', () => {
     const property = await createProperty({ ownerId: user.id });
     const response = await request(app)
       .delete(`/api/v1/properties/${property._id}`)
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(204);
   });
@@ -607,7 +698,7 @@ describe('DELETE /api/v1/properties/:id', () => {
     const property = await createProperty({ ownerId: user.id, status: 'draft' });
     const response = await request(app)
       .delete(`/api/v1/properties/${property._id}`)
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(403);
   });
@@ -616,7 +707,7 @@ describe('DELETE /api/v1/properties/:id', () => {
     const { token } = await registerUser();
     const response = await request(app)
       .delete(`/api/v1/properties/${new mongoose.Types.ObjectId()}`)
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(404);
   });
@@ -627,7 +718,7 @@ describe('GET /api/v1/admin/properties', () => {
     const { token } = await registerUser();
     const response = await request(app)
       .get('/api/v1/admin/properties')
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(403);
   });
@@ -646,7 +737,7 @@ describe('GET /api/v1/admin/properties', () => {
 
     const response = await request(app)
       .get('/api/v1/admin/properties')
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(200);
     expect(response.body.properties.map((property) => property.slug).sort()).toEqual(
@@ -664,7 +755,7 @@ describe('GET /api/v1/admin/properties', () => {
     const response = await request(app)
       .get('/api/v1/admin/properties')
       .query({ status: 'draft' })
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(200);
     expect(response.body.properties.map((property) => property.slug)).toEqual(['draft-two']);
@@ -677,7 +768,7 @@ describe('GET /api/v1/admin/properties', () => {
     const response = await request(app)
       .get('/api/v1/admin/properties')
       .query({ status: 'not-a-status' })
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(400);
   });
@@ -692,7 +783,7 @@ describe('GET /api/v1/admin/properties', () => {
     const response = await request(app)
       .get('/api/v1/admin/properties')
       .query({ page: 1, limit: 2 })
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(200);
     expect(response.body.properties).toHaveLength(2);

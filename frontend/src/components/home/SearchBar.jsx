@@ -4,6 +4,7 @@ import { useState } from "react";
 import { getLocationSuggestions } from "@/lib/locationSuggestions";
 import { getBudgetPresets } from "@/lib/budgetPresets";
 import { PROPERTY_TYPE_LABELS, PROPERTY_TYPE_OPTIONS_BY_INTENT } from "@/lib/propertyTypes";
+import { BHK_OPTIONS } from "@/components/search/SearchFilters";
 import { LocationInput } from "@/components/home/LocationInput";
 import { SearchIcon } from "@/components/icons";
 
@@ -67,6 +68,25 @@ export function SearchBar({ intent, value, onChange, onSubmit }) {
           {propertyTypeOptions.map((type) => (
             <option key={type} value={type}>
               {PROPERTY_TYPE_LABELS[type]}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="flex-1">
+        <label htmlFor="hero-bhk" className="mb-1.5 block text-xs font-medium text-text-muted">
+          BHK
+        </label>
+        <select
+          id="hero-bhk"
+          value={value.bhk ?? ""}
+          onChange={(e) => onChange({ ...value, bhk: e.target.value })}
+          className="w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm outline-none focus:border-primary"
+        >
+          <option value="">Any BHK</option>
+          {BHK_OPTIONS.map((option) => (
+            <option key={option} value={option}>
+              {option} BHK
             </option>
           ))}
         </select>

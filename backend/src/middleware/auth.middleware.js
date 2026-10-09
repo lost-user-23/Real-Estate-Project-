@@ -2,8 +2,14 @@ const { verifyToken, isTokenStale } = require("../services/auth.service");
 const User = require("../models/User");
 const AppError = require("../utils/AppError");
 
+// Access token from "Authorization: Bearer <jwt>"; null when absent or malformed.
+function bearerToken(req) {
+  const [scheme, token] = String(req.get('authorization') || '').split(' ');
+  return scheme === 'Bearer' && token ? token : null;
+}
+
 async function protect(req, res, next) {
-  const token = req.cookies?.token;
+  const token = bearerToken(req);
   if (!token) {
     return next(AppError.unauthorized());
   }
@@ -47,4 +53,4 @@ function restrictTo(...allowedRoles) {
   };
 }
 
-module.exports = { protect, restrictTo };
+module.exports = { protect, restrictTo, bearerToken };

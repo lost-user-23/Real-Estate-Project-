@@ -2,6 +2,8 @@
 // Components call trackEvent(), never a vendor SDK directly, so swapping
 // providers later is a change in this file only.
 
+import { hasAnalyticsConsent } from "@/lib/consent";
+
 const SESSION_STORAGE_KEY = "homenest_session_id";
 
 function getViewport() {
@@ -33,22 +35,31 @@ function getSessionId() {
   }
 }
 
+// Safety net: these must never reach an analytics vendor, whatever a caller passes.
+const PERSONAL_DATA_KEYS = new Set(["q", "keyword", "query", "email", "phone", "contactNumber", "name", "password"]);
+
+function withoutPersonalData(props) {
+  return Object.fromEntries(Object.entries(props).filter(([key]) => !PERSONAL_DATA_KEYS.has(key)));
+}
+
 export function trackEvent(name, props = {}) {
   const payload = {
     event: name,
     page: getPage(),
     viewport: getViewport(),
     sessionId: getSessionId(),
-    ...props,
+    ...withoutPersonalData(props),
   };
 
   if (process.env.NODE_ENV !== "production") {
     console.debug("[trackEvent]", payload);
   }
 
-  // Events are forwarded to GA4 when it is loaded. This file is the only
+  // Forwarded to GA4 only when an ID is configured and the visitor accepted
+  // (see lib/consent.js). Otherwise this is a no-op. This file is the only
   // place that knows about GA.
-  if (typeof window !== "undefined" && typeof window.gtag === "function") {
+  if (!hasAnalyticsConsent()) return;
+  if (typeof window.gtag === "function") {
     const { event, page, sessionId, ...rest } = payload;
     window.gtag("event", name, { ...rest, page_name: page });
   }

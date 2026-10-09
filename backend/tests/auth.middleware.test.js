@@ -44,7 +44,7 @@ describe('protect middleware', () => {
   it('returns 401 for an invalid token', async () => {
     const res = await request(protectedApp)
       .get('/protected')
-      .set('Cookie', 'Bearer not-a-real-token');
+      .set('Authorization', 'Bearer not-a-real-token');
     expect(res.status).toBe(401);
     expect(res.body).toEqual({ error: { message: 'Not authenticated' } });
   });
@@ -53,7 +53,7 @@ describe('protect middleware', () => {
     const token = generateToken({ _id: 'definitely-not-an-objectid', role: 'user' });
     const res = await request(protectedApp)
       .get('/protected')
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(401);
     expect(res.body).toEqual({ error: { message: 'Not authenticated' } });
   });
@@ -76,7 +76,7 @@ describe('protect middleware', () => {
       const token = failLookup();
       const res = await request(protectedApp)
         .get('/protected')
-        .set('Cookie', `token=${token}`);
+        .set('Authorization', `Bearer ${token}`);
       expect(res.status).toBe(500);
       expect(res.body).toEqual({ error: { message: 'Internal server error' } });
     });
@@ -86,7 +86,7 @@ describe('protect middleware', () => {
       const token = failLookup();
       const res = await request(protectedApp)
         .get('/protected')
-        .set('Cookie', `token=${token}`);
+        .set('Authorization', `Bearer ${token}`);
       expect(res.status).toBe(500);
       expect(res.body.error.stack).toBeUndefined();
       expect(JSON.stringify(res.body)).not.toMatch(/db-host|at .*\.js|stack/i);
@@ -97,7 +97,7 @@ describe('protect middleware', () => {
       const token = failLookup();
       const res = await request(protectedApp)
         .get('/protected')
-        .set('Cookie', `token=${token}`);
+        .set('Authorization', `Bearer ${token}`);
       expect(res.status).toBe(500);
       expect(res.body.error.stack).toEqual(expect.any(String));
     });

@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { api, setUnauthorizedHandler } from "@/lib/api";
+import { api, refreshSession, setAccessToken, setUnauthorizedHandler } from "@/lib/api";
 
 // Single source of truth for the session: the public site and /admin both read
 // from here and share one 401 handler.
@@ -29,7 +29,7 @@ export function AuthProvider({ children }) {
   const [sessionVersion, setSessionVersion] = useState(0);
   const sessionVersionRef = useRef(0);
   const [user, setUser] = useState(null);
-  // True until the cookie-backed session has been checked against /me.
+  // True until the refresh cookie has been exchanged for an access token.
   const [loading, setLoading] = useState(true);
   // Set when /me could not be checked for a reason other than 401.
   const [sessionError, setSessionError] = useState(null);
@@ -42,6 +42,7 @@ export function AuthProvider({ children }) {
 
   const clearSession = useCallback(() => {
     removeLegacySessionKeys();
+    setAccessToken(null);
     advanceSessionVersion();
     setHasSession(false);
     setUser(null);
@@ -52,7 +53,9 @@ export function AuthProvider({ children }) {
     setLoading(true);
     setSessionError(null);
     try {
-      const { user: currentUser } = await api.get("/api/auth/me");
+      // The access token is memory-only, so every page load restores the
+      // session from the httpOnly refresh cookie.
+      const { user: currentUser } = await refreshSession();
       advanceSessionVersion();
       setUser(currentUser);
       setHasSession(true);
@@ -68,7 +71,7 @@ export function AuthProvider({ children }) {
   }, [advanceSessionVersion]);
 
   useEffect(() => {
-    // Any 401 on an authenticated request means the cookie-backed session is gone.
+    // A 401 that survives a token refresh means the session is gone.
     setUnauthorizedHandler(clearSession);
 
     removeLegacySessionKeys();
@@ -101,6 +104,7 @@ export function AuthProvider({ children }) {
           { email, password },
           { auth: false }
         );
+        setAccessToken(result.accessToken);
         const nextSessionVersion = advanceSessionVersion();
         setHasSession(true);
         setUser(result.user);
@@ -118,9 +122,10 @@ export function AuthProvider({ children }) {
       },
       // Account-management hooks: keep the one shared session in sync after the
       // server changes the user (profile/email) or re-issues the cookie
-      // (password change invalidates every earlier session cookie).
+      // (password change revokes every earlier session).
       updateUser: setUser,
-      replaceSession: ({ user: nextUser }) => {
+      replaceSession: ({ user: nextUser, accessToken: nextAccessToken }) => {
+        setAccessToken(nextAccessToken);
         advanceSessionVersion();
         setHasSession(true);
         setUser(nextUser);

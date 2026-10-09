@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useLoginPrompt } from "@/lib/login-prompt-context";
 import { api } from "@/lib/api";
-import { AMENITY_PRIORITY } from "@/lib/amenities";
+import { AmenityPicker } from "@/components/AmenityPicker";
 import { formatPrice } from "@/lib/format";
 import { PROPERTY_TYPE_LABELS, PROPERTY_TYPE_OPTIONS_BY_INTENT } from "@/lib/propertyTypes";
 
@@ -83,15 +83,6 @@ export function PostPropertyForm() {
     setForm((prev) => ({
       ...prev,
       images: prev.images.filter((image) => image.id !== imageId),
-    }));
-  };
-
-  const toggleAmenity = (amenity) => {
-    setForm((prev) => ({
-      ...prev,
-      amenities: prev.amenities.includes(amenity)
-        ? prev.amenities.filter((a) => a !== amenity)
-        : [...prev.amenities, amenity],
     }));
   };
 
@@ -445,27 +436,7 @@ export function PostPropertyForm() {
         </Field>
       </div>
 
-      <fieldset>
-        <legend className="mb-2 text-sm font-medium">Amenities</legend>
-        <div className="flex flex-wrap gap-2">
-          {AMENITY_PRIORITY.map((amenity) => {
-            const checked = form.amenities.includes(amenity);
-            return (
-              <button
-                key={amenity}
-                type="button"
-                aria-pressed={checked}
-                onClick={() => toggleAmenity(amenity)}
-                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                  checked ? "border-primary bg-primary-light text-primary" : "border-border text-text-muted"
-                }`}
-              >
-                {amenity}
-              </button>
-            );
-          })}
-        </div>
-      </fieldset>
+      <AmenityPicker value={form.amenities} onChange={(amenities) => update({ amenities })} />
 
       <Field label="Description">
         <textarea

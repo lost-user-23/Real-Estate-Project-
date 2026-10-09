@@ -92,21 +92,36 @@ export async function fetchInsights(simulateError = false) {
 }
 
 async function requestBuilders(city) {
-  const query = city ? `?${new URLSearchParams({ city })}` : "";
-  const { builders } = (await api.get(`/api/v1/projects/builders${query}`, { auth: false })) ?? {};
-  return (builders ?? []).map((builder) => ({
-    ...builder,
-    projects: (builder.projects ?? []).map(normalizeProject),
-  }));
+  const params = new URLSearchParams({ limit: "50" });
+  if (city) params.set("city", city);
+  const data = (await api.get(`/api/v1/builders?${params}`, { auth: false })) ?? {};
+  if (!Array.isArray(data.builders)) throw new Error("Builder list was not returned");
+  return { builders: data.builders, meta: data.meta };
 }
 
-// Grouping, counting and ordering happen on the server. A city with no
-// builders falls back to the nationwide list so the section is never blank;
-// `scope` says which list came back.
+export async function fetchBuilderDetails(slug, city, simulateError = false) {
+  if (simulateError) throw new Error("Simulated network error");
+
+  const query = city ? `?${new URLSearchParams({ city })}` : "";
+  const data = await api.get(`/api/v1/builders/${encodeURIComponent(slug)}${query}`, { auth: false });
+  if (!data?.builder || !Array.isArray(data.builder.projects)) {
+    throw new Error("Builder details were not returned");
+  }
+  const { builder } = data;
+  return {
+    ...builder,
+    projects: builder.projects.map(normalizeProject),
+  };
+}
+
+// The directory loads project cards only when a builder is selected. A city
+// with no builders falls back to the nationwide list; `scope` identifies it.
 export async function fetchBuilders(city, simulateError = false) {
   if (simulateError) throw new Error("Simulated network error");
 
-  const inCity = city ? await requestBuilders(city) : [];
-  if (inCity.length > 0) return { builders: inCity, scope: "city" };
-  return { builders: await requestBuilders(), scope: "national" };
+  if (!city) return { ...(await requestBuilders()), scope: "national" };
+
+  const inCity = await requestBuilders(city);
+  if (inCity.builders.length > 0) return { ...inCity, scope: "city" };
+  return { ...(await requestBuilders()), scope: "national" };
 }

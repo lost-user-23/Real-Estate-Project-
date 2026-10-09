@@ -31,6 +31,7 @@ export function Hero() {
     location: null,
     propertyType: "all",
     budgetPresetId: null,
+    bhk: "",
   });
 
   const handleTabChange = (next) => {
@@ -52,6 +53,7 @@ export function Hero() {
     params.set("city", value.location.city);
     if (value.location.locality) params.set("locality", value.location.locality);
     if (value.propertyType !== "all") params.set("propertyType", value.propertyType);
+    if (value.bhk) params.set("bhk", value.bhk);
     if (preset) {
       params.set("minPrice", String(preset.min));
       if (preset.max !== null) params.set("maxPrice", String(preset.max));
@@ -78,6 +80,7 @@ export function Hero() {
       location: { city: search.city, locality: search.locality },
       propertyType: "all",
       budgetPresetId: null,
+      bhk: "",
     };
     setTab(search.intent);
     setSearchValue(value);

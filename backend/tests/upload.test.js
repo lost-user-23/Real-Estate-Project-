@@ -66,7 +66,7 @@ describe('POST /api/v1/uploads/image', () => {
   afterEach(() => jest.restoreAllMocks());
 
   const send = (buf, name, type) =>
-    request(app).post('/api/v1/uploads/image').set('Cookie', `token=${token}`).attach('image', buf, { filename: name, contentType: type });
+    request(app).post('/api/v1/uploads/image').set('Authorization', `Bearer ${token}`).attach('image', buf, { filename: name, contentType: type });
 
   it('uploads a valid image', async () => {
     const res = await send(Buffer.alloc(1024), 'a.jpg', 'image/jpeg');
@@ -92,7 +92,7 @@ describe('POST /api/v1/uploads/image', () => {
   );
 
   it('rejects a request without a file and an unauthenticated request', async () => {
-    const none = await request(app).post('/api/v1/uploads/image').set('Cookie', `token=${token}`);
+    const none = await request(app).post('/api/v1/uploads/image').set('Authorization', `Bearer ${token}`);
     expect(none.status).toBe(400);
     const anon = await request(app).post('/api/v1/uploads/image');
     expect(anon.status).toBe(401);

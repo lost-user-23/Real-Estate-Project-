@@ -9,4 +9,5 @@ module.exports = {
   Article: require('./Article'),
   Report: require('./Report'),
   SavedProperty: require('./SavedProperty'),
+  RefreshToken: require('./RefreshToken'),
 };

@@ -10,7 +10,7 @@ const Property = require('../src/models/Property');
 const PropertyImage = require('../src/models/PropertyImage');
 
 const app = createApp();
-const auth = (token) => ({ Cookie: `token=${token}` });
+const auth = (token) => ({ Authorization: `Bearer ${token}` });
 
 async function registerUser(email) {
   const res = await registerVerified(app, { email, password: 'password123' });

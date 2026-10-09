@@ -18,7 +18,7 @@ async function registerAdmin() {
   const email = `city-${new mongoose.Types.ObjectId()}@example.com`;
   const res = await registerVerified(app, { email, password: 'password123' });
   await User.findByIdAndUpdate(res.body.user.id, { role: 'admin' });
-  return { Cookie: `token=${tokenFromResponse(res)}` };
+  return { Authorization: `Bearer ${tokenFromResponse(res)}` };
 }
 
 let counter = 0;

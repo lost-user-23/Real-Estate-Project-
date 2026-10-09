@@ -45,7 +45,7 @@ describe('GET /api/v1/admin/locations', () => {
     const { token } = await registerUser();
     const response = await request(app)
       .get('/api/v1/admin/locations')
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
     expect(response.status).toBe(403);
   });
 
@@ -59,7 +59,7 @@ describe('GET /api/v1/admin/locations', () => {
 
     const response = await request(app)
       .get('/api/v1/admin/locations')
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(200);
     expect(response.body.locations.map((l) => l.city)).toEqual(['Big City', 'Mid City', 'Quiet Town']);
@@ -74,7 +74,7 @@ describe('GET /api/v1/admin/locations', () => {
 
   it('paginates, caps the limit and validates page params', async () => {
     const token = await createAdminToken();
-    const headers = { Cookie: `token=${token}` };
+    const headers = { Authorization: `Bearer ${token}` };
     await Location.create([
       { city: 'A', activeListingCount: 3 },
       { city: 'B', activeListingCount: 2 },
@@ -95,7 +95,7 @@ describe('GET /api/v1/admin/locations', () => {
 
   it('lets an admin toggle popular and clear the rank with null through PATCH', async () => {
     const token = await createAdminToken();
-    const headers = { Cookie: `token=${token}` };
+    const headers = { Authorization: `Bearer ${token}` };
     const location = await Location.create({ city: 'Rankville', activeListingCount: 9 });
 
     const on = await request(app)

@@ -11,7 +11,7 @@ const Property = require('../src/models/Property');
 const PropertyImage = require('../src/models/PropertyImage');
 
 const app = createApp();
-const auth = (token) => ({ Cookie: `token=${token}` });
+const auth = (token) => ({ Authorization: `Bearer ${token}` });
 
 const OWNER_NUMBER = '+91 98765 43210';
 const OTHER_NUMBER = '+91 91234 56789';

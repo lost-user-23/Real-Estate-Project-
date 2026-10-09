@@ -93,6 +93,8 @@ Property behavior currently implemented in the backend:
 
 | Method | Endpoint | Access | Purpose |
 |---|---|---|---|
+| GET | `/api/v1/builders` | Public | List builders derived from published projects, with pagination and optional city filter. |
+| GET | `/api/v1/builders/:slug` | Public | Return a builder and its published projects. |
 | GET | `/api/v1/projects/new` | Public | Return newly published projects. |
 | GET | `/api/v1/projects/builders` | Public | Return builder/developer groupings for project discovery. |
 | GET | `/api/v1/projects` | Public | List published projects. |

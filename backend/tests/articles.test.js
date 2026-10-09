@@ -79,7 +79,7 @@ describe('admin articles', () => {
     const token = await createAdmin();
     const response = await request(app)
       .post('/api/v1/admin/articles')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ title: 'A Guide to Home Buying!' });
 
     expect(response.status).toBe(201);
@@ -92,12 +92,12 @@ describe('admin articles', () => {
     const token = await createAdmin();
     const created = await request(app)
       .post('/api/v1/admin/articles')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ title: 'Original title', slug: 'seo-friendly-title' });
 
     const updated = await request(app)
       .patch(`/api/v1/admin/articles/${created.body.article._id}`)
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ title: 'Revised title' });
 
     expect(updated.status).toBe(200);
@@ -109,7 +109,7 @@ describe('admin articles', () => {
     const token = await createAdmin();
     const baseRequest = request(app)
       .post('/api/v1/admin/articles')
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
 
     const malformed = await baseRequest.send({ title: 'Malformed slug', slug: 'Bad Slug!' });
     expect(malformed.status).toBe(400);
@@ -117,7 +117,7 @@ describe('admin articles', () => {
     await createArticle({ slug: 'already-taken' });
     const duplicate = await request(app)
       .post('/api/v1/admin/articles')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ title: 'Duplicate', slug: 'already-taken' });
     expect(duplicate.status).toBe(409);
   });
@@ -129,11 +129,11 @@ describe('admin articles', () => {
 
     const first = await request(app)
       .patch(publishUrl)
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
     const firstPublishedAt = first.body.article.publishedAt;
     const second = await request(app)
       .patch(publishUrl)
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
 
     expect(first.status).toBe(200);
     expect(first.body.article.status).toBe('published');
@@ -144,7 +144,7 @@ describe('admin articles', () => {
   it('lists all statuses and supports updates and deletion', async () => {
     const token = await createAdmin();
     const article = await createArticle({ status: 'archived' });
-    const headers = { Cookie: `token=${token}` };
+    const headers = { Authorization: `Bearer ${token}` };
 
     const list = await request(app).get('/api/v1/admin/articles').set(headers);
     expect(list.status).toBe(200);

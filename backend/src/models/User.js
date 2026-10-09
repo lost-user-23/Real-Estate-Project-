@@ -60,6 +60,37 @@ const userSchema = new Schema(
       enum: ['register', 'email-change'],
       select: false,
     },
+    // --- Password-reset OTP fields ---
+    // Keyed HMAC of the emailed OTP; the raw code is never stored.
+    resetOtpHash: {
+      type: String,
+      select: false,
+    },
+    resetOtpExpiry: {
+      type: Date,
+      select: false,
+    },
+    // How many wrong codes have been tried against the current OTP.
+    resetOtpAttempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
+    // When the last reset mail went out; drives per-account cooldown.
+    resetOtpSentAt: {
+      type: Date,
+      select: false,
+    },
+    // HMAC of the reset token's random jti; atomically consumed with a password
+    // reset so a verified OTP cannot produce a reusable password reset.
+    resetTokenHash: {
+      type: String,
+      select: false,
+    },
+    resetTokenExpiry: {
+      type: Date,
+      select: false,
+    },
     // When the last verification mail went out; drives the per-account cooldown.
     verifyTokenSentAt: {
       type: Date,

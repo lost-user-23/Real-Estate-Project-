@@ -1,13 +1,15 @@
 process.env.MONGODB_DB_NAME = 'homenest_test_auth';
-const { tokenFromResponse, registerVerified, tokenFromLink } = require('./helpers/auth');
+const { tokenFromResponse, refreshCookieFromResponse, registerVerified, tokenFromLink } = require('./helpers/auth');
 
 const request = require('supertest');
 const { URL } = require('url');
 const { hashToken } = require('../src/utils/verificationToken');
 const mongoose = require('mongoose');
+const jwt = require('jsonwebtoken');
 const createApp = require('../src/app');
 const { connectToDatabase, disconnectFromDatabase } = require('../src/db/connection');
 const User = require('../src/models/User');
+const RefreshToken = require('../src/models/RefreshToken');
 const config = require('../src/config');
 const mailer = require('../src/services/mailer.service');
 
@@ -38,6 +40,7 @@ beforeAll(async () => {
 
 afterEach(async () => {
   await User.deleteMany({});
+  await RefreshToken.deleteMany({});
 });
 
 afterAll(async () => {
@@ -200,11 +203,12 @@ describe('POST /api/auth/login', () => {
       .send({ email: creds.email, password: creds.password });
     expect(res.status).toBe(200);
     expect(tokenFromResponse(res)).toEqual(expect.any(String));
-    expect(res.body.token).toBeUndefined();
-    const cookie = res.headers['set-cookie'].find((c) => c.startsWith('token='));
+    expect(jwt.decode(res.body.accessToken).exp - jwt.decode(res.body.accessToken).iat).toBe(15 * 60);
+    expect(res.headers['set-cookie'].some((c) => c.startsWith('token='))).toBe(false);
+    const cookie = res.headers['set-cookie'].find((c) => c.startsWith('refreshToken='));
     expect(cookie).toMatch(/HttpOnly/i);
-    expect(cookie).toMatch(/SameSite=Lax/i);
-    expect(cookie).toContain('Path=/');
+    expect(cookie).toMatch(/SameSite=Strict/i);
+    expect(cookie).toContain('Path=/api/auth');
     expect(cookie).toContain('Max-Age=604800');
     expect(cookie).not.toMatch(/;\s*Secure/i);
   });
@@ -259,15 +263,15 @@ describe('GET /api/auth/me', () => {
   });
 
   it('rejects a malformed/invalid token', async () => {
-    const res = await request(app).get('/api/auth/me').set('Cookie', 'token=not-a-real-token');
+    const res = await request(app).get('/api/auth/me').set('Authorization', 'Bearer not-a-real-token');
     expect(res.status).toBe(401);
   });
 
-  it('ignores a valid Bearer Authorization header', async () => {
+  it('ignores the access token when it is sent as a cookie', async () => {
     const reg = await registerVerified(app, creds);
     const res = await request(app)
       .get('/api/auth/me')
-      .set('Authorization', `Bearer ${tokenFromResponse(reg)}`);
+      .set('Cookie', `token=${tokenFromResponse(reg)}`);
     expect(res.status).toBe(401);
   });
 
@@ -281,7 +285,7 @@ describe('GET /api/auth/me', () => {
     const reg = await registerVerified(app, creds);
     const res = await request(app)
       .get('/api/auth/me')
-      .set('Cookie', `token=${tokenFromResponse(reg)}`);
+      .set('Authorization', `Bearer ${tokenFromResponse(reg)}`);
     expect(res.status).toBe(200);
     expect(res.body.user.email).toBe('test@example.com');
     expect(res.body.user.passwordHash).toBeUndefined();
@@ -292,7 +296,7 @@ describe('GET /api/auth/me', () => {
     await User.deleteMany({});
     const res = await request(app)
       .get('/api/auth/me')
-      .set('Cookie', `token=${tokenFromResponse(reg)}`);
+      .set('Authorization', `Bearer ${tokenFromResponse(reg)}`);
     expect(res.status).toBe(401);
   });
 });
@@ -302,20 +306,20 @@ describe('POST /api/auth/logout', () => {
     const res = await request(app).post('/api/auth/logout');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ message: 'Logged out' });
-    expect(res.headers['set-cookie'][0]).toMatch(/token=;/);
-    expect(res.headers['set-cookie'][0]).toContain('Path=/');
+    expect(res.headers['set-cookie'][0]).toMatch(/refreshToken=;/);
+    expect(res.headers['set-cookie'][0]).toContain('Path=/api/auth');
     expect(res.headers['set-cookie'][0]).toMatch(/HttpOnly/i);
     expect(res.headers['set-cookie'][0]).toContain('Expires=Thu, 01 Jan 1970');
     expect(res.headers['set-cookie'][0]).not.toMatch(/Max-Age/i);
   });
 
-  it('ends the session: /me is 401 after logout when the client keeps its cookies', async () => {
+  it('ends the session: the cookie jar can no longer refresh after logout', async () => {
     const agent = request.agent(app);
     await registerVerified(app, creds);
     await agent.post('/api/auth/login').send({ email: creds.email, password: creds.password });
-    expect((await agent.get('/api/auth/me')).status).toBe(200);
+    expect((await agent.post('/api/auth/refresh')).status).toBe(200);
     await agent.post('/api/auth/logout');
-    expect((await agent.get('/api/auth/me')).status).toBe(401);
+    expect((await agent.post('/api/auth/refresh')).status).toBe(401);
   });
 });
 
@@ -409,5 +413,90 @@ describe('unexpected errors in register and login', () => {
     // The losing insert is not an error and sends nothing (the winner mails).
     expect(errorSpy).not.toHaveBeenCalled();
     expect(mailer.sendVerificationEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe('refresh tokens', () => {
+  const refresh = (cookie) => request(app).post('/api/auth/refresh').set('Cookie', cookie);
+
+  it('stores only a hash of the refresh token', async () => {
+    const reg = await registerVerified(app, creds);
+    const raw = refreshCookieFromResponse(reg).slice('refreshToken='.length);
+    expect(raw).toHaveLength(128);
+    expect(await RefreshToken.exists({ tokenHash: raw })).toBeNull();
+    expect(await RefreshToken.exists({ tokenHash: hashToken(raw) })).not.toBeNull();
+  });
+
+  it('rejects a refresh without a cookie', async () => {
+    const res = await request(app).post('/api/auth/refresh');
+    expect(res.status).toBe(401);
+  });
+
+  it('rotates the token and returns a working access token', async () => {
+    const reg = await registerVerified(app, creds);
+    const first = refreshCookieFromResponse(reg);
+    const res = await refresh(first);
+    expect(res.status).toBe(200);
+    expect(res.body.user.email).toBe('test@example.com');
+    const second = refreshCookieFromResponse(res);
+    expect(second).not.toBe(first);
+
+    const me = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${res.body.accessToken}`);
+    expect(me.status).toBe(200);
+    expect((await refresh(second)).status).toBe(200);
+  });
+
+  it('revokes every session when a spent token is replayed', async () => {
+    const reg = await registerVerified(app, creds);
+    const other = await request(app).post('/api/auth/login').send({ email: creds.email, password: creds.password });
+    const stolen = refreshCookieFromResponse(reg);
+    const rotated = await refresh(stolen);
+    expect(rotated.status).toBe(200);
+
+    // Outside the grace window for races between tabs.
+    await RefreshToken.updateMany({ usedAt: { $ne: null } }, { $set: { usedAt: new Date(Date.now() - 60 * 1000) } });
+
+    expect((await refresh(stolen)).status).toBe(401);
+    expect(await RefreshToken.countDocuments({})).toBe(0);
+    expect((await refresh(refreshCookieFromResponse(rotated))).status).toBe(401);
+    expect((await refresh(refreshCookieFromResponse(other))).status).toBe(401);
+  });
+
+  it('does not revoke sessions for a replay inside the grace window', async () => {
+    const reg = await registerVerified(app, creds);
+    const first = refreshCookieFromResponse(reg);
+    const rotated = await refresh(first);
+    expect((await refresh(first)).status).toBe(401);
+    expect((await refresh(refreshCookieFromResponse(rotated))).status).toBe(200);
+  });
+
+  it('rejects an expired refresh token', async () => {
+    const reg = await registerVerified(app, creds);
+    await RefreshToken.updateMany({}, { $set: { expiresAt: new Date(Date.now() - 1000) } });
+    expect((await refresh(refreshCookieFromResponse(reg))).status).toBe(401);
+  });
+
+  it('logout deletes the record, so the old cookie no longer refreshes', async () => {
+    const reg = await registerVerified(app, creds);
+    const cookie = refreshCookieFromResponse(reg);
+    const out = await request(app).post('/api/auth/logout').set('Cookie', cookie);
+    expect(out.status).toBe(200);
+    expect(await RefreshToken.countDocuments({})).toBe(0);
+    expect((await refresh(cookie)).status).toBe(401);
+  });
+
+  it('logout-all revokes the sessions on every device', async () => {
+    const reg = await registerVerified(app, creds);
+    const other = await request(app).post('/api/auth/login').send({ email: creds.email, password: creds.password });
+    const res = await request(app)
+      .post('/api/auth/logout-all')
+      .set('Authorization', `Bearer ${tokenFromResponse(reg)}`);
+    expect(res.status).toBe(200);
+    expect((await refresh(refreshCookieFromResponse(reg))).status).toBe(401);
+    expect((await refresh(refreshCookieFromResponse(other))).status).toBe(401);
+  });
+
+  it('logout-all requires an access token', async () => {
+    expect((await request(app).post('/api/auth/logout-all')).status).toBe(401);
   });
 });

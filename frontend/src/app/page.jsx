@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
-import { ConsentBanner } from "@/components/ConsentBanner";
 import { Hero } from "@/components/home/Hero";
 import { SellBanner } from "@/components/home/SellBanner";
 import { FeaturedProperties } from "@/components/home/FeaturedProperties";
@@ -32,7 +31,6 @@ export default function Home() {
         <AppPromotion />
       </main>
       <Footer />
-      <ConsentBanner />
     </>
   );
 }

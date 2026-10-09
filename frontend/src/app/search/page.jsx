@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { PageShell } from "@/components/layout/PageShell";
 import { SearchResults } from "@/components/search/SearchResults";
+import { SearchAnalytics } from "@/components/search/SearchAnalytics";
 
 export const metadata = {
   title: "Search properties",
@@ -12,6 +13,7 @@ export default function SearchPage() {
     <PageShell>
       <Suspense fallback={null}>
         <SearchResults />
+        <SearchAnalytics />
       </Suspense>
     </PageShell>
   );

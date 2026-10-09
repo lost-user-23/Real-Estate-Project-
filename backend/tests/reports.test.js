@@ -83,7 +83,7 @@ describe('public reports', () => {
     const { token, user } = await registerUser();
     const response = await request(app)
       .post('/api/v1/reports')
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ listingUrlOrId: 'listing-abc', reason: 'Spam listing' });
 
     expect(response.status).toBe(201);
@@ -97,7 +97,7 @@ describe('public reports', () => {
   ])('never fails the request when the token is %s', async (_label, tokenOrFactory) => {
     const token = typeof tokenOrFactory === 'function' ? tokenOrFactory() : tokenOrFactory;
     const req = request(app).post('/api/v1/reports');
-    if (token) req.set('Cookie', `token=${token}`);
+    if (token) req.set('Authorization', `Bearer ${token}`);
 
     const response = await req.send({ listingUrlOrId: 'listing-abc', reason: 'Spam listing' });
 
@@ -124,7 +124,7 @@ describe('admin reports', () => {
 
     const response = await request(app)
       .get('/api/v1/admin/reports')
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(200);
     expect(response.body.reports).toHaveLength(2);
@@ -140,7 +140,7 @@ describe('admin reports', () => {
 
     const response = await request(app)
       .get('/api/v1/admin/reports')
-      .set('Cookie', `token=${token}`);
+      .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(200);
     expect(response.body.reports).toHaveLength(1);
@@ -155,7 +155,7 @@ describe('admin reports', () => {
   it('updates only the status field', async () => {
     const token = await createAdmin();
     const report = await createReport();
-    const headers = { Cookie: `token=${token}` };
+    const headers = { Authorization: `Bearer ${token}` };
 
     const update = await request(app)
       .patch(`/api/v1/admin/reports/${report._id}`)
@@ -172,7 +172,7 @@ describe('admin reports', () => {
 
     const response = await request(app)
       .patch(`/api/v1/admin/reports/${report._id}`)
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ status: 'resolved', reason: 'tampered' });
 
     expect(response.status).toBe(400);
@@ -184,7 +184,7 @@ describe('admin reports', () => {
 
     const response = await request(app)
       .patch(`/api/v1/admin/reports/${report._id}`)
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ status: 'not-a-status' });
 
     expect(response.status).toBe(400);
@@ -269,7 +269,7 @@ describe('admin reports with property', () => {
     const token = await createAdmin();
     const property = await createProperty({ status: 'archived' });
     const report = await createReport({ propertyId: property._id });
-    const headers = { Cookie: `token=${token}` };
+    const headers = { Authorization: `Bearer ${token}` };
     const expected = {
       id: String(property._id),
       slug: property.slug,
@@ -296,7 +296,7 @@ describe('admin reports with property', () => {
     const unlinked = await createReport({ listingUrlOrId: 'nothing' });
     await Property.deleteOne({ _id: property._id });
 
-    const res = await request(app).get('/api/v1/admin/reports').set('Cookie', `token=${token}`);
+    const res = await request(app).get('/api/v1/admin/reports').set('Authorization', `Bearer ${token}`);
     const byId = Object.fromEntries(res.body.reports.map((r) => [r._id, r]));
 
     expect(byId[String(deleted._id)].property).toBeNull();

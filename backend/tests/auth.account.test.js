@@ -15,7 +15,7 @@ const mailer = require('../src/services/mailer.service');
 const app = createApp();
 
 const creds = { name: 'Test User', email: 'user@example.com', password: 'password123' };
-const auth = (token) => ({ Cookie: `token=${token}` });
+const auth = (token) => ({ Authorization: `Bearer ${token}` });
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function registerUser(overrides = {}) {

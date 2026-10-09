@@ -22,7 +22,7 @@ const PropertyImage = require('../src/models/PropertyImage');
 
 const app = createApp();
 const deleteResources = cloudinary.v2.api.delete_resources;
-const auth = (token) => ({ Cookie: `token=${token}` });
+const auth = (token) => ({ Authorization: `Bearer ${token}` });
 
 const ownUrl = (id, ext = 'jpg', version = 'v1700000000') =>
   `https://res.cloudinary.com/demo/image/upload/${version}/${id}.${ext}`;

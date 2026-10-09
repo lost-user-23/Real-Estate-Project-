@@ -15,10 +15,37 @@ export function setUnauthorizedHandler(fn){
     onUnauthorized = fn;
 }
 
+// The short-lived access token lives in this module variable only (never in
+// localStorage), so a page reload starts without one and restores the session
+// through the httpOnly refresh cookie (see refreshSession).
+let accessToken = null;
+export function setAccessToken(token){
+    accessToken = token || null;
+}
+
+// One refresh at a time: requests that hit a 401 while a refresh is running
+// wait for that same refresh instead of starting their own. The refresh token
+// rotates on every use, so a second parallel refresh would look like a replay.
+let refreshInFlight = null;
+export function refreshSession(){
+    if (!refreshInFlight) {
+        refreshInFlight = request("/api/auth/refresh", { method: "POST", auth: false })
+            .then((data) => {
+                setAccessToken(data.accessToken);
+                return data;
+            })
+            .finally(() => {
+                refreshInFlight = null;
+            });
+    }
+    return refreshInFlight;
+}
+
 // `auth` controls session clearing on 401; cookies are sent on every request.
+// `retried` is internal: it marks the single retry after a token refresh.
 export async function request(
   path,
-  { method = "GET", body, headers, auth = true, ...fetchOptions } = {}
+  { method = "GET", body, headers, auth = true, retried = false, ...fetchOptions } = {}
 ) {
   // FormData must go out as-is so the browser sets the multipart boundary itself.
   const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
@@ -32,6 +59,7 @@ export async function request(
       credentials: "include",
       headers: {
         ...(body !== undefined && !isFormData ? { "Content-Type": "application/json" } : {}),
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         ...headers,
       },
       body: body !== undefined && !isFormData ? JSON.stringify(body) : body,
@@ -53,8 +81,18 @@ export async function request(
   }
 
   if (!res.ok) {
-    // A login 401 is invalid credentials, not an expired session.
+    // A login 401 is invalid credentials, not an expired session. On an
+    // authenticated request the access token has most likely just expired:
+    // refresh once and replay the request; only a failed refresh ends the session.
     if (res.status === 401 && auth) {
+      if (!retried) {
+        try {
+          await refreshSession();
+          return request(path, { method, body, headers, auth, retried: true, ...fetchOptions });
+        } catch (refreshError) {
+          if (refreshError?.status !== 401) throw refreshError;
+        }
+      }
       if (onUnauthorized) onUnauthorized();
     }
     // Every backend error goes through the shared error handler and arrives as

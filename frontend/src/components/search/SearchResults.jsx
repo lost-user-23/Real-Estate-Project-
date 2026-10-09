@@ -8,6 +8,7 @@ import { PROPERTY_TYPE_LABELS } from "@/lib/propertyTypes";
 import { formatPrice } from "@/lib/format";
 import { PropertyCard } from "@/components/home/PropertyCard";
 import { Container } from "@/components/ui/Container";
+import { SearchFilters, normalizeKeyword, parseBhkParam } from "@/components/search/SearchFilters";
 
 const PAGE_SIZE = 12;
 const SORT_OPTIONS = [
@@ -29,6 +30,8 @@ export function SearchResults() {
   const propertyType = searchParams.get("propertyType");
   const minPrice = searchParams.get("minPrice");
   const maxPrice = searchParams.get("maxPrice");
+  const keyword = normalizeKeyword(searchParams.get("q"));
+  const bhkParam = parseBhkParam(searchParams.get("bhk")).join(",");
   const requestedPage = Number(searchParams.get("page")) || 1;
   const page = Number.isInteger(requestedPage) ? Math.max(1, requestedPage) : 1;
   const queryString = useMemo(() => {
@@ -36,11 +39,13 @@ export function SearchResults() {
     for (const [key, value] of Object.entries({ intent, city, locality, propertyType, minPrice, maxPrice })) {
       if (value) params.set(key, value);
     }
+    if (keyword) params.set("q", keyword);
+    if (bhkParam) params.set("bhk", bhkParam);
     if (sort !== "newest") params.set("sort", sort);
     params.set("page", String(page));
     params.set("limit", String(PAGE_SIZE));
     return params.toString();
-  }, [intent, city, locality, propertyType, minPrice, maxPrice, sort, page]);
+  }, [intent, city, locality, propertyType, minPrice, maxPrice, keyword, bhkParam, sort, page]);
   const [state, setState] = useState({ status: "loading", properties: [], meta: null, error: "" });
   const [retryCount, setRetryCount] = useState(0);
   const requestKey = `${queryString}:${retryCount}`;
@@ -79,6 +84,16 @@ export function SearchResults() {
     return `/search?${params.toString()}`;
   };
 
+  const applyFilters = ({ keyword: nextKeyword, bhk }) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (nextKeyword) params.set("q", nextKeyword);
+    else params.delete("q");
+    if (bhk.length > 0) params.set("bhk", bhk.join(","));
+    else params.delete("bhk");
+    params.delete("page");
+    router.push(`/search?${params.toString()}`);
+  };
+
   const changeSort = (value) => {
     const params = new URLSearchParams(searchParams.toString());
     if (value === "newest") params.delete("sort");
@@ -108,6 +123,8 @@ export function SearchResults() {
           param: "price",
         }
       : null,
+    keyword ? { label: `“${keyword}”`, param: "q" } : null,
+    bhkParam ? { label: `${bhkParam.split(",").join(", ")} BHK`, param: "bhk" } : null,
   ].filter(Boolean);
 
   return (
@@ -149,6 +166,13 @@ export function SearchResults() {
           </label>
         </div>
 
+        <SearchFilters
+          key={`${keyword}|${bhkParam}`}
+          initialKeyword={keyword}
+          initialBhk={bhkParam ? bhkParam.split(",") : []}
+          onApply={applyFilters}
+        />
+
         {visibleState.status === "loading" ? (
           <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Loading properties">
             {Array.from({ length: 6 }, (_, index) => (
@@ -170,12 +194,16 @@ export function SearchResults() {
         ) : visibleState.properties.length === 0 ? (
           <div className="mt-10 rounded-2xl border border-border bg-surface p-10 text-center">
             <p className="font-medium">No properties match these filters.</p>
-            <p className="mt-1 text-sm text-text-muted">Try a different location, or clear a filter above.</p>
+            <p className="mt-1 text-sm text-text-muted">
+              {keyword || bhkParam
+                ? "Try a shorter keyword, a different BHK, or clear the filters."
+                : "Try a different location, or clear a filter above."}
+            </p>
             <Link
-              href="/"
+              href={activeFilters.length > 0 ? "/search" : "/"}
               className="mt-4 inline-flex items-center justify-center rounded-full bg-primary px-5 py-2 text-sm font-semibold text-white hover:bg-primary-dark"
             >
-              Back to home
+              {activeFilters.length > 0 ? "Clear all filters" : "Back to home"}
             </Link>
           </div>
         ) : (

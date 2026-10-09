@@ -1,9 +1,10 @@
 const { verifyToken, isTokenStale } = require('../services/auth.service');
 const User = require('../models/User');
+const { bearerToken } = require('./auth.middleware');
 const config = require('../config');
 
 async function optionalAuth(req, res, next) {
-  const token = req.cookies?.token;
+  const token = bearerToken(req);
   if (!token) return next();
 
   let decoded;

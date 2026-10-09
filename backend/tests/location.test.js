@@ -143,7 +143,7 @@ describe('PATCH /api/v1/admin/locations/:id', () => {
     const location = await Location.create(validPayload);
     const res = await request(app)
       .patch(`/api/v1/admin/locations/${location._id}`)
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ city: 'Pune' });
     expect(res.status).toBe(403);
   });
@@ -154,7 +154,7 @@ describe('PATCH /api/v1/admin/locations/:id', () => {
 
     const res = await request(app)
       .patch(`/api/v1/admin/locations/${location._id}`)
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ city: 'Pune' });
 
     expect(res.status).toBe(200);
@@ -176,7 +176,7 @@ describe('PATCH /api/v1/admin/locations/:id', () => {
 
     const res = await request(app)
       .patch(`/api/v1/admin/locations/${location._id}`)
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ activeListingCount: 99 });
 
     expect(res.status).toBe(200);
@@ -193,7 +193,7 @@ describe('PATCH /api/v1/admin/locations/:id', () => {
 
     const res = await request(app)
       .patch(`/api/v1/admin/locations/${location._id}`)
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ activeListingCount: -1 });
 
     expect(res.status).toBe(400);
@@ -203,7 +203,7 @@ describe('PATCH /api/v1/admin/locations/:id', () => {
     const { token } = await registerAdmin();
     const res = await request(app)
       .patch(`/api/v1/admin/locations/${new mongoose.Types.ObjectId()}`)
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({ city: 'Pune' });
     expect(res.status).toBe(404);
   });
@@ -214,7 +214,7 @@ describe('PATCH /api/v1/admin/locations/:id', () => {
 
     const res = await request(app)
       .patch(`/api/v1/admin/locations/${location._id}`)
-      .set('Cookie', `token=${token}`)
+      .set('Authorization', `Bearer ${token}`)
       .send({
         city: 'Pune',
         contactEmail: 'hacker@example.com',
