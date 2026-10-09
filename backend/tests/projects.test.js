@@ -176,3 +176,12 @@ describe('admin projects', () => {
     expect(deletion.status).toBe(204);
   });
 });
+
+describe('removed GET /api/v1/projects/builders', () => {
+  it('is no longer served (use GET /api/v1/builders)', async () => {
+    const res = await request(app).get('/api/v1/projects/builders');
+    expect(res.status).toBe(400);
+    expect(res.body.builders).toBeUndefined();
+    expect(res.body.error.message).toMatch(/Invalid/);
+  });
+});

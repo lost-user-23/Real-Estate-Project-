@@ -96,7 +96,6 @@ Property behavior currently implemented in the backend:
 | GET | `/api/v1/builders` | Public | List builders derived from published projects, with pagination and optional city filter. |
 | GET | `/api/v1/builders/:slug` | Public | Return a builder and its published projects. |
 | GET | `/api/v1/projects/new` | Public | Return newly published projects. |
-| GET | `/api/v1/projects/builders` | Public | Return builder/developer groupings for project discovery. |
 | GET | `/api/v1/projects` | Public | List published projects. |
 | GET | `/api/v1/projects/:id` | Public | Return a published project by id. |
 | GET | `/api/v1/admin/projects` | Admin | List projects for admin review. |

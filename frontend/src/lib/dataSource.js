@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { BUILDER_LIST_LIMIT } from "@/lib/builderList.mjs";
 
 const MIN_ACTIVE_LISTINGS_FOR_POPULAR = 5;
 
@@ -92,7 +93,7 @@ export async function fetchInsights(simulateError = false) {
 }
 
 async function requestBuilders(city) {
-  const params = new URLSearchParams({ limit: "50" });
+  const params = new URLSearchParams({ limit: String(BUILDER_LIST_LIMIT) });
   if (city) params.set("city", city);
   const data = (await api.get(`/api/v1/builders?${params}`, { auth: false })) ?? {};
   if (!Array.isArray(data.builders)) throw new Error("Builder list was not returned");

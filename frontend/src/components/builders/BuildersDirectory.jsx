@@ -9,6 +9,7 @@ import { useSectionData } from "@/lib/useSectionData";
 import { useCity } from "@/lib/city-context";
 import { formatPrice } from "@/lib/format";
 import { trackEvent } from "@/lib/trackEvent";
+import { builderListNote } from "@/lib/builderList.mjs";
 import { Section } from "@/components/ui/Section";
 import { SkeletonGrid } from "@/components/ui/SkeletonGrid";
 import { SectionError } from "@/components/ui/SectionError";
@@ -80,6 +81,7 @@ export function BuildersDirectory() {
 
   const all = data?.builders ?? [];
   const popular = all.slice(0, POPULAR_COUNT);
+  const listNote = builderListNote(all.length, data?.meta?.total);
   const scopedToAll = Boolean(city) && data?.scope === "national";
 
   return (
@@ -131,8 +133,8 @@ export function BuildersDirectory() {
         title="All properties by builder"
         subtitle={
           city
-            ? `Every listed project in ${city}, grouped by builder and brand.`
-            : "Every listed project nationwide, grouped by builder and brand."
+            ? `Builders with published projects in ${city}, grouped by builder and brand.`
+            : "Builders with published projects nationwide, grouped by builder and brand."
         }
         tone="surface"
       >
@@ -169,6 +171,7 @@ export function BuildersDirectory() {
                 ) : null}
               </div>
             ))}
+            {listNote ? <p className="text-sm text-text-muted">{listNote}</p> : null}
           </div>
         ) : null}
       </Section>

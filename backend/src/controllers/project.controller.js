@@ -3,7 +3,6 @@ const { isOwnCloudinaryImageUrl } = require('../services/cloudinaryAssets.servic
 const projectService =require('../services/project.service');
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
-const { parseOptionalCity } = require('../utils/queryParams');
 const { serializeProject, serializeProjects } = require('../utils/serializers/project.serializer');
 
 const MAX_LIMIT = 50;
@@ -111,19 +110,6 @@ const listNewProjects = asyncHandler(async (req, res) => {
   res.status(200).json({ projects: serializeProjects(projects) });
 });
 
-// Builders are derived from published projects (Project.developer is a plain
-// string), grouped and counted in the database so counts are never partial.
-const listBuilders = asyncHandler(async (req, res) => {
-  const errors = [];
-  const city = parseOptionalCity(req.query || {}, errors);
-  if (errors.length > 0) throw AppError.badRequest('Validation failed', errors);
-
-  const builders = await projectService.listBuilders({ city });
-  res.status(200).json({
-    builders: builders.map((builder) => ({ ...builder, projects: serializeProjects(builder.projects) })),
-  });
-});
-
 const getPublicProjectById = asyncHandler(async (req, res) => {
   const project = await projectService.findPublishedById(req.params.id);
   if (!project) throw AppError.notFound('Project not found');
@@ -183,7 +169,6 @@ const deleteProject = asyncHandler(async (req, res) => {
 module.exports = {
   listPublicProjects,
   listNewProjects,
-  listBuilders,
   getPublicProjectById,
   listAdminProjects,
   getAdminProjectById,

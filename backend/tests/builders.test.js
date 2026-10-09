@@ -144,6 +144,20 @@ describe('GET /api/v1/builders/:slug', () => {
     expect(res.body.builder.projects.every(({ status }) => status === 'published')).toBe(true);
   });
 
+  it('caps the projects returned for one builder but reports the true count and city', async () => {
+    await Project.insertMany(
+      Array.from({ length: 105 }, (_, i) => projectDoc({ name: `Bulk ${i}`, developer: 'Mega Builders', city: i < 70 ? 'Pune' : 'Delhi' }))
+    );
+
+    const slug = (await request(app).get('/api/v1/builders')).body.builders.find((b) => b.name === 'Mega Builders').slug;
+    const res = await request(app).get(`/api/v1/builders/${encodeURIComponent(slug)}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.builder.projects).toHaveLength(100);
+    expect(res.body.builder.publishedProjectCount).toBe(105);
+    expect(res.body.builder.city).toBe('Pune');
+  });
+
   it('returns 404 for an unknown slug and a builder with no published projects', async () => {
     const published = await createProject({ developer: 'Draft Only' });
     const list = await request(app).get('/api/v1/builders');

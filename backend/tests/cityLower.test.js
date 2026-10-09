@@ -152,12 +152,12 @@ describe('city matching on cityLower', () => {
     expect(arr.body.error.message).toBe('Validation failed');
   });
 
-  it('matches padded input on featured and builders', async () => {
+  it('matches padded input on featured and the builders list', async () => {
     await createProperty({ title: 'Pick', city: 'New Delhi', featured: true });
     await createProject({ city: 'New Delhi' });
 
     const featured = await request(app).get('/api/v1/properties/featured').query({ city: ' NEW  delhi ' });
-    const builders = await request(app).get('/api/v1/projects/builders').query({ city: ' NEW  delhi ' });
+    const builders = await request(app).get('/api/v1/builders').query({ city: ' NEW  delhi ' });
 
     expect(featured.body.scope).toBe('city');
     expect(featured.body.properties.map((p) => p.title)).toEqual(['Pick']);

@@ -2,6 +2,9 @@ const Project = require('../models/Project');
 const { normalizeCity } = require('../utils/normalizeCity');
 const { Buffer } = require('node:buffer');
 
+// Most project cards one builder detail response carries.
+const MAX_BUILDER_PROJECTS = 100;
+
 function slugifyBuilderName(name) {
   const readable = name
     .normalize('NFKD')
@@ -78,20 +81,22 @@ async function getBuilderBySlug(slug, { city } = {}) {
 
   const filter = { developer, status: 'published' };
   if (city) filter.cityLower = normalizeCity(city);
-  const projects = await Project.find(filter).sort({ publishedAt: -1, _id: -1 });
+  // The project cards are capped; the count and the main city come from the
+  // database so they stay true for a builder with more projects than the cap.
+  const [projects, publishedProjectCount, cityRows] = await Promise.all([
+    Project.find(filter).sort({ publishedAt: -1, _id: -1 }).limit(MAX_BUILDER_PROJECTS),
+    Project.countDocuments(filter),
+    Project.aggregate([{ $match: filter }, { $group: { _id: '$city', projectCount: { $sum: 1 } } }]),
+  ]);
   if (projects.length === 0) return null;
 
-  const cityCounts = new Map();
-  for (const project of projects) {
-    cityCounts.set(project.city, (cityCounts.get(project.city) ?? 0) + 1);
-  }
-  const cities = [...cityCounts].map(([name, projectCount]) => ({ city: name, projectCount }));
+  const cities = cityRows.map((row) => ({ city: row._id, projectCount: row.projectCount }));
 
   return {
     name: developer,
     slug: slugifyBuilderName(developer),
     city: mostCommonCity(cities),
-    publishedProjectCount: projects.length,
+    publishedProjectCount,
     projects,
   };
 }
