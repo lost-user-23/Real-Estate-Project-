@@ -10,4 +10,16 @@ function parseOptionalCity(query, errors) {
   return query.city.trim();
 }
 
-module.exports = { parseOptionalCity };
+// Optional free-text filter (?locality=): must be a single string. A repeated
+// param arrives as an array and is rejected with a 400 rather than reaching a
+// regex or a lookup. The value is returned as sent; callers normalise it.
+function parseOptionalText(query, key, errors) {
+  if (query[key] == null) return undefined;
+  if (typeof query[key] !== 'string') {
+    errors.push(`${key} must be a single value`);
+    return undefined;
+  }
+  return query[key];
+}
+
+module.exports = { parseOptionalCity, parseOptionalText };

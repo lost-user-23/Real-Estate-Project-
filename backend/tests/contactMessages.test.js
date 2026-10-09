@@ -1,12 +1,9 @@
 process.env.MONGODB_DB_NAME = 'homenest_test_contact_messages';
 const { tokenFromResponse, registerVerified } = require('./helpers/auth');
 
-const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const createApp = require('../src/app');
-const errorHandler = require('../src/middleware/errorHandler');
-const { createContactRateLimiter } = require('../src/middleware/contactRateLimiter');
 const { connectToDatabase, disconnectFromDatabase } = require('../src/db/connection');
 const User = require('../src/models/User');
 const ContactMessage = require('../src/models/ContactMessage');
@@ -148,30 +145,32 @@ describe('public contact messages', () => {
   });
 });
 
-describe('contact message rate limit (limiter active)', () => {
-  // A throwaway app with a low limit, so no test-only code path exists in the real app.
-  function createLimitedApp(limit) {
-    const limitedApp = express();
-    limitedApp.use(express.json());
-    limitedApp.post('/contact', createContactRateLimiter({ limit }), (req, res) => {
-      res.status(201).json(SUCCESS_BODY);
-    });
-    limitedApp.use(errorHandler);
-    return limitedApp;
-  }
+describe('contact message rate limit (real route, limiter active)', () => {
+  // The limiter skips itself under jest (NODE_ENV=test). Flip it for these
+  // requests only, so the real app and the real route are what gets exercised.
+  const originalNodeEnv = process.env.NODE_ENV;
+  beforeAll(() => {
+    process.env.NODE_ENV = 'development';
+  });
+  afterAll(() => {
+    process.env.NODE_ENV = originalNodeEnv;
+  });
 
-  it('returns 429 through the normal error shape once the limit is exceeded', async () => {
-    const limitedApp = createLimitedApp(2);
-    const send = () => request(limitedApp).post('/contact').send(validBody());
+  it('does not count rejected submissions, then returns 429 through the normal error shape after 5 accepted ones', async () => {
+    // A visitor who mistypes a few times must not lose their budget.
+    for (let i = 0; i < 6; i += 1) {
+      const bad = await request(app).post(PUBLIC_URL).send(validBody({ name: 'A' }));
+      expect(bad.status).toBe(400);
+    }
 
-    const first = await send();
-    const second = await send();
-    const limited = await send();
-
-    expect(first.status).toBe(201);
-    expect(second.status).toBe(201);
+    for (let i = 0; i < 5; i += 1) {
+      const ok = await request(app).post(PUBLIC_URL).send(validBody());
+      expect(ok.status).toBe(201);
+    }
+    const limited = await request(app).post(PUBLIC_URL).send(validBody());
     expect(limited.status).toBe(429);
     expect(limited.body).toEqual({ error: { message: 'Too many messages. Please try again later.' } });
+    expect(limited.headers['ratelimit-limit']).toBe('5');
   });
 });
 

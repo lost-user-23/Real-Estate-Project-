@@ -140,15 +140,16 @@ describe('city matching on cityLower', () => {
     }
   });
 
-  it('treats regex characters in city literally and ignores array input safely', async () => {
+  it('treats regex characters in city literally and rejects array input with 400', async () => {
     await createProperty({ city: 'New Delhi' });
 
     const dot = await request(app).get('/api/v1/properties').query({ city: '.*' });
     const arr = await request(app).get('/api/v1/properties?city=a&city=b');
 
     expect(dot.body.properties).toEqual([]);
-    expect(arr.status).toBe(200);
-    expect(arr.body.properties).toEqual([]);
+    // A repeated ?city= used to give a silent empty 200; it is a client error.
+    expect(arr.status).toBe(400);
+    expect(arr.body.error.message).toBe('Validation failed');
   });
 
   it('matches padded input on featured and builders', async () => {

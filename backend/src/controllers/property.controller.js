@@ -5,7 +5,7 @@ const propertyService = require('../services/property.service');
 const { BULK_UPDATABLE_FIELDS } = propertyService;
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
-const { parseOptionalCity } = require('../utils/queryParams');
+const { parseOptionalCity, parseOptionalText } = require('../utils/queryParams');
 const { isOwnCloudinaryImageUrl } = require('../services/cloudinaryAssets.service');
 const { serializeProperty,serializeProperties } = require('../utils/serializers/property.serializer');
 
@@ -212,8 +212,10 @@ function parseListFilters(query) {
     }
   }
 
-  if (query.city != null) filters.city = query.city;
-  if (query.locality != null) filters.locality = query.locality;
+  const city = parseOptionalText(query, 'city', errors);
+  if (city !== undefined) filters.city = city;
+  const locality = parseOptionalText(query, 'locality', errors);
+  if (locality !== undefined) filters.locality = locality;
 
   if (query.q != null) {
     const q = typeof query.q === 'string' ? query.q.trim() : null;

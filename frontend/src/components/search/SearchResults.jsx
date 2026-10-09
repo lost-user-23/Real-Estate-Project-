@@ -9,6 +9,7 @@ import { formatPrice } from "@/lib/format";
 import { PropertyCard } from "@/components/home/PropertyCard";
 import { Container } from "@/components/ui/Container";
 import { SearchFilters, normalizeKeyword, parseBhkParam } from "@/components/search/SearchFilters";
+import { lastPageRedirect } from "@/lib/pagination.mjs";
 
 const PAGE_SIZE = 12;
 const SORT_OPTIONS = [
@@ -77,6 +78,16 @@ export function SearchResults() {
 
     return () => controller.abort();
   }, [queryString, retryCount, requestKey]);
+
+  // A page past the end (old link, or filters that shrank the results) moves to the
+  // last page instead of showing an empty state while results exist.
+  const redirectPage = lastPageRedirect(page, visibleState.status === "success" ? visibleState.meta : null);
+  useEffect(() => {
+    if (!redirectPage) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", String(redirectPage));
+    router.replace(`/search?${params.toString()}`);
+  }, [redirectPage, router, searchParams]);
 
   const pageHref = (nextPage) => {
     const params = new URLSearchParams(searchParams.toString());

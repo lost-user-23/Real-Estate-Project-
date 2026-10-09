@@ -492,6 +492,15 @@ describe('GET /api/v1/properties', () => {
       expect((await get({ q: 'x'.repeat(100) })).status).toBe(200);
     });
 
+    it('rejects a repeated locality or city with 400 instead of failing or silently matching nothing', async () => {
+      for (const query of ['locality=a&locality=b', 'city=a&city=b']) {
+        const response = await request(app).get(`/api/v1/properties?${query}`);
+        expect(response.status).toBe(400);
+        expect(response.body.error.message).toBe('Validation failed');
+        expect(response.body.error.details.length).toBeGreaterThan(0);
+      }
+    });
+
     it('never returns drafts or archived listings for a matching keyword or bhk', async () => {
       const { user } = await registerUser();
       await createProperty({ ownerId: user.id, slug: 'pub', title: 'Match me', bhk: 2 });

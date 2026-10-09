@@ -3,6 +3,7 @@ process.env.CLOUDINARY_CLOUD_NAME = 'demo';
 process.env.CLOUDINARY_API_KEY = '123456789012345';
 process.env.CLOUDINARY_API_SECRET = 'test-secret';
 process.env.CLOUDINARY_FOLDER = 'property-images';
+const { Buffer } = require('node:buffer');
 const { tokenFromResponse, registerVerified } = require('./helpers/auth');
 
 const request = require('supertest');
