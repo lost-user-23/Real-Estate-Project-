@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { gaCookieNames } from "@/lib/analyticsLocation.mjs";
 
 // Analytics is opt-in: nothing loads or is sent until the visitor accepts.
 // "Got it" from the old banner was an acknowledgement, not consent, so its key
@@ -31,6 +32,23 @@ export function setStoredConsent(value) {
     // storage blocked: the choice only lasts for this page view
   }
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: value }));
+}
+
+// Takes consent back after Accept: forgets the choice, switches GA off for this
+// page, deletes its cookies and reloads so gtag.js is gone. The banner then asks
+// again.
+export function withdrawConsent() {
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // storage blocked: nothing was persisted anyway
+  }
+  if (GA_MEASUREMENT_ID) window[`ga-disable-${GA_MEASUREMENT_ID}`] = true;
+  for (const name of gaCookieNames(document.cookie)) {
+    document.cookie = `${name}=; Max-Age=0; path=/`;
+    document.cookie = `${name}=; Max-Age=0; path=/; domain=${window.location.hostname}`;
+  }
+  window.location.reload();
 }
 
 export function hasAnalyticsConsent() {

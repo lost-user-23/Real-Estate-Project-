@@ -75,5 +75,6 @@ Replace `$API` and `$APP` with the deployed API and frontend origins.
 - Analytics is opt-in. With `NEXT_PUBLIC_GA_MEASUREMENT_ID` empty, the banner, the GA script and all events are off.
 - With an ID set, the banner appears on every page until the visitor chooses. Nothing loads and `trackEvent` sends nothing until they click Accept. Decline stores the choice and keeps everything off; the banner does not return.
 - The choice is stored in `localStorage` as `homenest_analytics_consent` (`granted` or `denied`). Clearing site data asks again. The older "Got it" flag does not count as consent.
-- Events never include the search keyword, emails or phone numbers. `trackEvent` strips those keys even if a caller passes them.
+- Events never include the search keyword, emails or phone numbers. `trackEvent` strips those keys even if a caller passes them. The page_view is sent by `AnalyticsLoader` with `page_location` set to the origin plus the path only, so `?q=` and other search parameters never reach GA. In GA4, turn off Enhanced measurement "Page changes based on browser history events" so GA does not send its own page_view with the full URL.
+- The footer "Manage consent" link withdraws consent: it forgets the choice, deletes the GA cookies and reloads, and the banner asks again.
 - Verify: set a test ID in `frontend/.env.local`, restart `npm run dev`, click Accept, and look for `collect?v=2` requests in the Network tab (and the events in GA DebugView). After Decline, or with the ID empty, no `googletagmanager.com` or `collect` request should appear.

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ManageConsentLink } from "@/components/ManageConsentLink";
 import { Container } from "@/components/ui/Container";
 import { PostPropertyButton } from "@/components/PostPropertyButton";
 
@@ -90,6 +91,7 @@ export function Footer() {
           <p className="text-xs text-text-muted">
             &copy; {new Date().getFullYear()} HomeNest. All rights reserved.
           </p>
+          <ManageConsentLink />
           <div className="flex items-center gap-3">
             {SOCIAL_LINKS.map((social) => (
               <a
