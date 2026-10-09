@@ -5,6 +5,9 @@ const { Buffer } = require('buffer');
 // user to read the email and type the code.
 const RESET_OTP_TTL_MS = 10 * 60 * 1000;
 const RESET_TOKEN_TTL_MS = 5 * 60 * 1000;
+// Audience claim of the reset JWT. It keeps that token from being accepted as
+// an access token (see verifyToken in auth.service).
+const RESET_TOKEN_AUDIENCE = 'password-reset';
 
 // Maximum wrong attempts before the OTP is locked out.
 const MAX_OTP_ATTEMPTS = 5;
@@ -47,6 +50,7 @@ function generateResetOtp(secret) {
 module.exports = {
   RESET_OTP_TTL_MS,
   RESET_TOKEN_TTL_MS,
+  RESET_TOKEN_AUDIENCE,
   MAX_OTP_ATTEMPTS,
   generateResetOtp,
   hashResetOtp,

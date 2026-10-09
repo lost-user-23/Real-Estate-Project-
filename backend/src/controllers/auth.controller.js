@@ -14,6 +14,7 @@ const {
   verifyResetOtp: verifyResetOtpHash,
   MAX_OTP_ATTEMPTS,
   RESET_TOKEN_TTL_MS,
+  RESET_TOKEN_AUDIENCE,
 } = require("../utils/resetOtp");
 const {
   hashPassword,
@@ -640,7 +641,15 @@ async function forgotPassword(req, res, next) {
       const user = await User.findOne({ email: normalizedEmail })
         .select("+resetOtpSentAt +resetOtpHash");
       // Only verified, password-based accounts can reset.
-      if (!user || !user.emailVerified) return;
+      if (!user) return;
+      if (!user.emailVerified) {
+        // Development aid only (the response is identical either way). No address
+        // is logged.
+        if (config.env === "development") {
+          console.debug("[auth] password reset skipped: account is not verified");
+        }
+        return;
+      }
 
       // One-minute per-account cooldown: prevents spamming the inbox.
       const now = new Date();
@@ -700,24 +709,28 @@ async function verifyResetOtp(req, res, next) {
       throw resetOtpError("expired OTP");
     }
 
-    // Too many attempts? Invalidate the OTP entirely — requesting a new code
-    // issues a fresh attempts counter, so this limit cannot be bypassed by
-    // requesting another code (the old one is overwritten).
-    if (user.resetOtpAttempts >= MAX_OTP_ATTEMPTS) {
-      await User.updateOne({ _id: user._id }, { $unset: RESET_OTP_FIELDS });
+    // Spend one attempt BEFORE comparing, in a single conditional update, so
+    // parallel guesses cannot all be evaluated against the same counter. Once the
+    // counter reaches the cap the update matches nothing, the OTP is discarded,
+    // and requesting a new code is the only way forward (it resets the counter).
+    const spent = await User.findOneAndUpdate(
+      {
+        _id: user._id,
+        resetOtpHash: user.resetOtpHash,
+        resetOtpExpiry: { $gt: new Date() },
+        resetOtpAttempts: { $lt: MAX_OTP_ATTEMPTS },
+      },
+      { $inc: { resetOtpAttempts: 1 } }
+    );
+    if (!spent) {
+      await User.updateOne(
+        { _id: user._id, resetOtpHash: user.resetOtpHash, resetOtpAttempts: { $gte: MAX_OTP_ATTEMPTS } },
+        { $unset: RESET_OTP_FIELDS }
+      );
       throw resetOtpError("attempt limit exceeded");
     }
 
     if (!verifyResetOtpHash(code, user.resetOtpHash, config.jwtSecret)) {
-      await User.updateOne(
-        {
-          _id: user._id,
-          resetOtpHash: user.resetOtpHash,
-          resetOtpExpiry: { $gt: new Date() },
-          resetOtpAttempts: { $lt: MAX_OTP_ATTEMPTS },
-        },
-        { $inc: { resetOtpAttempts: 1 } }
-      );
       throw resetOtpError("incorrect code");
     }
 
@@ -727,14 +740,14 @@ async function verifyResetOtp(req, res, next) {
     const resetToken = jwt.sign(
       { id: user._id, purpose: "password-reset", jti },
       config.jwtSecret,
-      { expiresIn: Math.floor(RESET_TOKEN_TTL_MS / 1000) }
+      { expiresIn: Math.floor(RESET_TOKEN_TTL_MS / 1000), audience: RESET_TOKEN_AUDIENCE }
     );
     const claimed = await User.updateOne(
       {
         _id: user._id,
         resetOtpHash: user.resetOtpHash,
         resetOtpExpiry: { $gt: now },
-        resetOtpAttempts: { $lt: MAX_OTP_ATTEMPTS },
+        resetOtpAttempts: { $lte: MAX_OTP_ATTEMPTS },
       },
       {
         $set: {
@@ -770,7 +783,7 @@ async function resetPassword(req, res, next) {
     const jwt = require("jsonwebtoken");
     let decoded;
     try {
-      decoded = jwt.verify(resetToken, config.jwtSecret);
+      decoded = jwt.verify(resetToken, config.jwtSecret, { audience: RESET_TOKEN_AUDIENCE });
     } catch {
       throw new AppError("Reset token is invalid or has expired", 400);
     }

@@ -10,6 +10,13 @@ function getTransporter() {
       host,
       port,
       secure: port === 465,
+      // Without these a blocked or silent SMTP port stalls the background send
+      // for about two minutes before failing. Port 587 must upgrade to TLS
+      // (STARTTLS) rather than fall back to plain text.
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 20_000,
+      ...(port === 587 ? { requireTLS: true } : {}),
       ...(user ? { auth: { user, pass } } : {}),
     });
   }
@@ -24,8 +31,11 @@ async function deliver({ to, subject, text, html }) {
     if (config.env === 'production') {
       throw new Error('SMTP is not configured');
     }
-    if (config.env !== 'test') {
+    // The body holds codes and links, so it is printed in development only.
+    if (config.env === 'development') {
       console.log(`[mailer] SMTP not configured; would send to ${to}\n  Subject: ${subject}\n  ${text}`);
+    } else if (config.env !== 'test') {
+      console.log('[mailer] SMTP not configured; email not sent');
     }
     return;
   }

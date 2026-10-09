@@ -34,7 +34,7 @@ export function ForgotPasswordContent() {
     try {
       await api.post("/api/auth/forgot-password", { email }, { auth: false });
       setStep("verify");
-      setInfoMessage("If an account exists for that email, we've sent a 6-digit code. Check your inbox.");
+      setInfoMessage("If an account exists for that email, a 6-digit code will arrive shortly. Check your inbox.");
     } catch (err) {
       setError(err?.message || "Failed to send reset code. Please try again.");
     } finally {
@@ -68,7 +68,7 @@ export function ForgotPasswordContent() {
     setSubmitting(true);
     try {
       await api.post("/api/auth/forgot-password", { email }, { auth: false });
-      setInfoMessage("A new verification code has been sent if the email is registered.");
+      setInfoMessage("If an account exists for that email, a new code will arrive shortly.");
     } catch (err) {
       setError(err?.message || "Could not resend code right now.");
     } finally {
@@ -102,12 +102,13 @@ export function ForgotPasswordContent() {
           <>
             <h1 className="text-xl font-bold text-text">Forgot your password?</h1>
             <p className="mt-2 text-sm text-text-muted">
-              Enter your account's email address and we'll send you a 6-digit verification code.
+              Enter your account&apos;s email address. If an account exists, we&apos;ll send a 6-digit verification code.
             </p>
             <form onSubmit={handleRequestOtp} className="mt-6 flex flex-col gap-4 text-left">
               <div>
-                <label className="text-xs font-medium text-text-muted">Email address</label>
+                <label htmlFor="fp-email" className="text-xs font-medium text-text-muted">Email address</label>
                 <input
+                  id="fp-email"
                   required
                   type="email"
                   placeholder="you@example.com"
@@ -128,13 +129,14 @@ export function ForgotPasswordContent() {
           <>
             <h1 className="text-xl font-bold text-text">Enter verification code</h1>
             <p className="mt-2 text-sm text-text-muted">
-              We sent a 6-digit code to <span className="font-semibold text-text">{email}</span>.
+              If an account exists for <span className="font-semibold text-text">{email}</span>, a 6-digit code is on its way.
             </p>
             {infoMessage ? <p className="mt-3 text-xs text-primary bg-primary/10 p-2.5 rounded-lg">{infoMessage}</p> : null}
             <form onSubmit={handleVerifyOtp} className="mt-6 flex flex-col gap-4 text-left">
               <div>
-                <label className="text-xs font-medium text-text-muted">6-digit code</label>
+                <label htmlFor="fp-code" className="text-xs font-medium text-text-muted">6-digit code</label>
                 <input
+                  id="fp-code"
                   required
                   type="text"
                   maxLength={6}
@@ -178,8 +180,9 @@ export function ForgotPasswordContent() {
             </p>
             <form onSubmit={handleResetPassword} className="mt-6 flex flex-col gap-4 text-left">
               <div>
-                <label className="text-xs font-medium text-text-muted">New password</label>
+                <label htmlFor="fp-new-password" className="text-xs font-medium text-text-muted">New password</label>
                 <input
+                  id="fp-new-password"
                   required
                   type="password"
                   minLength={MIN_PASSWORD_LENGTH}
@@ -191,8 +194,9 @@ export function ForgotPasswordContent() {
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-text-muted">Confirm new password</label>
+                <label htmlFor="fp-confirm-password" className="text-xs font-medium text-text-muted">Confirm new password</label>
                 <input
+                  id="fp-confirm-password"
                   required
                   type="password"
                   minLength={MIN_PASSWORD_LENGTH}

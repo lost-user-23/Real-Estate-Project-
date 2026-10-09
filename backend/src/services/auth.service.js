@@ -38,8 +38,14 @@ function generateToken(user) {
   );
 }
 
+// Access tokens only: a token with an audience or a purpose (the password-reset
+// token) is signed with the same secret but must never authenticate a request.
 function verifyToken(token) {
-  return jwt.verify(token, JWT_SECRET);
+  const decoded = jwt.verify(token, JWT_SECRET);
+  if (decoded.aud || decoded.purpose) {
+    throw new jwt.JsonWebTokenError('not an access token');
+  }
+  return decoded;
 }
 
 // True when the token predates the user's last password change. Tokens are

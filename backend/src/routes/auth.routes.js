@@ -1,6 +1,7 @@
 const express =  require('express');
 const rateLimit = require('express-rate-limit');
 const AppError = require('../utils/AppError');
+const config = require('../config');
 const router = express.Router();
 const {protect} = require("../middleware/auth.middleware");
 const {
@@ -60,7 +61,8 @@ const forgotPasswordLimiter = rateLimit({
   limit: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => process.env.NODE_ENV === 'test',
+  // 5 per hour is easy to exhaust while developing; production keeps it.
+  skip: () => config.env === 'test' || config.env === 'development',
   handler: (req, res, next, options) => next(new AppError('Too many requests, please try again later', options.statusCode)),
 });
 

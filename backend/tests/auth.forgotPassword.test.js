@@ -464,3 +464,62 @@ describe('full forgot-password flow', () => {
     expect(loginRes.body.user.email).toBe('reset@example.com');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Hardening: concurrency and token confusion
+// ---------------------------------------------------------------------------
+describe('password reset hardening', () => {
+  async function requestOtpForUser() {
+    await registerVerified(app, creds);
+    await request(app).post('/api/auth/forgot-password').send({ email: creds.email });
+    await waitFor(() => mailer.sendPasswordResetEmail.mock.calls.length === 1);
+    return otpFromMailer();
+  }
+
+  it('evaluates at most MAX_OTP_ATTEMPTS guesses when they arrive in parallel', async () => {
+    const otp = await requestOtpForUser();
+    const wrong = otp === '000000' ? '000001' : '000000';
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const responses = await Promise.all(
+      Array.from({ length: 60 }, () =>
+        request(app).post('/api/auth/verify-reset-otp').send({ email: creds.email, code: wrong })
+      )
+    );
+
+    expect(responses.every((res) => res.status === 400)).toBe(true);
+    const evaluated = warnSpy.mock.calls.filter(([msg]) => String(msg).includes('incorrect code')).length;
+    expect(evaluated).toBeLessThanOrEqual(5);
+    // Locked out: the right code no longer works.
+    const late = await request(app).post('/api/auth/verify-reset-otp').send({ email: creds.email, code: otp });
+    expect(late.status).toBe(400);
+  });
+
+  it('a reset token cannot be used as an access token', async () => {
+    const otp = await requestOtpForUser();
+    const verified = await request(app)
+      .post('/api/auth/verify-reset-otp')
+      .send({ email: creds.email, code: otp });
+    const me = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${verified.body.resetToken}`);
+    expect(me.status).toBe(401);
+  });
+
+  it('logs a debug line, with no email address, when a reset is skipped for an unverified account', async () => {
+    const logSpy = jest.spyOn(console, 'debug').mockImplementation(() => {});
+    const previous = config.env;
+    config.env = 'development';
+    try {
+      await User.create({ email: 'unverified@example.com', name: 'U', emailVerified: false });
+      const res = await request(app).post('/api/auth/forgot-password').send({ email: 'unverified@example.com' });
+      expect(res.status).toBe(202);
+      await waitFor(() => logSpy.mock.calls.length > 0);
+      expect(String(logSpy.mock.calls[0][0])).toContain('not verified');
+      expect(JSON.stringify(logSpy.mock.calls)).not.toContain('unverified@example.com');
+      expect(mailer.sendPasswordResetEmail).not.toHaveBeenCalled();
+    } finally {
+      config.env = previous;
+    }
+  });
+});
