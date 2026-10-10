@@ -63,7 +63,17 @@ const projectSchema = new Schema(
 
 projectSchema.index({ status: 1, cityLower: 1, publishedAt: -1 });
 projectSchema.index({ publishedAt: -1 });
-projectSchema.index({ status: 1, developer: 1, publishedAt: -1, _id: -1 });
+
+// Builder detail lookups run with a case-insensitive collation (see
+// builder.service.js), so this index must carry the same collation to be used.
+// The explicit name avoids a name clash with the old, non-collated index.
+projectSchema.index(
+  { status: 1, developer: 1, publishedAt: -1, _id: -1 },
+  {
+    name: 'status_developer_ci_publishedAt_id',
+    collation: { locale: 'en', strength: 2 },
+  }
+);
 
 projectSchema.plugin(normalizedLocationPlugin);
 
