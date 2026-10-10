@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { api } from "@/lib/api";
@@ -6,6 +5,7 @@ import { normalizeArticle } from "@/lib/dataSource";
 import { formatDate } from "@/lib/format";
 import { PageShell } from "@/components/layout/PageShell";
 import { Container } from "@/components/ui/Container";
+import { SafeImage } from "@/components/ui/SafeImage";
 
 // Rendered on demand so publishing or editing in the admin shows up immediately.
 export const dynamic = "force-dynamic";
@@ -51,7 +51,7 @@ export default async function InsightArticlePage({ params }) {
           <p className="mt-3 text-lg text-text-muted">{article.excerpt}</p>
 
           <div className="relative mt-6 aspect-video w-full overflow-hidden rounded-2xl bg-bg">
-            <Image
+            <SafeImage
               src={article.image.src}
               alt={article.image.alt}
               fill

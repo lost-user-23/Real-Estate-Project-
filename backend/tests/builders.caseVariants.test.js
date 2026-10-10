@@ -1,6 +1,10 @@
 // tests/builders.caseVariants.test.js
+process.env.MONGODB_DB_NAME = 'homenest_test_builder_case_variants';
+
+const mongoose = require('mongoose');
 const Project = require('../src/models/Project');
 const { listBuilders, getBuilderBySlug } = require('../src/services/builder.service');
+const { connectToDatabase, disconnectFromDatabase } = require('../src/db/connection');
 
 function project(developer, overrides = {}) {
   return {
@@ -13,6 +17,15 @@ function project(developer, overrides = {}) {
     ...overrides,
   };
 }
+
+beforeAll(async () => {
+  await connectToDatabase();
+});
+
+afterAll(async () => {
+  await mongoose.connection.dropDatabase();
+  await disconnectFromDatabase();
+});
 
 describe('builder case variants', () => {
   beforeEach(async () => {

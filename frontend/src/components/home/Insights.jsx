@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { fetchInsights } from "@/lib/dataSource";
@@ -9,6 +8,7 @@ import { useSectionData } from "@/lib/useSectionData";
 import { formatDate } from "@/lib/format";
 import { Section } from "@/components/ui/Section";
 import { SkeletonGrid } from "@/components/ui/SkeletonGrid";
+import { SafeImage } from "@/components/ui/SafeImage";
 import { SectionError } from "@/components/ui/SectionError";
 
 export function Insights() {
@@ -32,7 +32,7 @@ export function Insights() {
               className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-surface transition-shadow hover:shadow-md"
             >
               <div className="relative aspect-video w-full overflow-hidden bg-bg">
-                <Image
+                <SafeImage
                   src={article.image.src}
                   alt={article.image.alt}
                   fill

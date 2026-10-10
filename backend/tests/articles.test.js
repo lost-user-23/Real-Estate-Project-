@@ -1,5 +1,7 @@
 process.env.MONGODB_DB_NAME = 'homenest_test_articles';
+process.env.CLOUDINARY_CLOUD_NAME = 'demo';
 const { tokenFromResponse, registerVerified } = require('./helpers/auth');
+const { ownUrl, invalidImageUrls } = require('./helpers/imageUrls');
 
 const request = require('supertest');
 const mongoose = require('mongoose');
@@ -161,5 +163,68 @@ describe('admin articles', () => {
       .delete(`/api/v1/admin/articles/${article._id}`)
       .set(headers);
     expect(deletion.status).toBe(204);
+  });
+
+  describe('imageUrl', () => {
+    it.each(invalidImageUrls)('rejects %s on create and on PATCH', async (label, imageUrl) => {
+      const token = await createAdmin();
+      const headers = { Authorization: `Bearer ${token}` };
+      const article = await createArticle({ imageUrl: ownUrl });
+
+      const created = await request(app)
+        .post('/api/v1/admin/articles')
+        .set(headers)
+        .send({ title: 'Bad image article', imageUrl });
+      expect(created.status).toBe(400);
+      expect(created.body.error.message).toBe('Validation failed');
+      expect(created.body.error.details).toContain('imageUrl must be a valid Cloudinary image URL');
+      expect(await Article.countDocuments()).toBe(1);
+
+      const patched = await request(app)
+        .patch(`/api/v1/admin/articles/${article._id}`)
+        .set(headers)
+        .send({ title: 'Changed title', imageUrl });
+      expect(patched.status).toBe(400);
+      expect(patched.body.error.message).toBe('Validation failed');
+      expect(patched.body.error.details).toContain('imageUrl must be a valid Cloudinary image URL');
+
+      const stored = await Article.findById(article._id);
+      expect(stored.imageUrl).toBe(ownUrl);
+      expect(stored.title).toBe('Test Article');
+    });
+
+    it('accepts an own-cloud URL on create and PATCH, and null to clear it', async () => {
+      const token = await createAdmin();
+      const headers = { Authorization: `Bearer ${token}` };
+
+      const created = await request(app)
+        .post('/api/v1/admin/articles')
+        .set(headers)
+        .send({ title: 'Good image article', imageUrl: ownUrl });
+      expect(created.status).toBe(201);
+      expect(created.body.article.imageUrl).toBe(ownUrl);
+
+      const id = created.body.article._id;
+      const other = `${ownUrl}?v=2`;
+      const patched = await request(app).patch(`/api/v1/admin/articles/${id}`).set(headers).send({ imageUrl: other });
+      expect(patched.status).toBe(200);
+      expect((await Article.findById(id)).imageUrl).toBe(other);
+
+      const cleared = await request(app).patch(`/api/v1/admin/articles/${id}`).set(headers).send({ imageUrl: null });
+      expect(cleared.status).toBe(200);
+      expect((await Article.findById(id)).imageUrl).toBeNull();
+    });
+
+    it('leaves the stored imageUrl alone when a PATCH omits it', async () => {
+      const token = await createAdmin();
+      const article = await createArticle({ imageUrl: ownUrl });
+
+      const patched = await request(app)
+        .patch(`/api/v1/admin/articles/${article._id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ excerpt: 'Only the excerpt' });
+      expect(patched.status).toBe(200);
+      expect((await Article.findById(article._id)).imageUrl).toBe(ownUrl);
+    });
   });
 });

@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { fetchPopularLocations } from "@/lib/dataSource";
@@ -9,6 +8,7 @@ import { useSectionData } from "@/lib/useSectionData";
 import { trackEvent } from "@/lib/trackEvent";
 import { Section } from "@/components/ui/Section";
 import { SkeletonGrid } from "@/components/ui/SkeletonGrid";
+import { SafeImage } from "@/components/ui/SafeImage";
 import { SectionError } from "@/components/ui/SectionError";
 
 export function PopularLocations() {
@@ -32,7 +32,7 @@ export function PopularLocations() {
               onClick={() => trackEvent("location_tile_click", { city: location.city })}
               className="group relative aspect-4/3 overflow-hidden rounded-2xl"
             >
-              <Image
+              <SafeImage
                 src={location.image.src}
                 alt={location.image.alt}
                 fill

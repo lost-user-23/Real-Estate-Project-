@@ -5,6 +5,7 @@ import { useAdminStore } from "@/lib/admin-store";
 import { AmenityPicker } from "@/components/AmenityPicker";
 import { PROPERTY_TYPE_LABELS, PROPERTY_TYPE_OPTIONS_BY_INTENT } from "@/lib/propertyTypes";
 import { AdminField, adminFieldInputClass } from "@/components/admin/AdminField";
+import { descriptionError, fieldErrorsFromApiError, localityError, phoneError, titleError } from "@/lib/propertyValidation";
 
 const INITIAL = {
   title: "",
@@ -29,28 +30,47 @@ export function AddListingForm({ onDone }) {
   const [files, setFiles] = useState([]);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [touched, setTouched] = useState({});
+  const [attempted, setAttempted] = useState(false);
+  const [serverErrors, setServerErrors] = useState({});
 
-  const update = (patch) => setForm((prev) => ({ ...prev, ...patch }));
+  const update = (patch) => {
+    setForm((prev) => ({ ...prev, ...patch }));
+    setServerErrors({});
+  };
+
+  const errors = {
+    title: titleError(form.title),
+    description: descriptionError(form.description),
+    locality: localityError(form.locality),
+    // Optional: a blank number is left out of the payload instead of validated.
+    contactNumber: form.contactNumber.trim() ? phoneError(form.contactNumber) : null,
+  };
+  const touch = (field) => setTouched((prev) => ({ ...prev, [field]: true }));
+  const fieldError = (field) => ((attempted || touched[field]) && errors[field]) || serverErrors[field] || null;
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    setAttempted(true);
+    if (Object.values(errors).some(Boolean)) return;
     if (files.length < MIN_PHOTOS) {
       setError(`Please add at least ${MIN_PHOTOS} photos.`);
       return;
     }
     setError("");
+    setServerErrors({});
     setSubmitting(true);
     try {
       const { publishError } = await addProperty({
-        title: form.title,
+        title: form.title.trim(),
         intent: form.intent,
         propertyType: form.propertyType,
         bhk: form.bhk ? Number(form.bhk) : null,
         priceInRupees: Number(form.price),
         areaSqft: Number(form.areaSqft),
         city: form.city,
-        locality: form.locality.trim() || null,
-        description: form.description,
+        locality: form.locality.trim() || undefined,
+        description: form.description.trim(),
         contactNumber: form.contactNumber.trim() || undefined,
         amenities: form.amenities,
         status: form.status,
@@ -61,7 +81,10 @@ export function AddListingForm({ onDone }) {
       }
       onDone();
     } catch (e) {
-      setError(e?.message || "Could not create the listing. Please try again.");
+      const fieldErrors = fieldErrorsFromApiError(e);
+      setServerErrors(fieldErrors);
+      // Field-level messages show next to their inputs; keep the banner for anything else.
+      setError(Object.keys(fieldErrors).length > 0 ? "" : e?.message || "Could not create the listing. Please try again.");
       setSubmitting(false);
     }
   };
@@ -76,8 +99,10 @@ export function AddListingForm({ onDone }) {
           required
           value={form.title}
           onChange={(e) => update({ title: e.target.value })}
+          onBlur={() => touch("title")}
           className={adminFieldInputClass}
         />
+        {fieldError("title") ? <p role="alert" className="mt-1 text-xs text-danger">{fieldError("title")}</p> : null}
       </AdminField>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -140,8 +165,10 @@ export function AddListingForm({ onDone }) {
           <input
             value={form.locality}
             onChange={(e) => update({ locality: e.target.value })}
+            onBlur={() => touch("locality")}
             className={adminFieldInputClass}
           />
+          {fieldError("locality") ? <p role="alert" className="mt-1 text-xs text-danger">{fieldError("locality")}</p> : null}
         </AdminField>
         <AdminField label={form.intent === "rent" ? "Monthly rent (₹)" : "Price (₹)"} required>
           <input
@@ -166,15 +193,19 @@ export function AddListingForm({ onDone }) {
           rows={3}
           value={form.description}
           onChange={(e) => update({ description: e.target.value })}
+          onBlur={() => touch("description")}
           className={adminFieldInputClass}
         />
+        {fieldError("description") ? <p role="alert" className="mt-1 text-xs text-danger">{fieldError("description")}</p> : null}
       </AdminField>
       <AdminField label="Contact number">
         <input
           value={form.contactNumber}
           onChange={(e) => update({ contactNumber: e.target.value })}
+          onBlur={() => touch("contactNumber")}
           className={adminFieldInputClass}
         />
+        {fieldError("contactNumber") ? <p role="alert" className="mt-1 text-xs text-danger">{fieldError("contactNumber")}</p> : null}
       </AdminField>
       <AdminField label={`Photos (${files.length} selected, minimum ${MIN_PHOTOS})`} required>
         <input

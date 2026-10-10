@@ -15,7 +15,7 @@ export function useFormAction() {
       return { ok: true, result };
     } catch (error) {
       setState({ status: "error", message: error?.message || "Something went wrong" });
-      return { ok: false };
+      return { ok: false, error };
     }
   }, []);
 

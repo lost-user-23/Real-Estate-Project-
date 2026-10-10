@@ -1,5 +1,7 @@
 process.env.MONGODB_DB_NAME = 'homenest_test_location_admin';
+process.env.CLOUDINARY_CLOUD_NAME = 'demo';
 const { tokenFromResponse, registerVerified } = require('./helpers/auth');
+const { ownUrl, invalidImageUrls } = require('./helpers/imageUrls');
 
 const request = require('supertest');
 const mongoose = require('mongoose');
@@ -112,5 +114,52 @@ describe('GET /api/v1/admin/locations', () => {
 
     const publicPopular = await request(app).get('/api/v1/locations/popular');
     expect(publicPopular.body.locations).toEqual([]);
+  });
+});
+
+describe('PATCH /api/v1/admin/locations/:id imageUrl', () => {
+  it.each(invalidImageUrls)('rejects %s and leaves the location unchanged', async (label, imageUrl) => {
+    const token = await createAdminToken();
+    const location = await Location.create({ city: 'Imageville', imageUrl: ownUrl });
+
+    const response = await request(app)
+      .patch(`/api/v1/admin/locations/${location._id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ popular: true, imageUrl });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.message).toBe('Validation failed');
+    expect(response.body.error.details).toContain('imageUrl must be a valid Cloudinary image URL');
+
+    const stored = await Location.findById(location._id);
+    expect(stored.imageUrl).toBe(ownUrl);
+    expect(stored.popular).toBe(false);
+  });
+
+  it('accepts an own-cloud URL, and null to clear it', async () => {
+    const token = await createAdminToken();
+    const headers = { Authorization: `Bearer ${token}` };
+    const location = await Location.create({ city: 'Imageville' });
+    const url = `/api/v1/admin/locations/${location._id}`;
+
+    const set = await request(app).patch(url).set(headers).send({ imageUrl: ownUrl });
+    expect(set.status).toBe(200);
+    expect(set.body.location.imageUrl).toBe(ownUrl);
+
+    const cleared = await request(app).patch(url).set(headers).send({ imageUrl: null });
+    expect(cleared.status).toBe(200);
+    expect((await Location.findById(location._id)).imageUrl).toBeNull();
+  });
+
+  it('leaves the stored imageUrl alone when the PATCH omits it', async () => {
+    const token = await createAdminToken();
+    const location = await Location.create({ city: 'Imageville', imageUrl: ownUrl });
+
+    const response = await request(app)
+      .patch(`/api/v1/admin/locations/${location._id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ popular: true });
+    expect(response.status).toBe(200);
+    expect((await Location.findById(location._id)).imageUrl).toBe(ownUrl);
   });
 });

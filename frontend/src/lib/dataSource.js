@@ -1,18 +1,16 @@
 import { api } from "@/lib/api";
 import { BUILDER_LIST_LIMIT } from "@/lib/builderList.mjs";
+import { primaryImage, safeImages } from "@/lib/propertyImages.mjs";
+import { safeImageSrc } from "@/lib/safeImageSrc.mjs";
 
 const MIN_ACTIVE_LISTINGS_FOR_POPULAR = 5;
-
-function placeholderImage(seed) {
-  return `https://picsum.photos/seed/${encodeURIComponent(seed)}/800/600`;
-}
 
 export function normalizeArticle(article) {
   return {
     ...article,
     id: String(article.id ?? article._id),
     image: {
-      src: article.imageUrl || placeholderImage(article.slug),
+      src: safeImageSrc(article.imageUrl, article.slug),
       alt: article.imageAlt || article.title,
     },
   };
@@ -23,21 +21,19 @@ function normalizeProject(project) {
     ...project,
     id: String(project._id),
     image: {
-      src: project.imageUrl || placeholderImage(project._id),
+      src: safeImageSrc(project.imageUrl, project._id),
       alt: project.imageAlt || project.name,
     },
   };
 }
 
 export function normalizeProperty(property) {
-  const first = property.images?.[0];
+  const id = String(property.id ?? property._id);
   return {
     ...property,
-    id: String(property.id ?? property._id),
-    image: {
-      src: first?.url || placeholderImage(property.id),
-      alt: first?.alt || property.title,
-    },
+    id,
+    images: safeImages(property.images, id),
+    image: primaryImage(property, id),
   };
 }
 
@@ -65,7 +61,7 @@ export async function fetchPopularLocations(simulateError = false) {
     .map((location) => ({
       ...location,
       image: {
-        src: location.imageUrl || placeholderImage(location.city),
+        src: safeImageSrc(location.imageUrl, location.city),
         alt: location.imageAlt || location.city,
       },
     }));

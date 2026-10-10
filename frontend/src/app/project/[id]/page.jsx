@@ -1,11 +1,11 @@
 import { cache } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { api } from "@/lib/api";
 import { formatPrice } from "@/lib/format";
 import { PageShell } from "@/components/layout/PageShell";
 import { Container } from "@/components/ui/Container";
+import { SafeImage } from "@/components/ui/SafeImage";
 import { PostPropertyButton } from "@/components/PostPropertyButton";
 
 const getProject = cache(async (id) => {
@@ -52,7 +52,7 @@ export default async function ProjectDetailPage({ params }) {
             <div className="lg:col-span-2">
               <div className="relative aspect-4/3 w-full overflow-hidden rounded-2xl bg-bg sm:aspect-16/9">
                 {project.imageUrl ? (
-                  <Image
+                  <SafeImage
                     src={project.imageUrl}
                     alt={project.imageAlt || project.name}
                     fill

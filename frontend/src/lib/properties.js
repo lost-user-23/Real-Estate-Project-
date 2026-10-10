@@ -1,11 +1,12 @@
 import {api} from "@/lib/api";
+import { primaryImage } from "@/lib/propertyImages.mjs";
 
 export function toAdminProperty(p) {
-  const first = p.images?.[0];
+  const id = p.id ?? p._id;
   return {
     ...p,
-    id: p.id ?? p._id,
-    image: first ? { src: first.url, alt: first.alt || p.title } : null,
+    id,
+    image: p.images?.[0] ? primaryImage(p, id) : null,
     featuredRank: p.featuredRank ?? null,
   };
 }

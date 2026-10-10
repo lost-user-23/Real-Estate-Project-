@@ -5,16 +5,24 @@ const propertyService = require('../services/property.service');
 const { BULK_UPDATABLE_FIELDS } = propertyService;
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
+const { MAX_FEATURED } = require('../config/constants');
 const { parseOptionalCity, parseOptionalText } = require('../utils/queryParams');
 const { isOwnCloudinaryImageUrl } = require('../services/cloudinaryAssets.service');
+const {
+  MIN_PROPERTY_IMAGES,
+  titleError,
+  descriptionError,
+  localityError,
+  phoneError,
+  photoCountError,
+  normalizeListingFields,
+} = require('../utils/propertyValidation');
 const { serializeProperty,serializeProperties } = require('../utils/serializers/property.serializer');
 
 const MAX_LIMIT = 50;
 const DEFAULT_LIMIT = 20;
 const MAX_KEYWORD_LENGTH = 100;
 const MAX_BHK = 20;
-const MAX_TITLE_LENGTH = 200;
-const MAX_DESCRIPTION_LENGTH = 2000;
 const MAX_PROPERTY_IMAGES = 20;
 const MAX_IMAGE_URL_LENGTH = 2048;
 const MAX_IMAGE_ALT_LENGTH = 300;
@@ -43,9 +51,8 @@ function validateImagesInput(images, minimumCount = 0) {
     errors.push('images must be an array');
     return errors;
   }
-  if (images.length < minimumCount) {
-    errors.push(`images must contain at least ${minimumCount} images`);
-  }
+  const countError = photoCountError(images.length, minimumCount);
+  if (countError) errors.push(countError);
   if (images.length > MAX_PROPERTY_IMAGES) {
     errors.push(`images must contain at most ${MAX_PROPERTY_IMAGES} images`);
   }
@@ -75,13 +82,25 @@ function validateImagesInput(images, minimumCount = 0) {
   return errors;
 }
 
+// Optional text fields shared by create and edit. Absent (undefined) is skipped;
+// a present null is an error, so only '' can clear a description.
+function pushTextFieldErrors(errors, body) {
+  for (const [field, check] of [['description', descriptionError], ['locality', localityError], ['contactNumber', phoneError]]) {
+    if (body[field] !== undefined) {
+      const error = check(body[field]);
+      if (error) errors.push(error);
+    }
+  }
+}
+
 function validateCreateInput(body) {
   const errors = [];
 
-  if (!isNonEmptyString(body.title)) {
+  if (body.title === undefined) {
     errors.push('title is required');
-  } else if (body.title.trim().length > MAX_TITLE_LENGTH) {
-    errors.push(`title must be at most ${MAX_TITLE_LENGTH} characters`);
+  } else {
+    const error = titleError(body.title);
+    if (error) errors.push(error);
   }
   if (!PROPERTY_INTENTS.includes(body.intent)) {
     errors.push(`intent must be one of: ${PROPERTY_INTENTS.join(', ')}`);
@@ -96,19 +115,7 @@ function validateCreateInput(body) {
   if (body.bhk != null && !isFiniteNonNegativeNumber(body.bhk)) {
     errors.push('bhk must be a non-negative number');
   }
-  if (body.locality != null && typeof body.locality !== 'string') {
-    errors.push('locality must be a string');
-  }
-  if (body.description != null) {
-    if (typeof body.description !== 'string') {
-      errors.push('description must be a string');
-    } else if (body.description.trim().length > MAX_DESCRIPTION_LENGTH) {
-      errors.push(`description must be at most ${MAX_DESCRIPTION_LENGTH} characters`);
-    }
-  }
-  if (body.contactNumber != null && typeof body.contactNumber !== 'string') {
-    errors.push('contactNumber must be a string');
-  }
+  pushTextFieldErrors(errors, body);
   if (body.amenities != null) {
     if (!Array.isArray(body.amenities) || !body.amenities.every((a) => typeof a === 'string')) {
       errors.push('amenities must be an array of strings');
@@ -142,14 +149,14 @@ function validateDetailFields(body) {
 
 const createProperty = asyncHandler(async (req, res) => {
   const body = req.body || {};
-  const errors = [...validateCreateInput(body), ...validateDetailFields(body), ...validateImagesInput(body.images, 5)];
+  const errors = [...validateCreateInput(body), ...validateDetailFields(body), ...validateImagesInput(body.images, MIN_PROPERTY_IMAGES)];
   if (errors.length > 0) {
     throw AppError.badRequest('Validation failed', errors);
   }
 
   const { property, images } = await propertyService.createProperty({
     ownerId: req.user._id,
-    input: body,
+    input: normalizeListingFields(body),
   });
 
   res.status(201).json({ property: serializeProperty(property, images, { includeOwnerFields: true }) });
@@ -295,7 +302,7 @@ const listProperties = asyncHandler(async (req, res) => {
   });
 });
 
-const FEATURED_DEFAULT_LIMIT = 8;
+const FEATURED_DEFAULT_LIMIT = MAX_FEATURED;
 
 function parseFeaturedQuery(query) {
   const errors = [];
@@ -411,12 +418,9 @@ const getPropertyContact = asyncHandler(async (req, res) => {
 function validateUpdateInput(body, isAdmin) {
   const errors = [];
 
-  if (body.title != null) {
-    if (!isNonEmptyString(body.title)) {
-      errors.push('title must be a non-empty string');
-    } else if (body.title.trim().length > MAX_TITLE_LENGTH) {
-      errors.push(`title must be at most ${MAX_TITLE_LENGTH} characters`);
-    }
+  if (body.title !== undefined) {
+    const error = titleError(body.title);
+    if (error) errors.push(error);
   }
   if (body.areaSqft != null && !isFiniteNonNegativeNumber(body.areaSqft)) {
     errors.push('areaSqft must be a non-negative number');
@@ -425,16 +429,7 @@ function validateUpdateInput(body, isAdmin) {
     errors.push('priceInRupees must be a non-negative number');
   }
   if (body.bhk != null && !isFiniteNonNegativeNumber(body.bhk)) errors.push('bhk must be a non-negative number');
-  if (body.description != null) {
-    if (typeof body.description !== 'string') {
-      errors.push('description must be a string');
-    } else if (body.description.trim().length > MAX_DESCRIPTION_LENGTH) {
-      errors.push(`description must be at most ${MAX_DESCRIPTION_LENGTH} characters`);
-    }
-  }
-  if (body.contactNumber != null && typeof body.contactNumber !== 'string') {
-    errors.push('contactNumber must be a string');
-  }
+  pushTextFieldErrors(errors, body);
   if (body.amenities != null && (!Array.isArray(body.amenities) || !body.amenities.every((a) => typeof a === 'string'))) {
     errors.push('amenities must be an array of strings');
   }
@@ -470,12 +465,16 @@ const updateProperty = asyncHandler(async (req, res) => {
   const isAdmin = req.user.role === 'admin';
   const body = req.body || {};
   const { errors } = validateUpdateInput(body, isAdmin);
-  errors.push(...validateDetailFields(body), ...validateImagesInput(body.images));
+  // Edits send the final photo set, so the minimum applies whenever images is sent.
+  errors.push(
+    ...validateDetailFields(body),
+    ...validateImagesInput(body.images, body.images === undefined ? 0 : MIN_PROPERTY_IMAGES),
+  );
   if (errors.length > 0) {
     throw AppError.badRequest('Validation failed', errors);
   }
 
-  const result = await propertyService.updatePropertyById(req.params.id, body, req.user);
+  const result = await propertyService.updatePropertyById(req.params.id, normalizeListingFields(body), req.user);
 
   if (result.error === 'not_found') throw AppError.notFound('Property not found');
   if (result.error === 'forbidden') throw AppError.forbidden('You do not have permission to update this property');

@@ -8,6 +8,9 @@ import { api } from "@/lib/api";
 import { AmenityPicker } from "@/components/AmenityPicker";
 import { formatPrice } from "@/lib/format";
 import { PROPERTY_TYPE_LABELS, PROPERTY_TYPE_OPTIONS_BY_INTENT } from "@/lib/propertyTypes";
+import { descriptionError, fieldErrorsFromApiError, localityError, phoneError, titleError } from "@/lib/propertyValidation";
+
+const MIN_PHOTOS = 5;
 
 const INITIAL_FORM = {
   intent: "buy",
@@ -45,10 +48,26 @@ export function PostPropertyForm() {
   const [imageError, setImageError] = useState("");
   const [submitError, setSubmitError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [touched, setTouched] = useState({});
+  const [attempted, setAttempted] = useState(false);
+  const [serverErrors, setServerErrors] = useState({});
 
-  const update = (patch) => setForm((prev) => ({ ...prev, ...patch }));
+  const update = (patch) => {
+    setForm((prev) => ({ ...prev, ...patch }));
+    setServerErrors({});
+  };
 
-  const hasMinimumImages = form.images.length >= 5;
+  const errors = {
+    title: titleError(form.title),
+    description: descriptionError(form.description),
+    locality: localityError(form.locality),
+    // Optional: a blank number is left out of the payload instead of validated.
+    contactNumber: form.contactNumber.trim() ? phoneError(form.contactNumber) : null,
+  };
+  const touch = (field) => setTouched((prev) => ({ ...prev, [field]: true }));
+  const fieldError = (field) => ((attempted || touched[field]) && errors[field]) || serverErrors[field] || null;
+
+  const hasMinimumImages = form.images.length >= MIN_PHOTOS;
 
   const handleImageUpload = (event) => {
     const uploadedFiles = Array.from(event.target.files || []);
@@ -88,6 +107,7 @@ export function PostPropertyForm() {
 
   const submitListing = async () => {
     setSubmitError("");
+    setServerErrors({});
     setIsSubmitting(true);
     try {
       const uploadedImages = await Promise.all(
@@ -118,13 +138,18 @@ export function PostPropertyForm() {
         priceInRupees: Number(form.price),
         amenities: form.amenities,
         description: form.description.trim(),
-        contactNumber: form.contactNumber.trim(),
+        ...(form.contactNumber.trim() ? { contactNumber: form.contactNumber.trim() } : {}),
         images: uploadedImages,
       };
       const result = await api.post("/api/v1/properties", payload);
       setSubmitted(result.property);
     } catch (error) {
-      setSubmitError(error.message || "Your listing could not be submitted. Please try again.");
+      const fieldErrors = fieldErrorsFromApiError(error);
+      setServerErrors(fieldErrors);
+      // Field-level messages show next to their inputs; keep the banner for anything else.
+      if (Object.keys(fieldErrors).length === 0) {
+        setSubmitError(error.message || "Your listing could not be submitted. Please try again.");
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -132,8 +157,10 @@ export function PostPropertyForm() {
 
   const handleSubmit = (event) => {
     event.preventDefault();
+    setAttempted(true);
+    if (Object.values(errors).some(Boolean)) return;
     if (!hasMinimumImages) {
-      setImageError("Please upload at least 5 photos before submitting your property listing.");
+      setImageError(`Please upload at least ${MIN_PHOTOS} photos before submitting your property listing.`);
       return;
     }
 
@@ -218,7 +245,7 @@ export function PostPropertyForm() {
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-medium">Property photos</p>
-            <p className="text-xs text-text-muted">Upload at least 5 clear images of the property.</p>
+            <p className="text-xs text-text-muted">{`Upload at least ${MIN_PHOTOS} clear images of the property.`}</p>
           </div>
           <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-primary-dark">
             Upload photos
@@ -229,11 +256,11 @@ export function PostPropertyForm() {
         {imageError ? <p className="mt-3 text-sm text-danger">{imageError}</p> : null}
         {!hasMinimumImages && form.images.length > 0 ? (
           <p role="alert" className="mt-3 text-sm font-medium text-danger">
-            You&apos;ve added {form.images.length} photo{form.images.length === 1 ? "" : "s"}. Please upload at least 5 photos.
+            {`You've added ${form.images.length} photo${form.images.length === 1 ? "" : "s"}. Please upload at least ${MIN_PHOTOS} photos.`}
           </p>
         ) : null}
         {!hasMinimumImages ? (
-          <p className="mt-3 text-xs text-text-muted">Minimum 5 photos required to submit this listing.</p>
+          <p className="mt-3 text-xs text-text-muted">{`Minimum ${MIN_PHOTOS} photos required to submit this listing.`}</p>
         ) : null}
 
         {form.images.length ? (
@@ -267,8 +294,10 @@ export function PostPropertyForm() {
             maxLength={200}
             value={form.title}
             onChange={(e) => update({ title: e.target.value })}
+            onBlur={() => touch("title")}
             className="w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm outline-none focus:border-primary"
           />
+          {fieldError("title") ? <p role="alert" className="mt-1 text-xs text-danger">{fieldError("title")}</p> : null}
         </Field>
 
         <Field label="Property type">
@@ -399,8 +428,10 @@ export function PostPropertyForm() {
             type="text"
             value={form.locality}
             onChange={(e) => update({ locality: e.target.value })}
+            onBlur={() => touch("locality")}
             className="w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm outline-none focus:border-primary"
           />
+          {fieldError("locality") ? <p role="alert" className="mt-1 text-xs text-danger">{fieldError("locality")}</p> : null}
         </Field>
 
         <Field label="Area (sq.ft)" required>
@@ -425,14 +456,15 @@ export function PostPropertyForm() {
           />
         </Field>
 
-        <Field label="Contact number" required>
+        <Field label="Contact number">
           <input
             type="tel"
-            required
             value={form.contactNumber}
             onChange={(e) => update({ contactNumber: e.target.value })}
+            onBlur={() => touch("contactNumber")}
             className="w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm outline-none focus:border-primary"
           />
+          {fieldError("contactNumber") ? <p role="alert" className="mt-1 text-xs text-danger">{fieldError("contactNumber")}</p> : null}
         </Field>
       </div>
 
@@ -443,8 +475,10 @@ export function PostPropertyForm() {
           rows={4}
           value={form.description}
           onChange={(e) => update({ description: e.target.value })}
+          onBlur={() => touch("description")}
           className="w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm outline-none focus:border-primary"
         />
+        {fieldError("description") ? <p role="alert" className="mt-1 text-xs text-danger">{fieldError("description")}</p> : null}
       </Field>
 
       <button

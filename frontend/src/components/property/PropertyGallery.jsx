@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import Image from "next/image";
+import { SafeImage } from "@/components/ui/SafeImage";
 
 function ArrowIcon({ direction }) {
   return (
@@ -48,7 +48,7 @@ export function PropertyGallery({ title, images, badges }) {
     >
       <div className="relative aspect-4/3 w-full overflow-hidden rounded-2xl bg-bg sm:aspect-16/9">
         {current ? (
-          <Image
+          <SafeImage
             key={current.url}
             src={current.url}
             alt={altFor(selected)}
@@ -103,7 +103,7 @@ export function PropertyGallery({ title, images, badges }) {
                   index === selected ? "border-primary" : "border-transparent opacity-80 hover:opacity-100"
                 }`}
               >
-                <Image src={image.url} alt={altFor(index)} fill sizes="96px" className="object-cover" />
+                <SafeImage src={image.url} alt={altFor(index)} fill sizes="96px" className="object-cover" />
               </button>
             </li>
           ))}

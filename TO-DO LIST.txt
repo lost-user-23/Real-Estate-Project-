@@ -1,3 +1,3 @@
 Whole Search not working/disabled
-Add a red error for less than 4 images
+[DONE] Add a red error for less than 5 images
 Show contact number not working

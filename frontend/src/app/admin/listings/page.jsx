@@ -162,10 +162,13 @@ export default function AdminListingsPage() {
     clearSelection();
   };
 
-  // The status filter may no longer match the changed rows, so refetch on success.
+  // Refetch after status changes so the list matches the server response.
   const handleBulkSetStatus = async (status) => {
     const res = await attempt(() => bulkSetStatus(selectedIds, status));
-    if (!res.ok) return;
+    if (!res.ok) {
+      reload();
+      return;
+    }
     clearSelection();
     reload();
   };
@@ -177,16 +180,14 @@ export default function AdminListingsPage() {
 
   const handleBulkSetFeatured = async (featured) => {
     const res = await attempt(() => bulkSetFeatured(selectedIds, featured));
-    if (!res.ok) return;
+    if (!res.ok) {
+      // The backend message was alerted; resync with the server (the local count may be stale).
+      reload();
+      return;
+    }
     const result = res.value;
     if (!result.ok && result.reason === "not_published") {
       window.alert(`${result.count} selected listing(s) aren't published. Publish them first; drafts can't be featured.`);
-      return;
-    }
-    if (!result.ok && result.reason === "max_featured") {
-      window.alert(
-        `Only ${result.availableSlots} of the ${maxFeaturedListings} featured slots are free. Unfeature some listings first, or select fewer.`
-      );
       return;
     }
     clearSelection();
@@ -197,16 +198,16 @@ export default function AdminListingsPage() {
     if (res.ok && !res.value.ok && res.value.reason === "not_published") {
       window.alert("Publish this listing first. Only published listings can be featured on the home page.");
     }
-    if (res.ok && !res.value.ok && res.value.reason === "max_featured") {
-      window.alert(`Maximum ${maxFeaturedListings} featured listings reached. Unfeature another listing first.`);
-    }
+    // On a rejected request (e.g. 409 featured limit) the backend message was alerted;
+    // resync so the checkbox matches the real server state.
+    if (!res.ok) reload();
   };
 
   const handleToggleVerified = (property) => attempt(() => toggleVerified(property.id));
 
   const handleStatusChange = async (property, status) => {
-    const res = await attempt(() => setPropertyStatus(property.id, status));
-    if (res.ok) reload();
+    await attempt(() => setPropertyStatus(property.id, status));
+    reload();
   };
 
   // Empty rank means "unranked", which the backend stores as null (its default).

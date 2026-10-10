@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { formatArea, formatPrice } from "@/lib/format";
 import { topAmenities } from "@/lib/amenities";
 import { PROPERTY_TYPE_LABELS } from "@/lib/propertyTypes";
 import { useSavedProperties } from "@/lib/saved-properties-context";
+import { SafeImage } from "@/components/ui/SafeImage";
 import {
   CheckBadgeIcon,
   ChevronLeftIcon,
@@ -77,7 +77,7 @@ export function FeaturedShowcase({ properties, onView }) {
               }`}
             >
               <span className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-bg">
-                <Image src={p.image.src} alt="" fill sizes="32px" className="object-cover" />
+                <SafeImage src={p.image.src} alt="" fallbackSeed={p.id} fill sizes="32px" className="object-cover" />
               </span>
               <span className={`max-w-32 truncate font-medium ${i === safeIndex ? "text-primary" : "text-text"}`}>
                 {p.city}
@@ -151,7 +151,7 @@ export function FeaturedShowcase({ properties, onView }) {
         </div>
 
         <div className="relative aspect-4/3 w-full overflow-hidden bg-bg lg:aspect-auto">
-          <Image
+          <SafeImage
             key={property.id}
             src={property.image.src}
             alt={property.image.alt}

@@ -2,13 +2,14 @@ const { CONTENT_STATUSES } = require('../models/contentStatus');
 const articleService = require('../services/article.service');
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
+const { isValidImageUrl } = require('../services/cloudinaryAssets.service');
 const { serializeArticle, serializeArticles } = require('../utils/serializers/article.serializer');
 
 const MAX_LIMIT = 50;
 const DEFAULT_LIMIT = 20;
 const MAX_TITLE_LENGTH = 200;
 const TEXT_FIELDS = ['excerpt', 'content'];
-const IMAGE_FIELDS = ['imageUrl', 'imageAlt'];
+const IMAGE_FIELDS = ['imageAlt'];
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -41,6 +42,11 @@ function validateFields(body, { isCreate = false } = {}) {
     if (body[field] !== undefined && body[field] !== null && typeof body[field] !== 'string') {
       errors.push(`${field} must be a string or null`);
     }
+  }
+
+  // undefined means not provided and null clears the image.
+  if (body.imageUrl !== undefined && body.imageUrl !== null && !isValidImageUrl(body.imageUrl)) {
+    errors.push('imageUrl must be a valid Cloudinary image URL');
   }
 
   if (body.status !== undefined && !CONTENT_STATUSES.includes(body.status)) {

@@ -1,5 +1,6 @@
 const Location = require('../models/Location');
 const Property = require('../models/Property');
+const { isValidImageUrl } = require('../services/cloudinaryAssets.service');
 const { buildListFilter } = require('../services/property.service');
 const AppError = require('../utils/AppError');
 const asyncHandler = require('../utils/asyncHandler');
@@ -92,6 +93,10 @@ function validateField(field, value) {
             break;
 
         case 'imageUrl':
+            if (value !== null && !isValidImageUrl(value)) {
+                return 'imageUrl must be a valid Cloudinary image URL';
+            }
+            break;
         case 'imageAlt':
             if (value !== null && typeof value !== 'string') {
                 return `${field} must be a string or null`;

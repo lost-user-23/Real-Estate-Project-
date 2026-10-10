@@ -1,5 +1,6 @@
 const { connectToDatabase, disconnectFromDatabase } = require('../src/db/connection');
 const { Property, PropertyImage } = require('../src/models');
+const { MAX_FEATURED } = require('../src/config/constants');
 
 // Usage: node scripts/seed-featured.js
 // Upserts a handful of published, featured listings with 5 photos each
@@ -66,6 +67,18 @@ const LISTINGS = [
 async function main() {
   await connectToDatabase();
   try {
+    const seedSlugs = LISTINGS.map(({ slug }) => slug);
+    const existingFeaturedCount = await Property.countDocuments({
+      status: 'published',
+      featured: true,
+      slug: { $nin: seedSlugs },
+    });
+    if (existingFeaturedCount + LISTINGS.length > MAX_FEATURED) {
+      throw new Error(
+        `Cannot seed featured listings: ${existingFeaturedCount} published featured listings exist outside the seed list; adding ${LISTINGS.length} would exceed the limit of ${MAX_FEATURED}.`
+      );
+    }
+
     let rank = 1;
     for (const { photos, ...listing } of LISTINGS) {
       const doc = {

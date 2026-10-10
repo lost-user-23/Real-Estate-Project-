@@ -174,13 +174,7 @@ export function AdminStoreProvider({ children }) {
         // The public site only shows published listings, so featuring a draft would do nothing.
         if (!target.featured && target.status !== "published") return { ok: false, reason: "not_published" };
 
-        if (
-          !target.featured &&
-          properties.filter((p) => p.featured && p.status === "published").length >= MAX_FEATURED_LISTINGS
-        ) {
-          return { ok: false, reason: "max_featured" };
-        }
-
+        // The featured limit is enforced by the backend (409); its message reaches the caller as a thrown ApiError.
         await patchProperty(
           id,
           target.featured ? { featured: false, featuredRank: null } : { featured: true }
@@ -210,16 +204,7 @@ export function AdminStoreProvider({ children }) {
         const unpublished = properties.filter((p) => ids.includes(p.id) && p.status !== "published");
         if (unpublished.length > 0) return { ok: false, reason: "not_published", count: unpublished.length };
 
-        const alreadyFeaturedElsewhere = properties.filter(
-          (p) => p.featured && p.status === "published" && !ids.includes(p.id)
-        ).length;
-        const newlyFeaturedCount = properties.filter((p) => ids.includes(p.id) && !p.featured).length;
-        const availableSlots = MAX_FEATURED_LISTINGS - alreadyFeaturedElsewhere;
-
-        if (newlyFeaturedCount > availableSlots) {
-          return { ok: false, reason: "max_featured", availableSlots: Math.max(availableSlots, 0) };
-        }
-
+        // The featured limit is enforced by the backend (409); local state is only updated after it accepts.
         await api.patch("/api/v1/admin/properties/bulk", { ids, updates: { featured: true } });
         applyLocal(ids, { featured: true });
         return { ok: true };

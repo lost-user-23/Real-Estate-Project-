@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { fetchNewProjects } from "@/lib/dataSource";
@@ -11,6 +10,7 @@ import { isSameCity } from "@/lib/city";
 import { formatPrice } from "@/lib/format";
 import { Section } from "@/components/ui/Section";
 import { SkeletonGrid } from "@/components/ui/SkeletonGrid";
+import { SafeImage } from "@/components/ui/SafeImage";
 import { SectionError } from "@/components/ui/SectionError";
 
 export function NewProjects() {
@@ -52,7 +52,7 @@ export function NewProjects() {
               className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-surface transition-shadow hover:shadow-md"
             >
               <div className="relative aspect-4/3 w-full overflow-hidden bg-bg">
-                <Image
+                <SafeImage
                   src={project.image.src}
                   alt={project.image.alt}
                   fill

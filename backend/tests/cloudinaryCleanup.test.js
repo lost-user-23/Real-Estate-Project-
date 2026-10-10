@@ -27,6 +27,9 @@ const auth = (token) => ({ Authorization: `Bearer ${token}` });
 const ownUrl = (id, ext = 'jpg', version = 'v1700000000') =>
   `https://res.cloudinary.com/demo/image/upload/${version}/${id}.${ext}`;
 const idFor = (user, name) => `property-images/${user}/${name}`;
+// Edits must keep at least 5 photos, so "replace everything" sends 5 fresh ones.
+const freshImages = (user, count = 5) =>
+  Array.from({ length: count }, (_, i) => ({ url: ownUrl(idFor(user, `fresh${i}`)) }));
 const sentIds = () => deleteResources.mock.calls.flatMap(([ids]) => ids).sort();
 
 async function registerUser(email) {
@@ -372,22 +375,26 @@ describe('PATCH /api/v1/properties/:id image replacement', () => {
           { url: ownUrl(a), publicId: a },
           { url: ownUrl(c, 'jpg', 'v1800000000') },
           { url: ownUrl(added), publicId: added },
+          ...freshImages(id, 2),
         ],
       });
 
     expect(res.status).toBe(200);
     expect(sentIds()).toEqual([b]);
     expect((await PropertyImage.find({ propertyId: property._id }).lean()).map((r) => r.url).sort()).toEqual(
-      [ownUrl(a), ownUrl(c, 'jpg', 'v1800000000'), ownUrl(added)].sort()
+      [ownUrl(a), ownUrl(c, 'jpg', 'v1800000000'), ownUrl(added), ...freshImages(id, 2).map((i) => i.url)].sort()
     );
   });
 
-  it('deletes everything old when the new set is empty', async () => {
+  it('deletes every old asset when none of them are kept', async () => {
     const { token, id } = await registerUser('empty@example.com');
     const a = idFor(id, 'a');
     const property = await createListing(id, [{ url: ownUrl(a) }]);
 
-    const res = await request(app).patch(`/api/v1/properties/${property._id}`).set(auth(token)).send({ images: [] });
+    const res = await request(app)
+      .patch(`/api/v1/properties/${property._id}`)
+      .set(auth(token))
+      .send({ images: freshImages(id) });
 
     expect(res.status).toBe(200);
     expect(sentIds()).toEqual([a]);
@@ -412,14 +419,14 @@ describe('PATCH /api/v1/properties/:id image replacement', () => {
     const forbidden = await request(app)
       .patch(`/api/v1/properties/${property._id}`)
       .set(auth(stranger.token))
-      .send({ images: [] });
+      .send({ images: freshImages(owner.id) });
     expect(forbidden.status).toBe(403);
 
     jest.spyOn(PropertyImage, 'insertMany').mockRejectedValueOnce(new Error('insert failed'));
     const failed = await request(app)
       .patch(`/api/v1/properties/${property._id}`)
       .set(auth(owner.token))
-      .send({ images: [{ url: ownUrl(idFor(owner.id, 'new')) }] });
+      .send({ images: freshImages(owner.id) });
     expect(failed.status).toBe(500);
 
     expect(deleteResources).not.toHaveBeenCalled();
@@ -430,10 +437,13 @@ describe('PATCH /api/v1/properties/:id image replacement', () => {
     const property = await createListing(id, [{ url: ownUrl(idFor(id, 'a')) }]);
     deleteResources.mockRejectedValue(new Error('boom'));
 
-    const res = await request(app).patch(`/api/v1/properties/${property._id}`).set(auth(token)).send({ images: [] });
+    const res = await request(app)
+      .patch(`/api/v1/properties/${property._id}`)
+      .set(auth(token))
+      .send({ images: freshImages(id) });
 
     expect(res.status).toBe(200);
-    expect(await PropertyImage.countDocuments({ propertyId: property._id })).toBe(0);
+    expect(await PropertyImage.countDocuments({ propertyId: property._id })).toBe(5);
   });
 });
 
@@ -524,7 +534,10 @@ describe('owner-folder boundary', () => {
     const foreign = idFor(other.id, 'foreign');
     const property = await createListing(id, [{ url: ownUrl(mine) }, { url: ownUrl(foreign) }]);
 
-    const res = await request(app).patch(`/api/v1/properties/${property._id}`).set(auth(token)).send({ images: [] });
+    const res = await request(app)
+      .patch(`/api/v1/properties/${property._id}`)
+      .set(auth(token))
+      .send({ images: freshImages(id) });
 
     expect(res.status).toBe(200);
     expect(sentIds()).toEqual([mine]);

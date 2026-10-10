@@ -82,6 +82,56 @@ describe('POST /api/v1/properties', () => {
     expect(response.body.error.details).toContain('images must contain at least 5 images');
   });
 
+  describe('text and phone validation', () => {
+    const post = (token, body) =>
+      request(app).post('/api/v1/properties').set('Authorization', `Bearer ${token}`).send({ ...validPayload, images: validImages, ...body });
+
+    it('rejects a whitespace-only title, a short title, a short description and a long locality', async () => {
+      const { token } = await registerUser();
+      expect((await post(token, { title: '      ' })).status).toBe(400);
+      expect((await post(token, { title: 'abcd' })).status).toBe(400);
+      expect((await post(token, { description: '   ' })).status).toBe(400);
+      expect((await post(token, { description: 'too short' })).status).toBe(400);
+      expect((await post(token, { locality: 'a'.repeat(101) })).status).toBe(400);
+      expect(await Property.countDocuments()).toBe(0);
+    });
+
+    it('rejects a null title, description, locality and contactNumber', async () => {
+      const { token } = await registerUser();
+      for (const field of ['title', 'description', 'locality', 'contactNumber']) {
+        const response = await post(token, { [field]: null });
+        expect(response.status).toBe(400);
+        expect(response.body.error.details).toContain(`${field} must be a string`);
+      }
+      expect(await Property.countDocuments()).toBe(0);
+    });
+
+    it('rejects a title over 200 characters and accepts exactly 200', async () => {
+      const { token } = await registerUser();
+      const response = await post(token, { title: 'a'.repeat(201) });
+      expect(response.status).toBe(400);
+      expect(response.body.error.details).toContain('title must be at most 200 characters');
+      expect((await post(token, { title: 'a'.repeat(200) })).status).toBe(201);
+    });
+
+    it('allows omitting contactNumber and description, and saves a trimmed locality', async () => {
+      const { token } = await registerUser();
+      const ok = await post(token, { locality: '  Koramangala  ' });
+      expect(ok.status).toBe(201);
+      expect((await Property.findOne()).locality).toBe('Koramangala');
+    });
+
+    it('rejects an invalid phone and stores a normalized one', async () => {
+      const { token } = await registerUser();
+      expect((await post(token, { contactNumber: '12345' })).status).toBe(400);
+
+      const ok = await post(token, { contactNumber: '+91 98765-43210' });
+      expect(ok.status).toBe(201);
+      const stored = await Property.findOne().select('+contactNumber');
+      expect(stored.contactNumber).toBe('9876543210');
+    });
+  });
+
   describe('image and description validation', () => {
     const post = (token, body) =>
       request(app).post('/api/v1/properties').set('Authorization', `Bearer ${token}`).send({ ...validPayload, ...body });
@@ -644,21 +694,22 @@ describe('PATCH /api/v1/properties/:id', () => {
     const response = await request(app)
       .patch(`/api/v1/properties/${property._id}`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ images: [{ url: newUrl, alt: 'Front view' }] });
+      .send({ images: [{ url: newUrl, alt: 'Front view' }, ...validImages.slice(1)] });
 
     expect(response.status).toBe(200);
     expect(response.body.property.images).toEqual([
       expect.objectContaining({ url: newUrl, alt: 'Front view', displayOrder: 0 }),
+      ...validImages.slice(1).map((image, i) => expect.objectContaining({ url: image.url, displayOrder: i + 1 })),
     ]);
 
-    const stored = await PropertyImage.find({ propertyId: property._id });
-    expect(stored).toHaveLength(1);
-    expect(stored[0].url).toBe(newUrl);
+    const stored = await PropertyImage.find({ propertyId: property._id }).sort({ displayOrder: 1 });
+    expect(stored).toHaveLength(5);
+    expect(stored.map((image) => image.url)).toEqual([newUrl, ...validImages.slice(1).map((image) => image.url)]);
   });
 
   describe('unverifying on trust-relevant owner edits', () => {
     const imgUrl = (n) => `https://res.cloudinary.com/demo/image/upload/v1/property-images/${n}.jpg`;
-    const imgs = [0, 1, 2].map((n) => ({ url: imgUrl(n), publicId: `property-images/${n}` }));
+    const imgs = [0, 1, 2, 3, 4, 5].map((n) => ({ url: imgUrl(n), publicId: `property-images/${n}` }));
 
     async function setup(overrides = {}) {
       const { token, user } = await registerUser();
@@ -694,7 +745,7 @@ describe('PATCH /api/v1/properties/:id', () => {
 
     it('owner edits description only: verified stays true', async () => {
       const { patch, stored } = await setup();
-      expect((await patch({ description: 'New text', priceInRupees: 5 })).status).toBe(200);
+      expect((await patch({ description: 'A brand new description of the flat', priceInRupees: 5 })).status).toBe(200);
       expect((await stored()).verified).toBe(true);
     });
 
@@ -724,13 +775,13 @@ describe('PATCH /api/v1/properties/:id', () => {
 
     it('owner adds a photo via images: verified becomes false', async () => {
       const { patch, stored } = await setup();
-      expect((await patch({ images: [...imgs, { url: imgUrl(3) }] })).status).toBe(200);
+      expect((await patch({ images: [...imgs, { url: imgUrl(6) }] })).status).toBe(200);
       expect((await stored()).verified).toBe(false);
     });
 
     it('owner removes a photo via images: verified becomes false', async () => {
       const { patch, stored } = await setup();
-      expect((await patch({ images: imgs.slice(0, 2) })).status).toBe(200);
+      expect((await patch({ images: imgs.slice(0, 5) })).status).toBe(200);
       expect((await stored()).verified).toBe(false);
     });
 
@@ -738,7 +789,7 @@ describe('PATCH /api/v1/properties/:id', () => {
       const { patch, stored, property } = await setup();
       expect((await patch({ images: [...imgs].reverse() })).status).toBe(200);
       expect((await stored()).verified).toBe(true);
-      expect(await PropertyImage.countDocuments({ propertyId: property._id })).toBe(3);
+      expect(await PropertyImage.countDocuments({ propertyId: property._id })).toBe(imgs.length);
     });
 
     it('owner resends identical images: verified stays true', async () => {
@@ -749,9 +800,157 @@ describe('PATCH /api/v1/properties/:id', () => {
 
     it('a listing that was already unverified stays unverified', async () => {
       const { patch, stored } = await setup({ verified: false });
-      const response = await patch({ title: 'Another Title', images: imgs.slice(0, 2) });
+      const response = await patch({ title: 'Another Title', images: imgs.slice(0, 5) });
       expect(response.status).toBe(200);
       expect((await stored()).verified).toBe(false);
+    });
+  });
+
+  describe('field validation on update', () => {
+    const own = (n) => ({ url: `https://res.cloudinary.com/demo/image/upload/v1/property-images/e${n}.jpg` });
+    const fiveImages = [0, 1, 2, 3, 4].map(own);
+
+    async function setup(overrides = {}) {
+      const { token, user } = await registerUser();
+      const property = await createProperty({
+        ownerId: user.id,
+        status: 'draft',
+        description: 'An original description that is long enough',
+        contactNumber: '9876543210',
+        ...overrides,
+      });
+      await PropertyImage.insertMany(fiveImages.map((image, i) => ({ ...image, propertyId: property._id, displayOrder: i })));
+      const patch = (body) =>
+        request(app).patch(`/api/v1/properties/${property._id}`).set('Authorization', `Bearer ${token}`).send(body);
+      const stored = () => Property.findById(property._id).select('+contactNumber');
+      return { patch, stored, property };
+    }
+
+    it('rejects images with fewer than 5 entries and leaves the stored photos alone', async () => {
+      const { patch, property } = await setup();
+      const response = await patch({ images: fiveImages.slice(0, 3) });
+      expect(response.status).toBe(400);
+      expect(response.body.error.details).toContain('images must contain at least 5 images');
+      expect(await PropertyImage.countDocuments({ propertyId: property._id })).toBe(5);
+    });
+
+    it('rejects an explicit empty images array', async () => {
+      const { patch } = await setup();
+      const response = await patch({ images: [] });
+      expect(response.status).toBe(400);
+      expect(response.body.error.details).toContain('images must contain at least 5 images');
+    });
+
+    it('accepts an edit that does not send images', async () => {
+      const { patch, property } = await setup();
+      expect((await patch({ priceInRupees: 123 })).status).toBe(200);
+      expect(await PropertyImage.countDocuments({ propertyId: property._id })).toBe(5);
+    });
+
+    it('accepts 5 or more images', async () => {
+      const { patch } = await setup();
+      expect((await patch({ images: fiveImages })).status).toBe(200);
+      expect((await patch({ images: [...fiveImages, own(5), own(6)] })).status).toBe(200);
+    });
+
+    it.each([
+      ['+91 98765-43210', '9876543210'],
+      ['098765 43210', '9876543210'],
+      ['  9123456780 ', '9123456780'],
+      ['+919876543211', '9876543211'],
+    ])('stores contactNumber %j as %s', async (input, expected) => {
+      const { patch, stored } = await setup();
+      expect((await patch({ contactNumber: input })).status).toBe(200);
+      expect((await stored()).contactNumber).toBe(expected);
+    });
+
+    it.each(['12345', '5876543210', '98765432101', 'abcdefghij', '+1 9876543210', '   '])(
+      'rejects contactNumber %j',
+      async (input) => {
+        const { patch, stored } = await setup();
+        const response = await patch({ contactNumber: input });
+        expect(response.status).toBe(400);
+        expect(response.body.error.details).toContain('contactNumber must be a valid 10-digit Indian mobile number');
+        expect((await stored()).contactNumber).toBe('9876543210');
+      },
+    );
+
+    it('rejects a whitespace-only or too-short title and trims a valid one', async () => {
+      const { patch, stored } = await setup();
+      for (const title of ['     ', 'abcd', '  abcd  ']) {
+        const response = await patch({ title });
+        expect(response.status).toBe(400);
+        expect(response.body.error.details).toContain('title must be at least 5 characters');
+      }
+      expect((await patch({ title: 'a'.repeat(201) })).status).toBe(400);
+      expect((await patch({ title: '   Fresh Title   ' })).status).toBe(200);
+      expect((await stored()).title).toBe('Fresh Title');
+    });
+
+    it('rejects a whitespace-only or short description, allows clearing it and trims a valid one', async () => {
+      const { patch, stored } = await setup();
+      for (const description of ['            ', 'too short']) {
+        const response = await patch({ description });
+        expect(response.status).toBe(400);
+        expect(response.body.error.details).toContain('description must be at least 20 characters');
+      }
+      expect((await patch({ description: '' })).status).toBe(200);
+      expect((await stored()).description).toBe('');
+      expect((await patch({ description: '   A description that is long enough   ' })).status).toBe(200);
+      expect((await stored()).description).toBe('A description that is long enough');
+    });
+
+    it('rejects a null title, description, locality and contactNumber on update', async () => {
+      const { patch, stored } = await setup();
+      for (const field of ['title', 'description', 'locality', 'contactNumber']) {
+        const response = await patch({ [field]: null });
+        expect(response.status).toBe(400);
+        expect(response.body.error.details).toContain(`${field} must be a string`);
+      }
+      const doc = await stored();
+      expect(doc.title).toBe('Test Property');
+      expect(doc.contactNumber).toBe('9876543210');
+    });
+
+    it('rejects a title over 200 characters and accepts exactly 200 on update', async () => {
+      const { patch } = await setup();
+      const response = await patch({ title: 'a'.repeat(201) });
+      expect(response.status).toBe(400);
+      expect(response.body.error.details).toContain('title must be at most 200 characters');
+      expect((await patch({ title: 'a'.repeat(200) })).status).toBe(200);
+    });
+
+    it('still accepts an empty-string description on update (cleared)', async () => {
+      const { patch, stored } = await setup();
+      expect((await patch({ description: '' })).status).toBe(200);
+      expect((await stored()).description).toBe('');
+    });
+
+    it('saves the trimmed locality on update', async () => {
+      const { patch, stored } = await setup();
+      expect((await patch({ locality: '   Indiranagar   ' })).status).toBe(200);
+      expect((await stored()).locality).toBe('Indiranagar');
+    });
+
+    it('does not apply the description rule when description is not in the PATCH', async () => {
+      const { patch } = await setup({ description: 'short' });
+      expect((await patch({ priceInRupees: 99 })).status).toBe(200);
+    });
+
+    it('rejects a locality over 100 characters and accepts exactly 100', async () => {
+      const { patch } = await setup();
+      const response = await patch({ locality: 'a'.repeat(101) });
+      expect(response.status).toBe(400);
+      expect(response.body.error.details).toContain('locality must be at most 100 characters');
+      expect((await patch({ locality: 'a'.repeat(100) })).status).toBe(200);
+    });
+
+    it('does not unverify when only the phone formatting differs from the stored number', async () => {
+      const { patch, stored } = await setup({ verified: true, contactNumber: '+91 98765 43210' });
+      expect((await patch({ contactNumber: '9876543210' })).status).toBe(200);
+      const doc = await stored();
+      expect(doc.verified).toBe(true);
+      expect(doc.contactNumber).toBe('9876543210');
     });
   });
 

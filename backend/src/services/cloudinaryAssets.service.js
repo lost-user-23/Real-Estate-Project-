@@ -57,6 +57,14 @@ function isOwnCloudinaryImageUrl(url) {
   return segments.every((segment) => segment !== '' && segment !== '.' && segment !== '..');
 }
 
+const MAX_IMAGE_URL_LENGTH = 2048;
+
+// Full rule for an image URL accepted from a client: one of our own Cloudinary
+// URLs, within the length cap. An empty string is not a URL, so it fails.
+function isValidImageUrl(value) {
+  return typeof value === 'string' && value.length <= MAX_IMAGE_URL_LENGTH && isOwnCloudinaryImageUrl(value);
+}
+
 function parseOwnUrl(url) {
   const path = parseOwnDeliveryPath(url);
   if (path === null) return null;
@@ -133,4 +141,4 @@ async function deleteAssetsForImages(images, ownerId) {
   }
 }
 
-module.exports = { isOwnCloudinaryImageUrl, resolvePublicId, deleteAssetsByPublicIds, deleteAssetsForImages, DELETE_BATCH_SIZE };
+module.exports = { MAX_IMAGE_URL_LENGTH, isOwnCloudinaryImageUrl, isValidImageUrl, resolvePublicId, deleteAssetsByPublicIds, deleteAssetsForImages, DELETE_BATCH_SIZE };

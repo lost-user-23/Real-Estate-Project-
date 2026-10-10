@@ -1,20 +1,9 @@
+const { IMAGE_HOSTNAMES } = require("./src/lib/imageHosts.cjs");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "picsum.photos",
-      },
-      {
-        protocol: "https",
-        hostname: "res.cloudinary.com",
-      },
-      {
-        protocol: 'https',
-        hostname: 'images.unsplash.com',
-      },
-    ],
+    remotePatterns: IMAGE_HOSTNAMES.map((hostname) => ({ protocol: "https", hostname })),
   },
 };
 

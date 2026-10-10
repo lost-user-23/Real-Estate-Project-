@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import Image from "next/image";
 import Link from "next/link";
 import { fetchBuilderDetails, fetchBuilders } from "@/lib/dataSource";
 import { useSectionData } from "@/lib/useSectionData";
@@ -12,6 +11,7 @@ import { trackEvent } from "@/lib/trackEvent";
 import { builderListNote } from "@/lib/builderList.mjs";
 import { Section } from "@/components/ui/Section";
 import { SkeletonGrid } from "@/components/ui/SkeletonGrid";
+import { SafeImage } from "@/components/ui/SafeImage";
 import { SectionError } from "@/components/ui/SectionError";
 import { BuildingIcon } from "@/components/icons";
 
@@ -47,7 +47,7 @@ function BuilderProjects({ builder, city, simulateError }) {
           className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-bg transition-shadow hover:shadow-md"
         >
           <div className="relative aspect-4/3 w-full overflow-hidden bg-surface">
-            <Image
+            <SafeImage
               src={project.image.src}
               alt={project.image.alt}
               fill

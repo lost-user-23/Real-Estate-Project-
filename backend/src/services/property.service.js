@@ -1,7 +1,9 @@
 const crypto = require('crypto');
 const { Property, PropertyImage, SavedProperty } = require('../models');
 const AppError = require('../utils/AppError');
+const { MAX_FEATURED } = require('../config/constants');
 const { normalizeCity } = require('../utils/normalizeCity');
+const { comparablePhone } = require('../utils/propertyValidation');
 const { resolvePublicId, deleteAssetsForImages } = require('./cloudinaryAssets.service');
 
 const EDITABLE_FIELDS = [
@@ -42,6 +44,10 @@ const ADMIN_EXTRA_EDITABLE_FIELDS = ['city', 'intent', 'propertyType'];
 // Same fields the single-item admin update path allows beyond owner-editable
 // ones; bulk update is deliberately limited to this set.
 const BULK_UPDATABLE_FIELDS = [...ADMIN_ONLY_FIELDS, ...ADMIN_EXTRA_EDITABLE_FIELDS];
+
+function featuredLimitError() {
+  return AppError.conflict(`Featured limit reached (${MAX_FEATURED})`);
+}
 
 function slugify(title) {
   return title
@@ -351,11 +357,12 @@ function imageSetChanged(previous, submitted) {
 
 // Compares incoming values with the stored ones, so resending a value as it
 // already is does not count. Title is compared as the schema stores it (trimmed).
-// contactNumber is stored untouched by the schema, so it is compared as-is.
+// contactNumber is compared in normalized form, since older records may have
+// been saved with spaces or a +91 prefix.
 async function trustFieldsChanged(property, body) {
   const has = (field) => Object.prototype.hasOwnProperty.call(body, field);
   if (has('title') && (typeof body.title === 'string' ? body.title.trim() : body.title) !== property.title) return true;
-  if (has('contactNumber') && (body.contactNumber ?? null) !== (property.contactNumber ?? null)) return true;
+  if (has('contactNumber') && comparablePhone(body.contactNumber) !== comparablePhone(property.contactNumber)) return true;
   if (has('images') && imageSetChanged(await getPropertyImages(property._id), body.images ?? [])) return true;
   return false;
 }
@@ -380,6 +387,23 @@ async function updatePropertyById(id, body, actor) {
   // touch verified.
   if (!isAdmin && property.verified === true && await trustFieldsChanged(property, body)) {
     property.verified = false;
+  }
+
+  // The limit applies when a listing joins the featured set: it becomes featured,
+  // or it is featured and becomes published (a featured draft is not counted
+  // until then). Editing an already featured listing, or unfeaturing one, is
+  // never blocked. Checked before anything is written.
+  if (isAdmin) {
+    const has = (field) => Object.prototype.hasOwnProperty.call(body, field);
+    const nextFeatured = has('featured') ? body.featured : property.featured;
+    const nextStatus = has('status') ? body.status : property.status;
+    const becomesFeatured = nextFeatured === true && property.featured !== true;
+    const becomesPublished = nextFeatured === true && nextStatus === 'published' && property.status !== 'published';
+    if (becomesFeatured || becomesPublished) {
+      // Same set GET /featured serves: published and featured.
+      const others = await Property.countDocuments({ featured: true, status: 'published', _id: { $ne: property._id } });
+      if (others >= MAX_FEATURED) throw featuredLimitError();
+    }
   }
 
   for (const field of allowedFields) {
@@ -423,6 +447,26 @@ async function bulkUpdatePropertiesByIds(ids, updates) {
     if (Object.prototype.hasOwnProperty.call(updates, field)) {
       setFields[field] = updates[field];
     }
+  }
+
+  // The limit applies when listings join the featured set: the update features
+  // them, or publishes them while they are (or become) featured. Afterwards the
+  // total is the published featured listings outside the batch plus the batch
+  // members that end up both featured and published.
+  const featuring = setFields.featured === true;
+  const publishing = setFields.status === 'published';
+  if (featuring || (publishing && setFields.featured !== false)) {
+    // Duplicate ids in the request must not inflate the total.
+    const uniqueIds = [...new Set(ids.map(String))];
+    const batchFilter = { _id: { $in: uniqueIds } };
+    if (!featuring) batchFilter.featured = true;
+    if (!publishing) batchFilter.status = 'published';
+    const batchEndsPublished = !('status' in setFields) || publishing;
+    const [outside, inBatch] = await Promise.all([
+      Property.countDocuments({ featured: true, status: 'published', _id: { $nin: uniqueIds } }),
+      batchEndsPublished ? Property.countDocuments(batchFilter) : 0,
+    ]);
+    if (outside + inBatch > MAX_FEATURED) throw featuredLimitError();
   }
 
   // updateMany skips document hooks, so keep cityLower in step by hand.

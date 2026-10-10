@@ -13,6 +13,7 @@
     "db:setup": "node scripts/setup-db.js",
     "backfill:city-lower": "node scripts/backfill-city-lower.js",
     "backfill:email-verified": "node scripts/backfill-email-verified.js",
+    "audit:image-urls": "node scripts/audit-image-urls.js",
     "admin:create": "node scripts/create-admin.js"
   },
   "engines": {

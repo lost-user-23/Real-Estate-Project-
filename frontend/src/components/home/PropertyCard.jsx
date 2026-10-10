@@ -1,11 +1,11 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { formatArea, formatPrice } from "@/lib/format";
 import { topAmenities } from "@/lib/amenities";
 import { PROPERTY_TYPE_LABELS } from "@/lib/propertyTypes";
 import { useSavedProperties } from "@/lib/saved-properties-context";
+import { SafeImage } from "@/components/ui/SafeImage";
 import { HeartFilledIcon, HeartIcon, CheckBadgeIcon, MapPinIcon, StarIcon } from "@/components/icons";
 
 export function PropertyCard({ property, priority = false, onView, fluid = false }) {
@@ -24,7 +24,7 @@ export function PropertyCard({ property, priority = false, onView, fluid = false
       }`}
     >
       <div className="relative aspect-4/3 w-full overflow-hidden bg-bg">
-        <Image
+        <SafeImage
           src={property.image.src}
           alt={property.image.alt}
           fill

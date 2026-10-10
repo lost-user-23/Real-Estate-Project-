@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { PROPERTY_TYPE_LABELS } from "@/lib/propertyTypes";
 import { formatPrice } from "@/lib/format";
+import { primaryImage } from "@/lib/propertyImages.mjs";
 import { PropertyCard } from "@/components/home/PropertyCard";
 import { Container } from "@/components/ui/Container";
 import { SearchFilters, normalizeKeyword, parseBhkParam } from "@/components/search/SearchFilters";
@@ -62,12 +63,7 @@ export function SearchResults() {
         const properties = (result?.properties ?? []).map((property) => ({
           ...property,
           id: String(property._id),
-          image: property.images?.[0]
-            ? { src: property.images[0].url, alt: property.images[0].alt || property.title }
-            : {
-                src: `https://picsum.photos/seed/${encodeURIComponent(property.slug)}/800/600`,
-                alt: property.title,
-              },
+          image: primaryImage(property, property.slug),
         }));
         setState({ status: "success", properties, meta: result?.meta ?? null, error: "", requestKey });
       })

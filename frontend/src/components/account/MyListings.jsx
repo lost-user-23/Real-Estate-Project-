@@ -9,6 +9,7 @@ import { Modal } from "@/components/admin/Modal";
 import { StatusPill } from "@/components/admin/StatusPill";
 import { Section } from "@/components/account/AccountSections";
 import { useFormAction } from "@/components/account/useFormAction";
+import { descriptionError, fieldErrorsFromApiError, localityError, titleError } from "@/lib/propertyValidation";
 
 const PAGE_SIZE = 20;
 
@@ -23,31 +24,60 @@ function EditListingModal({ listing, onClose, onSaved }) {
   const [areaSqft, setAreaSqft] = useState(String(listing.areaSqft ?? ""));
   const [locality, setLocality] = useState(listing.locality ?? "");
   const action = useFormAction();
+  const [attempted, setAttempted] = useState(false);
+  const [serverErrors, setServerErrors] = useState({});
+
+  // Only fields the owner changed are validated and sent, so a price-only edit
+  // never fails on an older listing whose text predates the current limits.
+  const changed = {
+    title: title.trim() !== (listing.title ?? ""),
+    description: description.trim() !== (listing.description ?? ""),
+    locality: locality.trim() !== (listing.locality ?? ""),
+  };
+  const errors = {
+    title: changed.title ? titleError(title) : null,
+    description: changed.description ? descriptionError(description) : null,
+    locality: changed.locality ? localityError(locality) : null,
+  };
+  const fieldError = (field) => (attempted && errors[field]) || serverErrors[field] || null;
+  const fieldErrorText = (field) =>
+    fieldError(field) ? (
+      <p role="alert" className="mt-1 text-xs text-danger">
+        {fieldError(field)}
+      </p>
+    ) : null;
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    const { ok, result } = await action.run(
+    setAttempted(true);
+    if (Object.values(errors).some(Boolean)) return;
+    setServerErrors({});
+    const { ok, result, error } = await action.run(
       () =>
         api.patch(`/api/v1/properties/${listing.id}`, {
-          title,
-          description,
+          ...(changed.title ? { title: title.trim() } : {}),
+          // '' clears a description or locality; null is rejected by the API.
+          ...(changed.description ? { description: description.trim() } : {}),
           priceInRupees: Number(priceInRupees),
           areaSqft: Number(areaSqft),
-          locality: locality.trim() || null,
+          ...(changed.locality ? { locality: locality.trim() } : {}),
         }),
       "Listing updated."
     );
     if (ok) onSaved(withId(result.property));
+    else setServerErrors(fieldErrorsFromApiError(error));
   };
 
   return (
     <Modal title="Edit listing" onClose={action.saving ? () => {} : onClose}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <AdminField label="Title" required>
-          <input required maxLength={200} value={title} onChange={(e) => setTitle(e.target.value)} className={adminFieldInputClass} />
+          <input required maxLength={200} value={title} onChange={(e) => { setTitle(e.target.value); setServerErrors({}); }} className={adminFieldInputClass} />
+          {fieldErrorText("title")}
         </AdminField>
         <AdminField label="Description">
-          <textarea rows={4} value={description} onChange={(e) => setDescription(e.target.value)} className={adminFieldInputClass} />
+          <textarea rows={4} value={description} onChange={(e) => { setDescription(e.target.value); setServerErrors({}); }} className={adminFieldInputClass} />
+          {fieldErrorText("description")}
         </AdminField>
         <div className="grid gap-4 sm:grid-cols-2">
           <AdminField label="Price (₹)" required>
@@ -58,9 +88,10 @@ function EditListingModal({ listing, onClose, onSaved }) {
           </AdminField>
         </div>
         <AdminField label="Locality">
-          <input value={locality} onChange={(e) => setLocality(e.target.value)} className={adminFieldInputClass} />
+          <input value={locality} onChange={(e) => { setLocality(e.target.value); setServerErrors({}); }} className={adminFieldInputClass} />
+          {fieldErrorText("locality")}
         </AdminField>
-        {action.status === "error" ? (
+        {action.status === "error" && Object.keys(serverErrors).length === 0 ? (
           <p role="alert" className="text-sm text-danger">
             {action.message}
           </p>
