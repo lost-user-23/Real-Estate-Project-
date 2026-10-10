@@ -23,6 +23,15 @@ const EDITABLE_FIELDS = [
   'isLuxury',
 ];
 
+// Fields whose change by the owner of a verified listing drops the "Verified"
+// badge, so an admin re-reviews it. Anything else (description, price, location)
+// is deliberately not listed.
+//  - title: what the admin vetted the listing as.
+//  - contactNumber: the listing's phone (the Property field, not User.phone).
+//  - images: the photos; these live in PropertyImage, so they are compared as a
+//    set (by public id, else url) and a pure reorder does not count.
+const TRUST_RELEVANT_FIELDS = ['title', 'contactNumber', 'images'];
+
 const ADMIN_ONLY_FIELDS = ['status', 'verified', 'featured', 'featuredRank'];
 
 // Fields an admin may change beyond what an owner can (in addition to
@@ -330,8 +339,31 @@ function isOwnerOrAdmin(property, user) {
   return property.ownerId && String(property.ownerId) === String(user._id);
 }
 
+function imageKey(image) {
+  return resolvePublicId(image) || image.url;
+}
+
+function imageSetChanged(previous, submitted) {
+  const before = new Set(previous.map(imageKey));
+  const after = new Set(normalizeImageInput(submitted).map(imageKey));
+  return before.size !== after.size || [...after].some((key) => !before.has(key));
+}
+
+// Compares incoming values with the stored ones, so resending a value as it
+// already is does not count. Title is compared as the schema stores it (trimmed).
+// contactNumber is stored untouched by the schema, so it is compared as-is.
+async function trustFieldsChanged(property, body) {
+  const has = (field) => Object.prototype.hasOwnProperty.call(body, field);
+  if (has('title') && (typeof body.title === 'string' ? body.title.trim() : body.title) !== property.title) return true;
+  if (has('contactNumber') && (body.contactNumber ?? null) !== (property.contactNumber ?? null)) return true;
+  if (has('images') && imageSetChanged(await getPropertyImages(property._id), body.images ?? [])) return true;
+  return false;
+}
+
 async function updatePropertyById(id, body, actor) {
-  const property = await Property.findById(id);
+  // +contactNumber is for the change comparison only; the serializer strips it
+  // from the response.
+  const property = await Property.findById(id).select('+contactNumber');
   if (!property) return { error: 'not_found' };
 
   if (!isOwnerOrAdmin(property, actor)) {
@@ -342,6 +374,13 @@ async function updatePropertyById(id, body, actor) {
   const allowedFields = isAdmin
     ? [...EDITABLE_FIELDS, ...ADMIN_EXTRA_EDITABLE_FIELDS, ...ADMIN_ONLY_FIELDS]
     : EDITABLE_FIELDS;
+
+  // Decided before anything is written, so verified:false goes out in the same
+  // save() as the edit (and before the images are replaced). Admin edits never
+  // touch verified.
+  if (!isAdmin && property.verified === true && await trustFieldsChanged(property, body)) {
+    property.verified = false;
+  }
 
   for (const field of allowedFields) {
     if (Object.prototype.hasOwnProperty.call(body, field)) {
@@ -425,6 +464,7 @@ async function bulkDeletePropertiesByIds(ids) {
 
 module.exports = {
   EDITABLE_FIELDS,
+  TRUST_RELEVANT_FIELDS,
   ADMIN_ONLY_FIELDS,
   ADMIN_EXTRA_EDITABLE_FIELDS,
   BULK_UPDATABLE_FIELDS,

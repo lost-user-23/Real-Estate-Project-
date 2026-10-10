@@ -656,6 +656,105 @@ describe('PATCH /api/v1/properties/:id', () => {
     expect(stored[0].url).toBe(newUrl);
   });
 
+  describe('unverifying on trust-relevant owner edits', () => {
+    const imgUrl = (n) => `https://res.cloudinary.com/demo/image/upload/v1/property-images/${n}.jpg`;
+    const imgs = [0, 1, 2].map((n) => ({ url: imgUrl(n), publicId: `property-images/${n}` }));
+
+    async function setup(overrides = {}) {
+      const { token, user } = await registerUser();
+      const property = await createProperty({
+        ownerId: user.id,
+        verified: true,
+        title: 'Original Title',
+        contactNumber: '9876543210',
+        ...overrides,
+      });
+      await PropertyImage.insertMany(imgs.map((image, i) => ({ ...image, propertyId: property._id, displayOrder: i })));
+      const patch = (body, as = token) =>
+        request(app).patch(`/api/v1/properties/${property._id}`).set('Authorization', `Bearer ${as}`).send(body);
+      const stored = async () => Property.findById(property._id);
+      return { patch, stored, property };
+    }
+
+    it('owner changes title: verified becomes false, status unchanged', async () => {
+      const { patch, stored } = await setup();
+      const response = await patch({ title: 'New Title' });
+      expect(response.status).toBe(200);
+      expect(response.body.property.verified).toBe(false);
+      const doc = await stored();
+      expect(doc.verified).toBe(false);
+      expect(doc.status).toBe('published');
+    });
+
+    it('owner resends the identical title: verified stays true', async () => {
+      const { patch, stored } = await setup();
+      expect((await patch({ title: '  Original Title ' })).status).toBe(200);
+      expect((await stored()).verified).toBe(true);
+    });
+
+    it('owner edits description only: verified stays true', async () => {
+      const { patch, stored } = await setup();
+      expect((await patch({ description: 'New text', priceInRupees: 5 })).status).toBe(200);
+      expect((await stored()).verified).toBe(true);
+    });
+
+    it('admin changes title: verified stays true', async () => {
+      const { patch, stored } = await setup();
+      const { token: adminToken, user: admin } = await registerUser();
+      await promoteToAdmin(admin.id);
+      expect((await patch({ title: 'Admin Title' }, adminToken)).status).toBe(200);
+      const doc = await stored();
+      expect(doc.title).toBe('Admin Title');
+      expect(doc.verified).toBe(true);
+    });
+
+    it('owner changes contactNumber: verified becomes false, number not leaked', async () => {
+      const { patch, stored } = await setup();
+      const response = await patch({ contactNumber: '9123456780' });
+      expect(response.status).toBe(200);
+      expect(response.body.property).not.toHaveProperty('contactNumber');
+      expect((await stored()).verified).toBe(false);
+    });
+
+    it('owner resends identical contactNumber: verified stays true', async () => {
+      const { patch, stored } = await setup();
+      expect((await patch({ contactNumber: '9876543210' })).status).toBe(200);
+      expect((await stored()).verified).toBe(true);
+    });
+
+    it('owner adds a photo via images: verified becomes false', async () => {
+      const { patch, stored } = await setup();
+      expect((await patch({ images: [...imgs, { url: imgUrl(3) }] })).status).toBe(200);
+      expect((await stored()).verified).toBe(false);
+    });
+
+    it('owner removes a photo via images: verified becomes false', async () => {
+      const { patch, stored } = await setup();
+      expect((await patch({ images: imgs.slice(0, 2) })).status).toBe(200);
+      expect((await stored()).verified).toBe(false);
+    });
+
+    it('owner reorders photos only: verified stays true', async () => {
+      const { patch, stored, property } = await setup();
+      expect((await patch({ images: [...imgs].reverse() })).status).toBe(200);
+      expect((await stored()).verified).toBe(true);
+      expect(await PropertyImage.countDocuments({ propertyId: property._id })).toBe(3);
+    });
+
+    it('owner resends identical images: verified stays true', async () => {
+      const { patch, stored } = await setup();
+      expect((await patch({ images: imgs })).status).toBe(200);
+      expect((await stored()).verified).toBe(true);
+    });
+
+    it('a listing that was already unverified stays unverified', async () => {
+      const { patch, stored } = await setup({ verified: false });
+      const response = await patch({ title: 'Another Title', images: imgs.slice(0, 2) });
+      expect(response.status).toBe(200);
+      expect((await stored()).verified).toBe(false);
+    });
+  });
+
   it('ignores admin-only fields from non-admin owners', async () => {
     const { token, user } = await registerUser();
     const property = await createProperty({ ownerId: user.id, status: 'draft' });
