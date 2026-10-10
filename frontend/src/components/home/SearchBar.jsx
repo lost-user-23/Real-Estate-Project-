@@ -4,7 +4,7 @@ import { useState } from "react";
 import { getLocationSuggestions } from "@/lib/locationSuggestions";
 import { getBudgetPresets } from "@/lib/budgetPresets";
 import { PROPERTY_TYPE_LABELS, PROPERTY_TYPE_OPTIONS_BY_INTENT } from "@/lib/propertyTypes";
-import { BHK_OPTIONS } from "@/components/search/SearchFilters";
+import { BHK_OPTIONS, normalizeKeyword } from "@/components/search/SearchFilters";
 import { LocationInput } from "@/components/home/LocationInput";
 import { SearchIcon } from "@/components/icons";
 
@@ -16,7 +16,7 @@ export function SearchBar({ intent, value, onChange, onSubmit }) {
   const canSubmit = Boolean(value.location) || typedText.trim().length > 0;
 
   // The user may type a place and press Search without picking a suggestion.
-  // Resolve the text to the best matching suggestion, else treat it as a city.
+  // Resolve the text to the best matching suggestion, else submit it as a keyword.
   const resolveAndSubmit = async () => {
     if (value.location) {
       onSubmit(value);
@@ -25,19 +25,24 @@ export function SearchBar({ intent, value, onChange, onSubmit }) {
     const text = typedText.trim();
     if (!text) return;
     setResolving(true);
-    let location = { city: text, locality: null };
+    let location = null;
     try {
       const suggestions = await getLocationSuggestions(text);
       if (suggestions?.length > 0) {
         location = { city: suggestions[0].city, locality: suggestions[0].locality ?? null };
       }
     } catch {
-      // fall back to the typed text as a city
+      // no suggestions available: fall through to a keyword search
     }
     setResolving(false);
-    const next = { ...value, location };
-    onChange(next);
-    onSubmit(next);
+    if (location) {
+      const next = { ...value, location };
+      onChange(next);
+      onSubmit(next);
+      return;
+    }
+    // Keyword-only: kept out of the shared value so it doesn't linger in the form.
+    onSubmit({ ...value, keyword: normalizeKeyword(text) });
   };
 
   return (

@@ -46,12 +46,16 @@ export function Hero() {
   };
 
   const submitSearch = (value, intent, fromRecentSearch) => {
-    if (!value.location) return;
+    if (!value.location && !value.keyword) return;
     const preset = BUDGET_PRESETS[intent].find((p) => p.id === value.budgetPresetId);
     const params = new URLSearchParams();
     params.set("intent", intent);
-    params.set("city", value.location.city);
-    if (value.location.locality) params.set("locality", value.location.locality);
+    if (value.location) {
+      params.set("city", value.location.city);
+      if (value.location.locality) params.set("locality", value.location.locality);
+    } else {
+      params.set("q", value.keyword);
+    }
     if (value.propertyType !== "all") params.set("propertyType", value.propertyType);
     if (value.bhk) params.set("bhk", value.bhk);
     if (preset) {
@@ -59,12 +63,15 @@ export function Hero() {
       if (preset.max !== null) params.set("maxPrice", String(preset.max));
     }
 
-    addRecentSearch({
-      intent,
-      city: value.location.city,
-      locality: value.location.locality,
-      label: locationLabel(value.location),
-    });
+    // Recent searches are location-based; a keyword-only search has nothing to replay.
+    if (value.location) {
+      addRecentSearch({
+        intent,
+        city: value.location.city,
+        locality: value.location.locality,
+        label: locationLabel(value.location),
+      });
+    }
 
     trackEvent("hero_search_submit", {
       intent,
