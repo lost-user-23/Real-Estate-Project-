@@ -53,6 +53,51 @@ function SubmitButton({ saving, children, danger = false, disabled = false }) {
   );
 }
 
+// Emails a 6-digit code to the current address; the server requires it to
+// change the password or email.
+function ActionCodeField({ purpose, code, onChange }) {
+  const [state, setState] = useState({ status: "idle", message: "" });
+
+  const sendCode = async () => {
+    setState({ status: "sending", message: "" });
+    try {
+      const { message } = await api.post("/api/auth/request-action-code", { purpose });
+      setState({ status: "sent", message });
+    } catch (err) {
+      setState({ status: "error", message: err?.message || "Could not send the code." });
+    }
+  };
+
+  return (
+    <AdminField label="Confirmation code (sent to your current email)">
+      <div className="flex flex-wrap items-center gap-3">
+        <input
+          required
+          inputMode="numeric"
+          pattern="\d{6}"
+          maxLength={6}
+          autoComplete="one-time-code"
+          value={code}
+          onChange={(event) => onChange(event.target.value.replace(/\D/g, ""))}
+          className={`${adminFieldInputClass} max-w-40`}
+        />
+        <button
+          type="button"
+          onClick={sendCode}
+          disabled={state.status === "sending"}
+          className="text-sm text-primary underline disabled:opacity-60"
+        >
+          {state.status === "sending" ? "Sending…" : state.status === "sent" ? "Resend code" : "Send code"}
+        </button>
+      </div>
+      <FormFeedback
+        status={state.status === "error" ? "error" : state.status === "sent" ? "success" : "idle"}
+        message={state.message}
+      />
+    </AdminField>
+  );
+}
+
 export function AccountDetailsForm() {
   const { user, updateUser } = useAuth();
   const [name, setName] = useState(user?.name ?? "");
@@ -105,6 +150,7 @@ export function ChangePasswordForm() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [code, setCode] = useState("");
   const action = useFormAction();
   const mismatch = confirmPassword !== "" && confirmPassword !== newPassword;
 
@@ -112,11 +158,12 @@ export function ChangePasswordForm() {
     event.preventDefault();
     if (newPassword !== confirmPassword) return;
     const { ok } = await action.run(async () => {
-      const session = await api.post("/api/auth/change-password", { currentPassword, newPassword });
+      const session = await api.post("/api/auth/change-password", { currentPassword, newPassword, code });
       // The server replaces the HTTP-only cookie so this session keeps working.
       replaceSession(session);
     }, "Password changed. Other devices have been signed out.");
     if (ok) {
+      setCode("");
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
@@ -158,6 +205,7 @@ export function ChangePasswordForm() {
           />
         </AdminField>
         {mismatch ? <p className="text-sm text-danger">Passwords do not match.</p> : null}
+        <ActionCodeField purpose="change-password" code={code} onChange={setCode} />
         <div className="flex flex-wrap items-center gap-4">
           <SubmitButton saving={action.saving} disabled={mismatch}>
             Change password
@@ -173,6 +221,7 @@ export function ChangeEmailForm() {
   const { user } = useAuth();
   const [newEmail, setNewEmail] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
+  const [code, setCode] = useState("");
   // The address a confirmation link was requested for. The account keeps its
   // current email until that link is used.
   const [requestedEmail, setRequestedEmail] = useState("");
@@ -181,10 +230,11 @@ export function ChangeEmailForm() {
   const handleSubmit = async (event) => {
     event.preventDefault();
     const { ok } = await action.run(async () => {
-      await api.patch("/api/auth/change-email", { currentPassword, newEmail });
+      await api.patch("/api/auth/change-email", { currentPassword, newEmail, code });
     }, "");
     if (ok) {
       setRequestedEmail(newEmail.trim());
+      setCode("");
       setNewEmail("");
       setCurrentPassword("");
     }
@@ -221,6 +271,7 @@ export function ChangeEmailForm() {
             className={adminFieldInputClass}
           />
         </AdminField>
+        <ActionCodeField purpose="change-email" code={code} onChange={setCode} />
         <div className="flex flex-wrap items-center gap-4">
           <SubmitButton saving={action.saving}>Change email</SubmitButton>
           <FormFeedback status={action.status} message={action.message} />

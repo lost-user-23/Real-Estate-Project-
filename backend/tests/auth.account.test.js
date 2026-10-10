@@ -1,5 +1,5 @@
 process.env.MONGODB_DB_NAME = 'homenest_test_auth_account';
-const { tokenFromResponse, registerVerified, tokenFromLink } = require('./helpers/auth');
+const { tokenFromResponse, registerVerified, tokenFromLink, grantActionCode, ACTION_CODE } = require('./helpers/auth');
 
 const request = require('supertest');
 const mongoose = require('mongoose');
@@ -155,10 +155,11 @@ describe('POST /api/auth/change-password', () => {
 
   it('changes the password, sets a fresh session cookie, and the new password logs in', async () => {
     const { token } = await registerUser();
+    await grantActionCode(creds.email, 'change-password');
     const res = await request(app)
       .post('/api/auth/change-password')
       .set(auth(token))
-      .send({ currentPassword: creds.password, newPassword });
+      .send({ currentPassword: creds.password, newPassword, code: ACTION_CODE });
     expect(res.status).toBe(200);
     expect(tokenFromResponse(res)).toEqual(expect.any(String));
     expect(res.body.token).toBeUndefined();
@@ -177,10 +178,11 @@ describe('POST /api/auth/change-password', () => {
 
   it('keeps the current session alive with the returned token', async () => {
     const { token } = await registerUser();
+    await grantActionCode(creds.email, 'change-password');
     const res = await request(app)
       .post('/api/auth/change-password')
       .set(auth(token))
-      .send({ currentPassword: creds.password, newPassword });
+      .send({ currentPassword: creds.password, newPassword, code: ACTION_CODE });
     const me = await request(app).get('/api/auth/me').set(auth(tokenFromResponse(res)));
     expect(me.status).toBe(200);
   });
@@ -189,10 +191,11 @@ describe('POST /api/auth/change-password', () => {
     const { token: oldToken } = await registerUser();
     // Token iat has one-second resolution; make sure the change lands in a later second.
     await sleep(1100);
+    await grantActionCode(creds.email, 'change-password');
     const res = await request(app)
       .post('/api/auth/change-password')
       .set(auth(oldToken))
-      .send({ currentPassword: creds.password, newPassword });
+      .send({ currentPassword: creds.password, newPassword, code: ACTION_CODE });
     expect(res.status).toBe(200);
 
     const oldRes = await request(app).get('/api/auth/me').set(auth(oldToken));
@@ -246,10 +249,11 @@ describe('PATCH /api/auth/change-email', () => {
 
   it('keeps the old email until the new address is confirmed, then switches', async () => {
     const { token, id } = await registerUser();
+    await grantActionCode(creds.email, 'change-email');
     const res = await request(app)
       .patch('/api/auth/change-email')
       .set(auth(token))
-      .send({ currentPassword: creds.password, newEmail: '  New@Example.COM ' });
+      .send({ currentPassword: creds.password, newEmail: '  New@Example.COM ', code: ACTION_CODE });
     expect(res.status).toBe(202);
     expect(res.body.user).toBeUndefined();
     // The link goes to the NEW (normalized) address; the account is unchanged.
@@ -272,10 +276,11 @@ describe('PATCH /api/auth/change-email', () => {
 
   it('keeps the existing token valid after an email change is confirmed', async () => {
     const { token } = await registerUser();
+    await grantActionCode(creds.email, 'change-email');
     await request(app)
       .patch('/api/auth/change-email')
       .set(auth(token))
-      .send({ currentPassword: creds.password, newEmail: 'new@example.com' });
+      .send({ currentPassword: creds.password, newEmail: 'new@example.com', code: ACTION_CODE });
     await request(app)
       .post('/api/auth/verify-email')
       .send({ token: tokenFromLink(mailer.sendVerificationEmail.mock.calls.at(-1)[1]) });
@@ -309,14 +314,16 @@ describe('PATCH /api/auth/change-email', () => {
   it('answers an address used by another account exactly like a free one (case-insensitive)', async () => {
     await registerUser({ email: 'taken@example.com' });
     const { token, id } = await registerUser();
+    await grantActionCode(creds.email, 'change-email');
     const free = await request(app)
       .patch('/api/auth/change-email')
       .set(auth(token))
-      .send({ currentPassword: creds.password, newEmail: 'free@example.com' });
+      .send({ currentPassword: creds.password, newEmail: 'free@example.com', code: ACTION_CODE });
+    await grantActionCode(creds.email, 'change-email');
     const taken = await request(app)
       .patch('/api/auth/change-email')
       .set(auth(token))
-      .send({ currentPassword: creds.password, newEmail: 'TAKEN@example.com' });
+      .send({ currentPassword: creds.password, newEmail: 'TAKEN@example.com', code: ACTION_CODE });
     expect(taken.status).toBe(free.status);
     expect(taken.body).toEqual(free.body);
     // The holder gets a notice instead of a link, and nothing is parked for it.
@@ -329,10 +336,11 @@ describe('PATCH /api/auth/change-email', () => {
     const { token, id } = await registerUser();
     jest.spyOn(console, 'error').mockImplementation(() => {});
     mailer.sendVerificationEmail.mockRejectedValueOnce(new Error('smtp down'));
+    await grantActionCode(creds.email, 'change-email');
     const res = await request(app)
       .patch('/api/auth/change-email')
       .set(auth(token))
-      .send({ currentPassword: creds.password, newEmail: 'unsent@example.com' });
+      .send({ currentPassword: creds.password, newEmail: 'unsent@example.com', code: ACTION_CODE });
     expect(res.status).toBe(503);
     expect(res.body).toEqual({ error: { message: 'We could not send the verification email. Please try again.' } });
     const user = await User.findById(id).select('+pendingEmail +verifyTokenHash +verifyTokenExpiry');
@@ -344,10 +352,11 @@ describe('PATCH /api/auth/change-email', () => {
 
   it('refuses to apply a pending address that was taken in the meantime', async () => {
     const { token, id } = await registerUser();
+    await grantActionCode(creds.email, 'change-email');
     await request(app)
       .patch('/api/auth/change-email')
       .set(auth(token))
-      .send({ currentPassword: creds.password, newEmail: 'race@example.com' });
+      .send({ currentPassword: creds.password, newEmail: 'race@example.com', code: ACTION_CODE });
     const link = mailer.sendVerificationEmail.mock.calls.at(-1)[1];
     // Someone else claims the address before the link is used.
     await User.create({ email: 'race@example.com', passwordHash: 'x', emailVerified: true });
@@ -501,18 +510,19 @@ describe('unexpected errors in account endpoints', () => {
     [
       'post',
       '/api/auth/change-password',
-      { currentPassword: creds.password, newPassword: 'another-password' },
+      { currentPassword: creds.password, newPassword: 'another-password', code: ACTION_CODE },
       () => jest.spyOn(User.prototype, 'save').mockRejectedValue(boom()),
     ],
     [
       'patch',
       '/api/auth/change-email',
-      { currentPassword: creds.password, newEmail: 'new@example.com' },
+      { currentPassword: creds.password, newEmail: 'new@example.com', code: ACTION_CODE },
       () => jest.spyOn(User, 'updateOne').mockRejectedValue(boom()),
     ],
     ['delete', '/api/auth/me', { password: creds.password }, () => jest.spyOn(User, 'deleteOne').mockRejectedValue(boom())],
   ])('%s %s -> generic 500 through the error handler, logged without secrets', async (method, path, body, fail) => {
     const { token } = await registerUser();
+    await grantActionCode(creds.email, path.endsWith('password') ? 'change-password' : 'change-email');
     // The error handler only logs outside the test env; 'staging' also avoids the dev stack.
     config.env = 'staging';
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});

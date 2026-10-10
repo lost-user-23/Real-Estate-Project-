@@ -81,6 +81,29 @@ const userSchema = new Schema(
       type: Date,
       select: false,
     },
+    // --- Step-up code for password / email changes (see utils/actionOtp.js) ---
+    actionOtpHash: {
+      type: String,
+      select: false,
+    },
+    actionOtpExpiry: {
+      type: Date,
+      select: false,
+    },
+    actionOtpPurpose: {
+      type: String,
+      enum: ['change-password', 'change-email'],
+      select: false,
+    },
+    actionOtpAttempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
+    actionOtpSentAt: {
+      type: Date,
+      select: false,
+    },
     // HMAC of the reset token's random jti; atomically consumed with a password
     // reset so a verified OTP cannot produce a reusable password reset.
     resetTokenHash: {

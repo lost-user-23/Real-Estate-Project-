@@ -52,4 +52,38 @@ function tokenFromLink(link) {
   return new URL(link).searchParams.get('token');
 }
 
-module.exports = { tokenFromResponse, refreshCookieFromResponse, registerVerified, tokenFromLink };
+// Stands in for the emailed step-up code: stores the hash of ACTION_CODE for
+// `purpose` on the account, so tests need not go through the mailer.
+const ACTION_CODE = '123456';
+async function grantActionCode(email, purpose) {
+  const User = require('../../src/models/User');
+  const config = require('../../src/config');
+  const { ACTION_OTP_TTL_MS } = require('../../src/utils/actionOtp');
+  const crypto = require('crypto');
+  const hash = crypto
+    .createHmac('sha256', config.jwtSecret)
+    .update(`action-otp:v1:${purpose}:`)
+    .update(ACTION_CODE)
+    .digest('hex');
+  await User.updateOne(
+    { email: email.trim().toLowerCase() },
+    {
+      $set: {
+        actionOtpHash: hash,
+        actionOtpExpiry: new Date(Date.now() + ACTION_OTP_TTL_MS),
+        actionOtpPurpose: purpose,
+        actionOtpAttempts: 0,
+      },
+    }
+  );
+  return ACTION_CODE;
+}
+
+module.exports = {
+  tokenFromResponse,
+  refreshCookieFromResponse,
+  registerVerified,
+  tokenFromLink,
+  grantActionCode,
+  ACTION_CODE,
+};

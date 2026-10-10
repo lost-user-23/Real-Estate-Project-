@@ -75,5 +75,21 @@ async function sendPasswordResetEmail(to, code) {
   });
 }
 
-module.exports = { sendVerificationEmail, sendAccountExistsEmail, sendPasswordResetEmail };
+async function sendActionCodeEmail(to, code, actionLabel) {
+  const text =
+    `Your confirmation code to ${actionLabel} is: ${code}\n\nIt expires in 10 minutes. If you did not request this, someone may know your password: change it and sign out of all devices.`;
+  await deliver({
+    to,
+    subject: 'Confirmation code',
+    text,
+    html: `<p>Your confirmation code to ${actionLabel} is:</p><p style="font-size:24px;font-weight:bold;letter-spacing:4px">${code}</p><p>It expires in 10 minutes. If you did not request this, someone may know your password: change it and sign out of all devices.</p>`,
+  });
+}
+
+module.exports = {
+  sendVerificationEmail,
+  sendAccountExistsEmail,
+  sendPasswordResetEmail,
+  sendActionCodeEmail,
+};
 

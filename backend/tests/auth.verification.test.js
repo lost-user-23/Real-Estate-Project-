@@ -1,5 +1,5 @@
 process.env.MONGODB_DB_NAME = 'homenest_test_auth_verification';
-const { tokenFromResponse, registerVerified, tokenFromLink } = require('./helpers/auth');
+const { tokenFromResponse, registerVerified, tokenFromLink, grantActionCode, ACTION_CODE } = require('./helpers/auth');
 const { verificationHelpers } = require('./helpers/verification');
 
 const request = require('supertest');
@@ -212,10 +212,11 @@ describe('email change confirmation', () => {
     const token = tokenFromResponse(owner);
     mailer.sendVerificationEmail.mockClear();
 
+    await grantActionCode('owner@example.com', 'change-email');
     const res = await request(app)
       .patch('/api/auth/change-email')
       .set(auth(token))
-      .send({ currentPassword: creds.password, newEmail: 'other@example.com' });
+      .send({ currentPassword: creds.password, newEmail: 'other@example.com', code: ACTION_CODE });
     expect(res.status).toBe(202);
     const user = await User.findOne({ email: 'owner@example.com' }).select('+pendingEmail');
     expect(user.pendingEmail).toBeUndefined();
@@ -226,8 +227,13 @@ describe('email change confirmation', () => {
   it('a later link replaces the earlier one (only the newest confirms)', async () => {
     const owner = await registerVerified(app, { ...creds, email: 'owner@example.com' });
     const token = tokenFromResponse(owner);
-    const change = (newEmail) =>
-      request(app).patch('/api/auth/change-email').set(auth(token)).send({ currentPassword: creds.password, newEmail });
+    const change = async (newEmail) => {
+      await grantActionCode('owner@example.com', 'change-email');
+      return request(app)
+        .patch('/api/auth/change-email')
+        .set(auth(token))
+        .send({ currentPassword: creds.password, newEmail, code: ACTION_CODE });
+    };
 
     await change('first@example.com');
     const firstLink = lastLinkTo('first@example.com');
@@ -294,10 +300,11 @@ describe('pre-verification sessions and links', () => {
     const owner = await registerVerified(app, { ...creds, email: 'keep@example.com' });
     const token = tokenFromResponse(owner);
     await new Promise((resolve) => setTimeout(resolve, 1100));
+    await grantActionCode('keep@example.com', 'change-email');
     await request(app)
       .patch('/api/auth/change-email')
       .set(auth(token))
-      .send({ currentPassword: creds.password, newEmail: 'kept@example.com' });
+      .send({ currentPassword: creds.password, newEmail: 'kept@example.com', code: ACTION_CODE });
     // Email-change links need no password.
     const res = await request(app)
       .post('/api/auth/verify-email')
@@ -333,22 +340,24 @@ describe('pendingEmail is never exposed', () => {
       return res;
     };
 
+    await grantActionCode('secret-owner@example.com', 'change-email');
     record(
       await request(app)
         .patch('/api/auth/change-email')
         .set(auth(token))
-        .send({ currentPassword: creds.password, newEmail: pending })
+        .send({ currentPassword: creds.password, newEmail: pending, code: ACTION_CODE })
     );
     expect((await User.findOne({ email: 'secret-owner@example.com' }).select('+pendingEmail')).pendingEmail).toBe(pending);
 
     record(await request(app).get('/api/auth/me').set(auth(token)));
     record(await request(app).patch('/api/auth/me').set(auth(token)).send({ name: 'Renamed' }));
     record(await request(app).post('/api/auth/login').send({ email: 'secret-owner@example.com', password: creds.password }));
+    await grantActionCode('secret-owner@example.com', 'change-password');
     const changed = record(
       await request(app)
         .post('/api/auth/change-password')
         .set(auth(token))
-        .send({ currentPassword: creds.password, newPassword: 'another-password' })
+        .send({ currentPassword: creds.password, newPassword: 'another-password', code: ACTION_CODE })
     );
     token = tokenFromResponse(changed);
     record(await request(app).post('/api/auth/resend-verification').send({ email: pending }));

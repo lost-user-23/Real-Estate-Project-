@@ -12,6 +12,7 @@ const {
   logoutAll,
   getCurrentUser,
   updateProfile,
+  requestActionCode,
   changePassword,
   changeEmail,
   deleteAccount,
@@ -90,6 +91,7 @@ router.post('/logout-all', protect, logoutAll);
 router.get('/me', protect, getCurrentUser);
 router.patch('/me', protect, updateProfile);
 router.delete('/me', protect, accountLimiter, deleteAccount);
+router.post('/request-action-code', protect, accountLimiter, requestActionCode);
 router.post('/change-password', protect, accountLimiter, changePassword);
 router.patch('/change-email', protect, accountLimiter, changeEmail);
 

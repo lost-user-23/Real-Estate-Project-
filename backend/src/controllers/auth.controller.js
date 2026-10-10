@@ -1,11 +1,12 @@
 const bcrypt = require("bcrypt");
 const User = require("../models/User");
+const jwt = require("jsonwebtoken");
+const jti = require("crypto").randomBytes(32).toString("hex");
 const AppError = require("../utils/AppError");
 const Property = require("../models/Property");
 const PropertyImage = require("../models/PropertyImage");
 const { SavedProperty } = require("../models");
 const { deleteAssetsForImages } = require("../services/cloudinaryAssets.service");
-// Called as mailer.fn(...) (not destructured) so tests can spy on it.
 const mailer = require("../services/mailer.service");
 const config = require("../config");
 const { generateVerificationToken, hashToken } = require("../utils/verificationToken");
@@ -26,6 +27,13 @@ const {
   revokeRefreshToken,
   revokeAllRefreshTokens,
 } = require("../services/auth.service");
+
+const {
+  generateActionOtp,
+  verifyActionOtp,
+  ACTION_PURPOSES,
+  MAX_ACTION_OTP_ATTEMPTS,
+} = require("../utils/actionOtp");
 
 const SAME_SITE_VALUES = ["lax", "strict", "none"];
 const REFRESH_COOKIE = "refreshToken";
@@ -408,9 +416,112 @@ async function loadUserWithVerifiedPassword(req, password) {
   return user;
 }
 
+const ACTION_LABELS = {
+  "change-password": "change your password",
+  "change-email": "change your email address",
+};
+const ACTION_OTP_FIELDS = {
+  actionOtpHash: 1,
+  actionOtpExpiry: 1,
+  actionOtpPurpose: 1,
+  actionOtpAttempts: 1,
+};
+
+function actionCodeError(reason) {
+  console.warn(`[auth] action code rejected: ${reason}`);
+  return new AppError(INVALID_OTP_MESSAGE, 400);
+}
+
+// Emails a confirmation code to the address currently on the account. The
+// caller is authenticated, so there is nothing to hide about whether the
+// address exists; the one-minute cooldown (claimed atomically) stops inbox spam.
+async function requestActionCode(req, res, next) {
+  try {
+    const { purpose } = req.body ?? {};
+    if (!ACTION_PURPOSES.includes(purpose)) {
+      throw new AppError("Invalid purpose", 400);
+    }
+
+    const { otp, otpHash, expiresAt } = generateActionOtp(purpose, config.jwtSecret);
+    const now = new Date();
+    const claimed = await User.updateOne(
+      { _id: req.user._id, ...outsideCooldown("actionOtpSentAt", now) },
+      {
+        $set: {
+          actionOtpHash: otpHash,
+          actionOtpExpiry: expiresAt,
+          actionOtpPurpose: purpose,
+          actionOtpAttempts: 0,
+          actionOtpSentAt: now,
+        },
+      }
+    );
+    if (claimed.modifiedCount !== 1) {
+      throw new AppError("A code was sent a moment ago. Please wait a minute before requesting another.", 429);
+    }
+
+    try {
+      await sendOrFail(() => mailer.sendActionCodeEmail(req.user.email, otp, ACTION_LABELS[purpose]));
+    } catch (err) {
+      await User.updateOne({ _id: req.user._id }, { $unset: { ...ACTION_OTP_FIELDS, actionOtpSentAt: 1 } });
+      throw err;
+    }
+    return res.status(202).json({ message: "We've sent a confirmation code to your current email." });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+// Checks and spends the emailed code for `purpose`. One attempt is consumed
+// BEFORE comparing, in a conditional update, so parallel guesses cannot share a
+// counter; success burns the code so it works exactly once.
+async function consumeActionCode(userId, purpose, code) {
+  if (typeof code !== "string" || !/^\d{6}$/.test(code)) {
+    throw actionCodeError("missing or malformed code");
+  }
+  const user = await User.findById(userId).select(
+    "+actionOtpHash +actionOtpExpiry +actionOtpPurpose"
+  );
+  if (!user?.actionOtpHash || user.actionOtpPurpose !== purpose) {
+    throw actionCodeError("no pending code for this action");
+  }
+  if (!user.actionOtpExpiry || user.actionOtpExpiry <= new Date()) {
+    await User.updateOne({ _id: userId, actionOtpHash: user.actionOtpHash }, { $unset: ACTION_OTP_FIELDS });
+    throw actionCodeError("expired code");
+  }
+
+  const spent = await User.findOneAndUpdate(
+    {
+      _id: userId,
+      actionOtpHash: user.actionOtpHash,
+      actionOtpExpiry: { $gt: new Date() },
+      actionOtpAttempts: { $lt: MAX_ACTION_OTP_ATTEMPTS },
+    },
+    { $inc: { actionOtpAttempts: 1 } }
+  );
+  if (!spent) {
+    await User.updateOne(
+      { _id: userId, actionOtpHash: user.actionOtpHash, actionOtpAttempts: { $gte: MAX_ACTION_OTP_ATTEMPTS } },
+      { $unset: ACTION_OTP_FIELDS }
+    );
+    throw actionCodeError("attempt limit exceeded");
+  }
+
+  if (!verifyActionOtp(code, purpose, user.actionOtpHash, config.jwtSecret)) {
+    throw actionCodeError("incorrect code");
+  }
+  const burned = await User.updateOne(
+    { _id: userId, actionOtpHash: user.actionOtpHash },
+    { $unset: ACTION_OTP_FIELDS }
+  );
+  if (burned.modifiedCount !== 1) {
+    throw actionCodeError("code already used");
+  }
+}
+
 async function changePassword(req, res, next) {
   try {
-    const { currentPassword, newPassword } = req.body ?? {};
+    const { currentPassword, newPassword, code } = req.body ?? {};
 
     const pwError = passwordError(newPassword);
     if (pwError) {
@@ -418,6 +529,7 @@ async function changePassword(req, res, next) {
     }
 
     const user = await loadUserWithVerifiedPassword(req, currentPassword);
+    await consumeActionCode(user._id, "change-password", code);
     user.passwordHash = await hashPassword(newPassword);
     user.passwordChangedAt = new Date();
     await user.save();
@@ -438,7 +550,7 @@ async function changePassword(req, res, next) {
 // a notice instead of a link), so the endpoint cannot be used to probe emails.
 async function changeEmail(req, res, next) {
   try {
-    const { currentPassword, newEmail } = req.body ?? {};
+    const { currentPassword, newEmail, code } = req.body ?? {};
     const normalizedEmail = normalizeEmail(newEmail);
 
     if (!normalizedEmail) {
@@ -452,6 +564,7 @@ async function changeEmail(req, res, next) {
     if (normalizedEmail === user.email) {
       throw new AppError("New email is the same as the current email", 400);
     }
+    await consumeActionCode(user._id, "change-email", code);
 
     const taken = await User.exists({ email: normalizedEmail });
     if (taken) {
@@ -736,8 +849,7 @@ async function verifyResetOtp(req, res, next) {
       throw resetOtpError("incorrect code");
     }
 
-    const jwt = require("jsonwebtoken");
-    const jti = require("crypto").randomBytes(32).toString("hex");
+    
     const now = new Date();
     const resetToken = jwt.sign(
       { id: user._id, purpose: "password-reset", jti },
@@ -834,6 +946,7 @@ module.exports = {
   logoutAll,
   getCurrentUser,
   updateProfile,
+  requestActionCode,
   changePassword,
   changeEmail,
   deleteAccount,
