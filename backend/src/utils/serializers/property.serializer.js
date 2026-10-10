@@ -14,7 +14,15 @@ function serializeImage(image) {
 // in-memory (create, update) still holds the field, so it must be stripped
 // here before any property ever reaches a JSON response. Only the owner's own
 // list (GET /properties/mine) passes includeContactNumber.
-function serializeProperty(property, images = [], { includeContactNumber = false } = {}) {
+//
+// `ownerId` and `status` are internal. Public routes never need them, so they
+// are stripped unless the caller opts in with includeOwnerFields (owner and
+// admin routes). `__v` is never useful to a client.
+function serializeProperty(
+  property,
+  images = [],
+  { includeContactNumber = false, includeOwnerFields = false } = {}
+) {
   const obj = typeof property.toObject === 'function' ? property.toObject() : { ...property };
   if (includeContactNumber) {
     obj.contactNumber = obj.contactNumber ?? null;
@@ -22,6 +30,11 @@ function serializeProperty(property, images = [], { includeContactNumber = false
     delete obj.contactNumber;
   }
   delete obj.cityLower;
+  delete obj.__v;
+  if (!includeOwnerFields) {
+    delete obj.ownerId;
+    delete obj.status;
+  }
   obj.images = images.map(serializeImage);
   return obj;
 }

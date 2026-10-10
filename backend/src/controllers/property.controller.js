@@ -152,7 +152,7 @@ const createProperty = asyncHandler(async (req, res) => {
     input: body,
   });
 
-  res.status(201).json({ property: serializeProperty(property, images) });
+  res.status(201).json({ property: serializeProperty(property, images, { includeOwnerFields: true }) });
 });
 
 // "2,3" -> { values: [2, 3], min: null }; "4+" -> { values: [], min: 4 }.
@@ -339,7 +339,7 @@ const listMyProperties = asyncHandler(async (req, res) => {
   const imagesByPropertyId = await propertyService.getImagesForProperties(properties.map((p) => p._id));
 
   res.status(200).json({
-    properties: serializeProperties(properties, imagesByPropertyId, { includeContactNumber: true }),
+    properties: serializeProperties(properties, imagesByPropertyId, { includeContactNumber: true, includeOwnerFields: true }),
     meta: { total, page, limit, totalPages },
   });
 });
@@ -379,7 +379,7 @@ const listAdminProperties = asyncHandler(async (req, res) => {
   const imagesByPropertyId = await propertyService.getImagesForProperties(properties.map((p) => p._id));
 
   res.status(200).json({
-    properties: serializeProperties(properties, imagesByPropertyId),
+    properties: serializeProperties(properties, imagesByPropertyId, { includeOwnerFields: true }),
     meta: { total, page, limit, totalPages },
   });
 });
@@ -480,7 +480,7 @@ const updateProperty = asyncHandler(async (req, res) => {
   if (result.error === 'not_found') throw AppError.notFound('Property not found');
   if (result.error === 'forbidden') throw AppError.forbidden('You do not have permission to update this property');
 
-  res.status(200).json({ property: serializeProperty(result.property, result.images) });
+  res.status(200).json({ property: serializeProperty(result.property, result.images, { includeOwnerFields: true }) });
 });
 
 const deleteProperty = asyncHandler(async (req, res) => {

@@ -411,6 +411,22 @@ describe('GET /api/v1/properties', () => {
     expect(response.body.meta).toMatchObject({ total: 0, totalPages: 1 });
   });
 
+  it('does not expose ownerId or status on public list, featured and slug responses', async () => {
+    const { user } = await registerUser();
+    await createProperty({ ownerId: user.id, slug: 'public-one', featured: true, featuredRank: 1 });
+
+    const list = await request(app).get('/api/v1/properties');
+    const featured = await request(app).get('/api/v1/properties/featured');
+    const bySlug = await request(app).get('/api/v1/properties/public-one');
+
+    for (const property of [list.body.properties[0], featured.body.properties[0], bySlug.body.property]) {
+      expect(property.slug).toBe('public-one');
+      expect(property).not.toHaveProperty('ownerId');
+      expect(property).not.toHaveProperty('status');
+      expect(property).not.toHaveProperty('__v');
+    }
+  });
+
   describe('keyword and bhk filters', () => {
     const slugs = (response) => response.body.properties.map((property) => property.slug).sort();
     const get = (query) => request(app).get('/api/v1/properties').query(query);
@@ -560,6 +576,29 @@ describe('GET /api/v1/properties/:slug', () => {
 });
 
 describe('PATCH /api/v1/properties/:id', () => {
+  it('preserves status in admin publish and feature update responses', async () => {
+    const { user: owner } = await registerUser();
+    const { token, user: admin } = await registerUser();
+    await promoteToAdmin(admin.id);
+    const property = await createProperty({ ownerId: owner.id, status: 'draft', publishedAt: null });
+    const path = `/api/v1/properties/${property._id}`;
+
+    const published = await request(app)
+      .patch(path)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'published' });
+    expect(published.status).toBe(200);
+    expect(published.body.property.status).toBe('published');
+
+    const featured = await request(app)
+      .patch(path)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ featured: true });
+    expect(featured.status).toBe(200);
+    expect(featured.body.property.status).toBe('published');
+    expect(featured.body.property.featured).toBe(true);
+  });
+
   it('allows an owner to update their own editable fields', async () => {
     const { token, user } = await registerUser();
     const property = await createProperty({ ownerId: user.id, status: 'draft' });
