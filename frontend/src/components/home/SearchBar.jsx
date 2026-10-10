@@ -13,7 +13,6 @@ export function SearchBar({ intent, value, onChange, onSubmit }) {
   const budgetPresets = getBudgetPresets(intent);
   const [typedText, setTypedText] = useState("");
   const [resolving, setResolving] = useState(false);
-  const canSubmit = Boolean(value.location) || typedText.trim().length > 0;
 
   // The user may type a place and press Search without picking a suggestion.
   // Resolve the text to the best matching suggestion, else submit it as a keyword.
@@ -23,7 +22,10 @@ export function SearchBar({ intent, value, onChange, onSubmit }) {
       return;
     }
     const text = typedText.trim();
-    if (!text) return;
+    if (!text) {
+      onSubmit(value);
+      return;
+    }
     setResolving(true);
     let location = null;
     try {
@@ -49,7 +51,7 @@ export function SearchBar({ intent, value, onChange, onSubmit }) {
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (canSubmit && !resolving) resolveAndSubmit();
+        if (!resolving) resolveAndSubmit();
       }}
       className="flex flex-col gap-3 rounded-2xl border border-border bg-surface p-4 shadow-sm sm:flex-row sm:items-end sm:gap-3"
     >
@@ -118,7 +120,7 @@ export function SearchBar({ intent, value, onChange, onSubmit }) {
 
       <button
         type="submit"
-        disabled={!canSubmit || resolving}
+        disabled={resolving}
         className="flex items-center justify-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:bg-border disabled:text-text-muted"
       >
         <SearchIcon className="h-4 w-4" />

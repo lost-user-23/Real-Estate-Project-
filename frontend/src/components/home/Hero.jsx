@@ -46,14 +46,13 @@ export function Hero() {
   };
 
   const submitSearch = (value, intent, fromRecentSearch) => {
-    if (!value.location && !value.keyword) return;
     const preset = BUDGET_PRESETS[intent].find((p) => p.id === value.budgetPresetId);
     const params = new URLSearchParams();
     params.set("intent", intent);
     if (value.location) {
       params.set("city", value.location.city);
       if (value.location.locality) params.set("locality", value.location.locality);
-    } else {
+    } else if (value.keyword) {
       params.set("q", value.keyword);
     }
     if (value.propertyType !== "all") params.set("propertyType", value.propertyType);
