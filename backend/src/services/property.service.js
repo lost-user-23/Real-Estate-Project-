@@ -435,6 +435,7 @@ module.exports = {
   findPublishedBySlug,
   findPublishedContactById,
   LIST_SORTS,
+  buildListFilter,
   findById,
   updatePropertyById,
   deletePropertyById,

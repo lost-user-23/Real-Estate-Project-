@@ -1,12 +1,27 @@
 const Location = require('../models/Location');
+const Property = require('../models/Property');
+const { buildListFilter } = require('../services/property.service');
 const AppError = require('../utils/AppError');
 const asyncHandler = require('../utils/asyncHandler');
 const { normalizeCity } = require('../utils/normalizeCity');
 const { serializeLocation } = require('../utils/serializers/location.serializer');
 
+// The stored Location.activeListingCount can drift, so counts are computed on read
+// with the same filter the results page uses, which keeps them equal to its meta.total.
+async function serializeWithLiveCounts(locations) {
+    const counts = await Promise.all(
+        locations.map((location) =>
+            Property.countDocuments(
+                buildListFilter({ city: location.city, ...(location.locality ? { locality: location.locality } : {}) })
+            )
+        )
+    );
+    return locations.map((location, index) => ({ ...serializeLocation(location), activeListingCount: counts[index] }));
+}
+
 const getPopularLocations = asyncHandler(async (req, res) => {
     const locations = await Location.find({ popular: true }).sort({ popularRank: 1 }).limit(12);
-    res.json({ locations: locations.map(serializeLocation) });
+    res.json({ locations: await serializeWithLiveCounts(locations) });
 });
 
 function escapeRegExp(value) {
@@ -58,7 +73,7 @@ const getLocationSuggestions = asyncHandler(async (req, res) => {
         { $limit: SUGGESTION_LIMIT },
     ]);
 
-    res.json({ locations: locations.map(serializeLocation) });
+    res.json({ locations: await serializeWithLiveCounts(locations) });
 });
 
 const ALLOWED_FIELDS = ['city', 'locality', 'activeListingCount', 'popular', 'popularRank', 'imageUrl', 'imageAlt'];
