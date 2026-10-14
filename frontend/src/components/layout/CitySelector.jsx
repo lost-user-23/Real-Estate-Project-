@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useCity } from "@/lib/city-context";
-import { isSameCity, SUPPORTED_CITIES } from "@/lib/city";
+import { isSameCity, normalizeCity, SUPPORTED_CITIES } from "@/lib/city";
 import { ChevronDownIcon, MapPinIcon } from "@/components/icons";
 
 
 export function CitySelector({ transparent = false }) {
   const { city, setCity } = useCity();
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const rootRef = useRef(null);
 
   useEffect(() => {
@@ -30,7 +31,12 @@ export function CitySelector({ transparent = false }) {
   const select = (nextCity) => {
     setCity(nextCity);
     setOpen(false);
+    setQuery("");
   };
+
+  const needle = normalizeCity(query);
+  const filteredCities = SUPPORTED_CITIES.filter((name) => normalizeCity(name).includes(needle));
+  const showAllIndia = "all india".includes(needle);
 
   return (
     <div ref={rootRef} className="relative">
@@ -49,36 +55,52 @@ export function CitySelector({ transparent = false }) {
       </button>
 
       {open ? (
-        <div
-          role="listbox"
-          aria-label="Select a city"
-          className="absolute left-0 top-full z-50 mt-2 max-h-80 w-56 overflow-y-auto rounded-xl border border-border bg-surface p-1.5 text-text shadow-lg"
-        >
-          <button
-            type="button"
-            role="option"
-            aria-selected={city === null}
-            onClick={() => select(null)}
-            className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-bg ${
-              city === null ? "font-semibold text-primary" : ""
-            }`}
+        <div className="absolute left-0 top-full z-50 mt-2 w-xl max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-surface p-3 text-text shadow-lg">
+          <input
+            type="search"
+            autoFocus
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search city"
+            aria-label="Search cities"
+            className="mb-3 w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm outline-none focus:border-primary"
+          />
+          <div
+            role="listbox"
+            aria-label="Select a city"
+            className="grid max-h-72 grid-cols-2 gap-1 overflow-y-auto sm:grid-cols-3 md:grid-cols-4"
           >
-            All India
-          </button>
-          {SUPPORTED_CITIES.map((cityName) => (
-            <button
-              key={cityName}
-              type="button"
-              role="option"
-              aria-selected={isSameCity(city, cityName)}
-              onClick={() => select(cityName)}
-              className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-bg ${
-                isSameCity(city, cityName) ? "font-semibold text-primary" : ""
-              }`}
-            >
-              <span>{cityName}</span>
-            </button>
-          ))}
+            {showAllIndia ? (
+              <button
+                type="button"
+                role="option"
+                aria-selected={city === null}
+                onClick={() => select(null)}
+                className={`rounded-lg px-3 py-2 text-left text-sm hover:bg-bg ${
+                  city === null ? "font-semibold text-primary" : ""
+                }`}
+              >
+                All India
+              </button>
+            ) : null}
+            {filteredCities.map((cityName) => (
+              <button
+                key={cityName}
+                type="button"
+                role="option"
+                aria-selected={isSameCity(city, cityName)}
+                onClick={() => select(cityName)}
+                className={`rounded-lg px-3 py-2 text-left text-sm hover:bg-bg ${
+                  isSameCity(city, cityName) ? "font-semibold text-primary" : ""
+                }`}
+              >
+                {cityName}
+              </button>
+            ))}
+            {!showAllIndia && filteredCities.length === 0 ? (
+              <p className="col-span-full px-3 py-2 text-sm text-text-muted">No cities found</p>
+            ) : null}
+          </div>
         </div>
       ) : null}
     </div>
