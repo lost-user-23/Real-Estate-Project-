@@ -87,8 +87,8 @@ export function FeaturedShowcase({ properties, onView }) {
         </div>
       ) : null}
 
-      <div className="grid overflow-hidden rounded-3xl border border-border bg-surface lg:grid-cols-[360px_1fr]">
-        <div className="flex flex-col justify-between gap-6 bg-linear-to-br from-primary to-primary-dark p-6 text-white sm:p-8">
+      <div className="grid overflow-hidden rounded-[2rem] border border-border bg-surface shadow-xl shadow-primary/10 lg:grid-cols-[380px_1fr]">
+        <div className="flex flex-col justify-between gap-6 bg-linear-to-br from-ink via-primary-dark to-primary p-6 text-white sm:p-8">
           <div>
             <div className="flex items-center gap-1.5">
               {property.featured ? (
@@ -105,7 +105,7 @@ export function FeaturedShowcase({ properties, onView }) {
               ) : null}
             </div>
 
-            <h3 className="mt-4 text-xl font-bold tracking-tight sm:text-2xl">{property.title}</h3>
+            <h3 className="mt-4 text-xl font-extrabold tracking-tight sm:text-2xl">{property.title}</h3>
             <p className="mt-2 flex items-center gap-1.5 text-sm text-white/80">
               <MapPinIcon className="h-4 w-4 shrink-0" />
               {property.locality}, {property.city}

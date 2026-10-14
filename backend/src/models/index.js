@@ -10,4 +10,5 @@ module.exports = {
   Report: require('./Report'),
   SavedProperty: require('./SavedProperty'),
   RefreshToken: require('./RefreshToken'),
+  HeroBanner: require('./HeroBanner'),
 };

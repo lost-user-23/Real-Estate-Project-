@@ -19,7 +19,7 @@ export function PropertyCard({ property, priority = false, onView, fluid = false
   return (
     <article
       data-carousel-item={fluid ? undefined : true}
-      className={`group flex flex-col overflow-hidden rounded-2xl border border-border bg-surface transition-shadow hover:shadow-md ${
+      className={`group flex flex-col overflow-hidden rounded-3xl border border-border bg-surface transition-all duration-300 hover:-translate-y-1.5 hover:border-primary/30 hover:shadow-2xl hover:shadow-primary/15 ${
         fluid ? "w-full" : "w-[85vw] shrink-0 snap-start sm:w-auto sm:shrink"
       }`}
     >
@@ -29,10 +29,16 @@ export function PropertyCard({ property, priority = false, onView, fluid = false
           alt={property.image.alt}
           fill
           sizes="(max-width: 640px) 85vw, (max-width: 1024px) 45vw, 22vw"
-          className="object-cover"
+          className="object-cover transition-transform duration-700 group-hover:scale-110"
           loading={priority ? "eager" : "lazy"}
           priority={priority}
         />
+
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-linear-to-t from-black/60 to-transparent" />
+        <p className="absolute bottom-3 left-4 text-xl font-bold text-white drop-shadow">
+          {formatPrice(property.priceInRupees)}
+          {property.intent === "rent" ? <span className="text-sm font-medium text-white/85">/mo</span> : null}
+        </p>
 
         <div className="absolute left-3 top-3 flex items-center gap-1.5">
           {property.featured ? (
@@ -54,18 +60,14 @@ export function PropertyCard({ property, priority = false, onView, fluid = false
           aria-label={saved ? "Remove from saved properties" : "Save property"}
           aria-pressed={saved}
           onClick={() => toggleSave(property.id)}
-          className="absolute right-3 top-3 rounded-full bg-white/90 p-2 text-text shadow-sm transition-colors hover:bg-white"
+          className="absolute right-3 top-3 rounded-full bg-white/90 p-2 text-text shadow-md backdrop-blur transition-all hover:scale-110 hover:bg-white"
         >
           {saved ? <HeartFilledIcon className="h-5 w-5 text-danger" /> : <HeartIcon className="h-5 w-5" />}
         </button>
       </div>
 
       <div className="flex flex-1 flex-col gap-2 p-4">
-        <p className="text-lg font-semibold">
-          {formatPrice(property.priceInRupees)}
-          {property.intent === "rent" ? <span className="text-sm font-normal text-text-muted">/mo</span> : null}
-        </p>
-        <p className="text-sm text-text">
+        <p className="font-semibold text-text">
           {typeLabel} &middot; {formatArea(property.areaSqft)}
         </p>
         <p className="flex items-center gap-1 text-sm text-text-muted">
@@ -76,7 +78,7 @@ export function PropertyCard({ property, priority = false, onView, fluid = false
         {amenities.length ? (
           <ul className="mt-1 flex flex-wrap gap-1.5">
             {amenities.map((amenity) => (
-              <li key={amenity} className="rounded-full bg-bg px-2.5 py-1 text-xs text-text-muted">
+              <li key={amenity} className="rounded-full bg-primary-light px-2.5 py-1 text-xs font-medium text-primary-dark">
                 {amenity}
               </li>
             ))}
@@ -86,7 +88,7 @@ export function PropertyCard({ property, priority = false, onView, fluid = false
         <Link
           href={`/property/${property.slug}`}
           onClick={() => onView?.(property)}
-          className="mt-3 inline-flex items-center justify-center rounded-full border border-primary px-4 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary hover:text-white"
+          className="mt-3 inline-flex items-center justify-center rounded-full bg-ink px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary"
         >
           View details
         </Link>

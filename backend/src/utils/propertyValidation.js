@@ -1,3 +1,7 @@
+const Property = require('../models/Property');
+
+const { PROPERTY_INTENTS, PROPERTY_TYPES, FURNISHING_OPTIONS, FACING_OPTIONS } = Property;
+
 // Source of truth for listing field rules, shared by create and edit.
 // frontend/src/lib/propertyValidation.js mirrors these for inline form errors.
 
@@ -73,8 +77,87 @@ function normalizeListingFields(body) {
   return out;
 }
 
+function isNonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isFiniteNonNegativeNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+
+// Optional text fields shared by create and edit. Absent (undefined) is skipped;
+// a present null is an error, so only '' can clear a description.
+function pushTextFieldErrors(errors, body) {
+  for (const [field, check] of [['description', descriptionError], ['locality', localityError], ['contactNumber', phoneError]]) {
+    if (body[field] !== undefined) {
+      const error = check(body[field]);
+      if (error) errors.push(error);
+    }
+  }
+}
+
+function validateCreateInput(body) {
+  const errors = [];
+
+  if (body.title === undefined) {
+    errors.push('title is required');
+  } else {
+    const error = titleError(body.title);
+    if (error) errors.push(error);
+  }
+  if (!PROPERTY_INTENTS.includes(body.intent)) {
+    errors.push(`intent must be one of: ${PROPERTY_INTENTS.join(', ')}`);
+  }
+  if (!PROPERTY_TYPES.includes(body.propertyType)) {
+    errors.push(`propertyType must be one of: ${PROPERTY_TYPES.join(', ')}`);
+  }
+  if (!isFiniteNonNegativeNumber(body.areaSqft)) errors.push('areaSqft must be a non-negative number');
+  if (!isFiniteNonNegativeNumber(body.priceInRupees)) errors.push('priceInRupees must be a non-negative number');
+  if (!isNonEmptyString(body.city)) errors.push('city is required');
+
+  if (body.bhk != null && !isFiniteNonNegativeNumber(body.bhk)) {
+    errors.push('bhk must be a non-negative number');
+  }
+  pushTextFieldErrors(errors, body);
+  if (body.amenities != null) {
+    if (!Array.isArray(body.amenities) || !body.amenities.every((a) => typeof a === 'string')) {
+      errors.push('amenities must be an array of strings');
+    }
+  }
+
+  return errors;
+}
+
+// Optional listing details; null/undefined means "not provided".
+function validateDetailFields(body) {
+  const errors = [];
+  for (const key of ['bathrooms', 'balconies']) {
+    if (body[key] != null && !isFiniteNonNegativeNumber(body[key])) errors.push(`${key} must be a non-negative number`);
+  }
+  if (body.floor != null && !Number.isFinite(body.floor)) errors.push('floor must be a number');
+  if (body.yearOfConstruction != null
+    && !(Number.isInteger(body.yearOfConstruction) && body.yearOfConstruction >= 1800 && body.yearOfConstruction <= new Date().getFullYear() + 5)) {
+    errors.push('yearOfConstruction must be a valid year');
+  }
+  if (body.furnished != null && !FURNISHING_OPTIONS.includes(body.furnished)) {
+    errors.push(`furnished must be one of: ${FURNISHING_OPTIONS.join(', ')}`);
+  }
+  if (body.facing != null && !FACING_OPTIONS.includes(body.facing)) {
+    errors.push(`facing must be one of: ${FACING_OPTIONS.join(', ')}`);
+  }
+  if (body.ownership != null && typeof body.ownership !== 'string') errors.push('ownership must be a string');
+  if (body.isLuxury != null && typeof body.isLuxury !== 'boolean') errors.push('isLuxury must be a boolean');
+  return errors;
+}
+
 module.exports = {
   MIN_PROPERTY_IMAGES,
+  isNonEmptyString,
+  isFiniteNonNegativeNumber,
+  pushTextFieldErrors,
+  validateCreateInput,
+  validateDetailFields,
   normalizePhone,
   comparablePhone,
   titleError,

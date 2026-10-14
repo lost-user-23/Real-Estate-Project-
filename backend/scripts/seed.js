@@ -18,7 +18,7 @@ const HALVED_FILE_PREFIX = 'mumbai';
 // Usage: npm run seed -- [file.csv] [--replace-seeded] [--full-mumbai]
 //   file.csv          CSV inside the DataSet folder (default: every .csv there)
 //   --replace-seeded  first deletes previously seeded/mock data: properties with
-//                     no owner (and their images), plus all locations,
+//                     no owner and no scraper source (and their images), plus all locations,
 //                     categories, projects and articles.
 function parseArgs(argv) {
   return {
@@ -44,6 +44,16 @@ async function bulkUpsert(Model, ops, label) {
     process.stdout.write(`\r[seed] ${label}: ${done}/${ops.length}`);
   }
   if (ops.length > 0) process.stdout.write('\n');
+}
+
+// Seeded listings have no owner AND no `source`. Scraper-imported listings also
+// have no owner, but they carry a `source`, so --replace-seeded must leave them alone.
+const SEEDED_FILTER = { ownerId: null, source: { $exists: false } };
+
+async function removeSeededProperties() {
+  const seeded = await Property.find(SEEDED_FILTER).select('_id').lean();
+  await PropertyImage.deleteMany({ propertyId: { $in: seeded.map((p) => p._id) } });
+  return Property.deleteMany(SEEDED_FILTER);
 }
 
 async function main() {
@@ -90,9 +100,7 @@ async function main() {
 
   try {
     if (replace) {
-      const seeded = await Property.find({ ownerId: null }).select('_id').lean();
-      await PropertyImage.deleteMany({ propertyId: { $in: seeded.map((p) => p._id) } });
-      const removed = await Property.deleteMany({ ownerId: null });
+      const removed = await removeSeededProperties();
       await Promise.all([Location.deleteMany({}), Category.deleteMany({}), Project.deleteMany({}), Article.deleteMany({})]);
       console.log(`[seed] removed ${removed.deletedCount} seeded properties and all locations/categories/projects/articles`);
     }
@@ -173,7 +181,11 @@ async function main() {
   console.log('[seed] done.');
 }
 
-main().catch((error) => {
-  console.error('[seed] unexpected error:', error);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error('[seed] unexpected error:', error);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { removeSeededProperties };

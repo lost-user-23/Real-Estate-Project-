@@ -48,7 +48,7 @@ curl http://localhost:4000/health
 - `npm run dev` - start with nodemon (auto-restart).
 - `npm start` - start once, for production/process managers.
 - `npm run lint` - ESLint over the backend source.
-- `npm test` - Jest + Supertest (needs a reachable MongoDB; each test file uses its own `homenest_test_*` database).
+- `npm test` - Jest + Supertest. Needs a **local** `mongod` (see "Running the tests" below); each test file uses its own `homenest_test_*` database.
 - `npm run db:setup` - create/sync MongoDB indexes for every model in the registry.
 - `npm run seed` - import every CSV in the `DataSet/` folder into MongoDB (properties, plus locations, categories and demo builder projects derived from them). See "Seeding the database" below.
 - `npm run backfill:city-lower` - fill `cityLower`/`localityLower` on documents created before those fields existed.
@@ -122,6 +122,31 @@ returns `409`.
   lookups per hour by one user get `429`. The response
   is `Cache-Control: private, no-store` and the number is never logged.
 - `GET /api/v1/properties/mine` includes it on the caller's own listings.
+
+## Running the tests
+
+The tests create, fill and **drop whole databases**, so they never touch the
+database in `MONGODB_URI`. They use `MONGODB_URI_TEST`, which defaults to
+`mongodb://127.0.0.1:27017`, so you need a local MongoDB running first:
+
+- **Windows:** install MongoDB Community Server (it can install a service), then
+  `net start MongoDB`, or run it by hand: `mongod --dbpath C:\data\db`
+  (create the folder first).
+- **macOS (Homebrew):** `brew services start mongodb-community`
+- **Linux:** `sudo systemctl start mongod`
+- **Docker (any OS):** `docker run -d --name homenest-test-mongo -p 27017:27017 mongo:8`
+
+Then `npm test`. Check it is reachable with `mongosh --eval "db.runCommand({ping:1})"`.
+
+Safety rules, enforced in `tests/setup/jest.setup.js` (unit-tested in
+`tests/dbSafety.test.js`):
+
+- The run **refuses to start** if `MONGODB_URI_TEST` points at an Atlas host
+  (`*.mongodb.net` / `mongodb+srv://`) or equals the `MONGODB_URI` in `.env`.
+- Every connection is checked again when it is made: the database name must
+  contain `test`, otherwise the test file fails before anything is written.
+- Each test file picks its own `homenest_test_<area>` name by setting
+  `process.env.MONGODB_DB_NAME` before it requires the app.
 
 ## Setting up database indexes
 

@@ -15,4 +15,5 @@ v1Router.use('/projects', require('./project.routes'));
 v1Router.use('/uploads', require('./upload.routes'));
 v1Router.use('/saved-properties', require("./savedProperty.routes"));
 v1Router.use('/contact-messages', require('./contactMessage.routes'));
+v1Router.use('/hero', require('./hero.routes'));
 module.exports = { v1Router };

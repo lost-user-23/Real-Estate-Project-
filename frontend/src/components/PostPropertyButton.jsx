@@ -9,10 +9,10 @@ export function PostPropertyButton({ source, prefill, variant = "solid", classNa
   if (prefill?.propertyType) params.set("propertyType", prefill.propertyType);
   const href = params.toString() ? `/post-property?${params.toString()}` : "/post-property";
 
-  const base = "inline-flex items-center justify-center rounded-full px-5 py-2.5 text-sm font-semibold transition-colors";
+  const base = "inline-flex items-center justify-center rounded-full px-5 py-2.5 text-sm font-semibold transition-all";
   const styles =
     variant === "solid"
-      ? "bg-accent text-accent-ink hover:bg-accent-dark"
+      ? "bg-accent text-accent-ink shadow-md shadow-accent/30 hover:-translate-y-0.5 hover:bg-accent-dark"
       : "border border-primary text-primary hover:bg-primary hover:text-white";
 
   return (

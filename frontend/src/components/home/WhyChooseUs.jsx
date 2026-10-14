@@ -31,10 +31,19 @@ export function WhyChooseUs() {
     <Section id="why-choose-us" title="Why choose us" tone="surface">
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         {BENEFITS.map((benefit) => (
-          <div key={benefit.title} className="rounded-2xl border border-border bg-bg p-5">
-            <benefit.icon className="h-8 w-8 text-primary" aria-hidden />
-            <p className="mt-4 font-semibold">{benefit.title}</p>
-            <p className="mt-1 text-sm text-text-muted">{benefit.description}</p>
+          <div
+            key={benefit.title}
+            className="group relative overflow-hidden rounded-3xl border border-border bg-bg p-6 transition-all duration-300 hover:-translate-y-1.5 hover:border-primary/40 hover:bg-surface hover:shadow-xl hover:shadow-primary/10"
+          >
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-linear-to-br from-primary to-primary-dark text-white shadow-md shadow-primary/30 transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-3">
+              <benefit.icon className="h-6 w-6" aria-hidden />
+            </span>
+            <p className="mt-5 text-lg font-semibold leading-snug">{benefit.title}</p>
+            <p className="mt-2 text-sm leading-relaxed text-text-muted">{benefit.description}</p>
+            <span
+              aria-hidden
+              className="absolute inset-x-0 bottom-0 h-1 origin-left scale-x-0 bg-linear-to-r from-primary to-accent transition-transform duration-300 group-hover:scale-x-100"
+            />
           </div>
         ))}
       </div>

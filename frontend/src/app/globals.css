@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --color-bg: #f5f6f6;
+  --color-bg: #f3f7f7;
   --color-surface: #ffffff;
   --color-text: #14181b;
   --color-text-muted: #52606a;
@@ -20,6 +20,10 @@
 
   --color-success: #1f8a4c;
   --color-danger: #c0392b;
+
+  /* Deep ink used for dark sections (footer, promos). */
+  --color-ink: #08242a;
+  --color-ink-soft: #0f3a40;
 }
 
 @theme inline {
@@ -39,14 +43,26 @@
   --color-accent-ink: var(--color-accent-ink);
   --color-success: var(--color-success);
   --color-danger: var(--color-danger);
+  --color-ink: var(--color-ink);
+  --color-ink-soft: var(--color-ink-soft);
 
   --font-sans: var(--font-inter);
   --font-heading: var(--font-jakarta);
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   background: var(--color-bg);
   color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
 }
 
 h1,
@@ -73,7 +89,124 @@ h6 {
   display: none;
 }
 
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-12px);
+  }
+}
+
+@keyframes shine {
+  to {
+    background-position: 200% center;
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.delay-100 {
+  animation-delay: 0.1s;
+}
+.delay-200 {
+  animation-delay: 0.2s;
+}
+.delay-300 {
+  animation-delay: 0.3s;
+}
+
+/* Animated gradient text for hero highlights. */
+.text-gradient {
+  background: linear-gradient(90deg, #f2a541, #ffd48a, #f2a541);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shine 4s linear infinite;
+}
+
+/* Festival decorations on the home hero (components/home/HeroDecoration.jsx). */
+.hero-particle {
+  position: absolute;
+  line-height: 1;
+  animation-iteration-count: infinite;
+  animation-timing-function: linear;
+}
+.hero-fall {
+  top: -10%;
+  animation-name: hero-fall;
+}
+.hero-rise {
+  bottom: -10%;
+  animation-name: hero-rise;
+}
+.hero-float {
+  animation-name: hero-bob;
+  animation-timing-function: ease-in-out;
+}
+
+@keyframes hero-fall {
+  to {
+    transform: translateY(120vh) rotate(360deg);
+  }
+}
+
+@keyframes hero-rise {
+  0% {
+    opacity: 0;
+  }
+  15%,
+  80% {
+    opacity: 0.9;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-110vh) rotate(20deg);
+  }
+}
+
+@keyframes hero-bob {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-6deg);
+  }
+  50% {
+    transform: translateY(-18px) rotate(6deg);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .hero-particle {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up,
+  .animate-float,
+  .text-gradient {
+    animation: none !important;
+  }
+
   * {
     scroll-behavior: auto !important;
   }

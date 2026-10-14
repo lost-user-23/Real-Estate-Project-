@@ -29,7 +29,7 @@ export function Insights() {
             <Link
               key={article.id}
               href={`/insights/${article.slug}`}
-              className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-surface transition-shadow hover:shadow-md"
+              className="group flex flex-col overflow-hidden rounded-3xl border border-border bg-surface transition-all duration-300 hover:-translate-y-1.5 hover:shadow-2xl hover:shadow-primary/15"
             >
               <div className="relative aspect-video w-full overflow-hidden bg-bg">
                 <SafeImage
@@ -38,12 +38,12 @@ export function Insights() {
                   fill
                   sizes="(max-width: 640px) 100vw, 30vw"
                   loading="lazy"
-                  className="object-cover"
+                  className="object-cover transition-transform duration-700 group-hover:scale-110"
                 />
               </div>
               <div className="flex flex-1 flex-col gap-2 p-4">
                 <p className="text-xs text-text-muted">{formatDate(article.publishedAt)}</p>
-                <p className="font-semibold leading-snug">{article.title}</p>
+                <p className="text-lg font-bold leading-snug transition-colors group-hover:text-primary">{article.title}</p>
                 <p className="text-sm text-text-muted">{article.excerpt}</p>
               </div>
             </Link>

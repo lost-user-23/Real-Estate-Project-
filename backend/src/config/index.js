@@ -15,6 +15,7 @@ const REQUIRED_IN_PRODUCTION = [
   'CLOUDINARY_CLOUD_NAME',
   'CLOUDINARY_API_KEY',
   'CLOUDINARY_API_SECRET',
+  'IMPORT_API_KEY',
 ];
 
 const MIN_JWT_SECRET_LENGTH = 32;
@@ -99,6 +100,12 @@ if (config.env === 'production') {
   if (missing.length > 0) {
     throw new Error(`Missing required environment variables in production: ${missing.join(', ')}`);
   }
+}
+
+// Outside production a missing import key is allowed, but the scraper endpoint
+// then answers 401 to everything. Say so in the server log (never to callers).
+if (config.env !== 'production' && config.env !== 'test' && !process.env.IMPORT_API_KEY) {
+  console.warn('IMPORT_API_KEY is not set: POST /api/v1/admin/import/properties will reject every request.');
 }
 
 // Non-production keeps the local-frontend default when CORS_ORIGIN is unset.

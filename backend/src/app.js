@@ -58,7 +58,12 @@ function createApp() {
   app.use(cookieParser());
   app.use(rejectForeignOrigin);
   app.use(globalRateLimiter);
-  app.use(express.json());
+  // The import route sets its own, larger body limit (after checking its API
+  // key), so the default 100kb parser must not read that body first.
+  const jsonParser = express.json();
+  app.use((req, res, next) =>
+    req.path.startsWith('/api/v1/admin/import') ? next() : jsonParser(req, res, next)
+  );
   app.use(requestLogger);
   
   app.use('/health', healthRoutes);

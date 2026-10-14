@@ -30,7 +30,7 @@ export function PopularLocations() {
               key={location.id}
               href={`/search?city=${encodeURIComponent(location.city)}`}
               onClick={() => trackEvent("location_tile_click", { city: location.city })}
-              className="group relative aspect-4/3 overflow-hidden rounded-2xl"
+              className="group relative aspect-4/3 overflow-hidden rounded-3xl shadow-md transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-primary/20"
             >
               <SafeImage
                 src={location.image.src}
@@ -38,12 +38,12 @@ export function PopularLocations() {
                 fill
                 sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 22vw"
                 loading="lazy"
-                className="object-cover transition-transform duration-200 group-hover:scale-105"
+                className="object-cover transition-transform duration-700 group-hover:scale-110"
               />
-              <div className="absolute inset-0 bg-linear-to-t from-black/70 via-black/10 to-transparent" />
-              <div className="absolute bottom-0 left-0 right-0 p-3 text-white">
-                <p className="font-semibold">{location.city}</p>
-                <p className="text-xs text-white/80">{location.activeListingCount.toLocaleString("en-IN")} listings</p>
+              <div className="absolute inset-0 bg-linear-to-t from-ink/85 via-ink/10 to-transparent" />
+              <div className="absolute bottom-0 left-0 right-0 p-4 text-white">
+                <p className="text-lg font-bold">{location.city}</p>
+                <p className="mt-0.5 inline-flex rounded-full bg-white/20 px-2 py-0.5 text-xs font-medium backdrop-blur">{location.activeListingCount.toLocaleString("en-IN")} listings</p>
               </div>
             </Link>
           ))}

@@ -31,6 +31,9 @@ function serializeProperty(
   }
   delete obj.cityLower;
   delete obj.__v;
+  // Scraper-import bookkeeping; internal on every route, including admin.
+  delete obj.imageImportStatus;
+  delete obj.importImageUrls;
   if (!includeOwnerFields) {
     delete obj.ownerId;
     delete obj.status;

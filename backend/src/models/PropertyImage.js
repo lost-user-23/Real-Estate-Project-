@@ -27,6 +27,13 @@ const propertyImageSchema = new Schema(
       default: null,
       maxlength: 500,
     },
+    // The original (scraped) image URL this photo was copied from. Set only on
+    // imported photos; a re-import uses it to skip photos that are already saved.
+    sourceUrl: {
+      type: String,
+      default: null,
+      maxlength: 2048,
+    },
     alt: {
       type: String,
       default: '',

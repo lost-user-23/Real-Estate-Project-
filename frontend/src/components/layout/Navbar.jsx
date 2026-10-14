@@ -53,10 +53,10 @@ export function Navbar() {
 
   return (
     <header
-      className={`fixed inset-x-0 top-0 z-50 transition-colors duration-300 ${
+      className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
         transparent
           ? "bg-transparent"
-          : "border-b border-border bg-surface/95 backdrop-blur"
+          : "border-b border-border/70 bg-surface/85 shadow-lg shadow-black/5 backdrop-blur-xl"
       }`}
     >
       <Container className="flex h-16 items-center justify-between gap-4">
@@ -67,7 +67,10 @@ export function Navbar() {
               transparent ? "text-white" : "text-primary"
             }`}
           >
-            <span aria-hidden className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-white">
+            <span
+              aria-hidden
+              className="flex h-9 w-9 items-center justify-center rounded-xl bg-linear-to-br from-primary to-[#12a09e] text-white shadow-md shadow-primary/30"
+            >
               H
             </span>
             HomeNest
@@ -81,7 +84,7 @@ export function Navbar() {
             <Link
               key={link.label}
               href={link.href}
-              className={`text-sm font-medium transition-colors ${
+              className={`relative py-1 text-sm font-semibold transition-colors after:absolute after:inset-x-0 after:-bottom-0.5 after:h-0.5 after:origin-left after:scale-x-0 after:rounded-full after:bg-accent after:transition-transform hover:after:scale-x-100 ${
                 transparent ? "text-white/90 hover:text-white" : "text-text hover:text-primary"
               }`}
             >

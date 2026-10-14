@@ -49,7 +49,7 @@ export function NewProjects() {
             <Link
               key={project.id}
               href={`/project/${project.id}`}
-              className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-surface transition-shadow hover:shadow-md"
+              className="group flex flex-col overflow-hidden rounded-3xl border border-border bg-bg transition-all duration-300 hover:-translate-y-1.5 hover:shadow-2xl hover:shadow-primary/15"
             >
               <div className="relative aspect-4/3 w-full overflow-hidden bg-bg">
                 <SafeImage
@@ -58,7 +58,7 @@ export function NewProjects() {
                   fill
                   sizes="(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 22vw"
                   loading="lazy"
-                  className="object-cover"
+                  className="object-cover transition-transform duration-700 group-hover:scale-110"
                 />
               </div>
               <div className="flex flex-1 flex-col gap-1 p-4">
@@ -67,7 +67,7 @@ export function NewProjects() {
                 <p className="text-sm text-text-muted">
                   {project.locality}, {project.city}
                 </p>
-                <p className="mt-2 text-sm font-medium text-primary">
+                <p className="mt-2 text-sm font-bold text-primary">
                   From {formatPrice(project.startingPriceInRupees)}
                 </p>
                 <p className="text-xs text-text-muted">Possession: {project.possessionLabel}</p>

@@ -616,4 +616,6 @@ module.exports = {
   getPropertyImages,
   getImagesForProperties,
   replacePropertyImages,
+  generateUniqueSlug,
+  isSlugCollision,
 };

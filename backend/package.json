@@ -14,6 +14,7 @@
     "backfill:city-lower": "node scripts/backfill-city-lower.js",
     "backfill:email-verified": "node scripts/backfill-email-verified.js",
     "audit:image-urls": "node scripts/audit-image-urls.js",
+    "import:retry-images": "node scripts/import-retry-images.js",
     "admin:create": "node scripts/create-admin.js"
   },
   "engines": {

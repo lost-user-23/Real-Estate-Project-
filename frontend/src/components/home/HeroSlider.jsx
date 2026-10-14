@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
 
@@ -10,7 +10,8 @@ import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
 // and arrow controls are exposed to assistive tech. Auto-advances like the
 // sites it's modelled on, but freezes on the first frame for
 // prefers-reduced-motion (PRD §11).
-const SLIDES = [
+// Used until an admin uploads their own pictures (Admin > Home banner).
+const DEFAULT_SLIDES = [
   { id: "s1", image: { src: "https://picsum.photos/seed/hero-banner-1/1920/1080" } },
   { id: "s2", image: { src: "https://picsum.photos/seed/hero-banner-2/1920/1080" } },
   { id: "s3", image: { src: "https://picsum.photos/seed/hero-banner-3/1920/1080" } },
@@ -19,7 +20,12 @@ const SLIDES = [
 
 const AUTO_ADVANCE_MS = 6000;
 
-export function HeroSlider() {
+// `images` is the admin-managed list ({ url }); empty or missing falls back to the defaults.
+export function HeroSlider({ images }) {
+  const SLIDES = useMemo(
+    () => (images?.length ? images.map((img, i) => ({ id: `c${i}`, image: { src: img.url } })) : DEFAULT_SLIDES),
+    [images]
+  );
   const [index, setIndex] = useState(0);
   const reducedMotionRef = useRef(false);
 
@@ -28,16 +34,19 @@ export function HeroSlider() {
   }, []);
 
   useEffect(() => {
-    if (reducedMotionRef.current) return;
+    if (reducedMotionRef.current || SLIDES.length < 2) return;
     const timer = window.setInterval(() => {
       setIndex((i) => (i + 1) % SLIDES.length);
     }, AUTO_ADVANCE_MS);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [SLIDES]);
 
-  const goTo = useCallback((next) => {
-    setIndex((next + SLIDES.length) % SLIDES.length);
-  }, []);
+  const goTo = useCallback(
+    (next) => {
+      setIndex((next + SLIDES.length) % SLIDES.length);
+    },
+    [SLIDES]
+  );
 
   return (
     <div className="absolute inset-0 overflow-hidden">
@@ -60,9 +69,12 @@ export function HeroSlider() {
             />
           </div>
         ))}
-        <div className="absolute inset-0 bg-linear-to-b from-black/55 via-black/50 to-black/70" />
+        <div className="absolute inset-0 bg-linear-to-b from-ink/80 via-ink/55 to-ink/85" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,rgba(14,124,123,0.45),transparent_55%),radial-gradient(ellipse_at_bottom_right,rgba(242,165,65,0.22),transparent_50%)]" />
       </div>
 
+      {SLIDES.length > 1 ? (
+        <>
       <button
         type="button"
         aria-label="Previous background image"
@@ -96,6 +108,8 @@ export function HeroSlider() {
           />
         ))}
       </div>
+        </>
+      ) : null}
     </div>
   );
 }

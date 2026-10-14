@@ -93,11 +93,11 @@ export function LocationInput({ value, onSelect, onTextChange }) {
 
   return (
     <div ref={containerRef} className="relative flex-1">
-      <label htmlFor="hero-location" className="mb-1.5 block text-xs font-medium text-text-muted">
+      <label htmlFor="hero-location" className="mb-1.5 block text-xs font-semibold tracking-wide text-text-muted uppercase">
         Location
       </label>
-      <div className="flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2.5 focus-within:border-primary">
-        <MapPinIcon className="h-5 w-5 shrink-0 text-text-muted" />
+      <div className="flex items-center gap-2 rounded-xl border border-border bg-bg px-3 py-3 transition-colors hover:border-primary/50 focus-within:border-primary focus-within:bg-surface">
+        <MapPinIcon className="h-5 w-5 shrink-0 text-primary" />
         <input
           id="hero-location"
           type="text"

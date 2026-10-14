@@ -45,11 +45,15 @@ export function PropertyCategories() {
                 key={category.id}
                 href={`/search?propertyType=${category.slug}`}
                 onClick={() => trackEvent("category_tile_click", { category: category.slug })}
-                className="flex flex-col items-center gap-2 rounded-2xl border border-border bg-surface p-5 text-center transition-colors hover:border-primary hover:bg-primary-light"
+                className="group flex flex-col items-center gap-2 rounded-3xl border border-border bg-surface p-5 text-center transition-all duration-300 hover:-translate-y-1.5 hover:border-primary/50 hover:shadow-xl hover:shadow-primary/10"
               >
-                <Glyph className="h-7 w-7 text-primary" aria-hidden />
-                <p className="text-sm font-medium">{category.name}</p>
-                <p className="text-xs text-text-muted">{category.listingCount.toLocaleString("en-IN")}</p>
+                <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-light text-primary transition-all duration-300 group-hover:scale-110 group-hover:bg-primary group-hover:text-white">
+                  <Glyph className="h-7 w-7" aria-hidden />
+                </span>
+                <p className="mt-1 text-sm font-semibold">{category.name}</p>
+                <p className="rounded-full bg-bg px-2.5 py-0.5 text-xs font-medium text-text-muted">
+                  {category.listingCount.toLocaleString("en-IN")} listings
+                </p>
               </Link>
             );
           })}

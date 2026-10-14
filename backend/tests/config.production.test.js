@@ -16,6 +16,7 @@ const KEYS = [
   'CLOUDINARY_CLOUD_NAME',
   'CLOUDINARY_API_KEY',
   'CLOUDINARY_API_SECRET',
+  'IMPORT_API_KEY',
 ];
 
 const VALID = {
@@ -33,6 +34,7 @@ const VALID = {
   CLOUDINARY_CLOUD_NAME: 'fake-cloud',
   CLOUDINARY_API_KEY: '000000000000000',
   CLOUDINARY_API_SECRET: 'fake-api-secret',
+  IMPORT_API_KEY: 'fake-import-key',
 };
 
 describe('production config validation', () => {

@@ -33,6 +33,8 @@ const FACING_OPTIONS = [
 // user-submission flow and is not part of today's implementation boundary.
 const PROPERTY_STATUSES = ['draft', 'published', 'archived'];
 
+const IMAGE_IMPORT_STATUSES = ['pending', 'done', 'partial', 'failed'];
+
 const propertySchema = new Schema(
   {
     // Null for admin-created seed records; set once user submissions exist.
@@ -137,6 +139,33 @@ const propertySchema = new Schema(
       type: Date,
       default: null,
     },
+    // Set only on listings imported by the scraper (POST /admin/import/properties).
+    // No default on purpose: website and seeded listings must have NO such field,
+    // not null, so the partial unique index below never sees them.
+    // source: name of the site (e.g. "99acres"); sourceUrl: the normalized
+    // listing URL, the key a re-import matches on.
+    source: {
+      type: String,
+      trim: true,
+    },
+    sourceUrl: {
+      type: String,
+      trim: true,
+    },
+    // Internal bookkeeping for the background photo import of scraped listings.
+    // Never returned by any API (select: false, and the serializer strips them).
+    // No defaults on purpose: website listings must not carry either field.
+    imageImportStatus: {
+      type: String,
+      enum: IMAGE_IMPORT_STATUSES,
+      select: false,
+    },
+    // Source photo URLs from the latest import; cleared once the status is "done".
+    importImageUrls: {
+      type: [String],
+      default: undefined,
+      select: false,
+    },
   },
   { timestamps: true }
 );
@@ -150,6 +179,13 @@ propertySchema.index({ status: 1, featured: 1, cityLower: 1 });
 propertySchema.index({ locality: 1 });
 propertySchema.index({ intent: 1 });
 propertySchema.index({ propertyType: 1 });
+// One listing per sourceUrl. PARTIAL, so it only covers documents where
+// sourceUrl is a string. A plain unique index would treat every existing
+// listing's missing sourceUrl as null and reject the second one.
+propertySchema.index(
+  { sourceUrl: 1 },
+  { unique: true, partialFilterExpression: { sourceUrl: { $type: 'string' } } }
+);
 
 propertySchema.plugin(normalizedLocationPlugin);
 
@@ -159,3 +195,4 @@ module.exports.PROPERTY_TYPES = PROPERTY_TYPES;
 module.exports.PROPERTY_STATUSES = PROPERTY_STATUSES;
 module.exports.FURNISHING_OPTIONS = FURNISHING_OPTIONS;
 module.exports.FACING_OPTIONS = FACING_OPTIONS;
+module.exports.IMAGE_IMPORT_STATUSES = IMAGE_IMPORT_STATUSES;
