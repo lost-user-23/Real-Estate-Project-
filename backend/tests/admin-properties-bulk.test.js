@@ -22,7 +22,8 @@ async function makeAdmin(userId) {
 }
 
 async function createProperty(overrides = {}) {
-  return Property.create({
+  const property = await Property.create({
+    description: 'A complete listing description.',
     ownerId: overrides.ownerId || null,
     slug: overrides.slug || `property-${new mongoose.Types.ObjectId()}`,
     title: 'Test Property',
@@ -38,6 +39,11 @@ async function createProperty(overrides = {}) {
     featuredRank: null,
     ...overrides,
   });
+  // Publishing and verifying need a description and at least 5 photos.
+  await PropertyImage.insertMany(
+    Array.from({ length: 5 }, (_, i) => ({ propertyId: property._id, url: `https://example.com/${i}.jpg`, displayOrder: i }))
+  );
+  return property;
 }
 
 beforeAll(async () => {

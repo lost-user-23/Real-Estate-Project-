@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAdminStore } from "@/lib/admin-store";
+import { useToast } from "@/lib/toast-context";
 import { AmenityPicker } from "@/components/AmenityPicker";
 import { PROPERTY_TYPE_LABELS, PROPERTY_TYPE_OPTIONS_BY_INTENT } from "@/lib/propertyTypes";
 import { AdminField, adminFieldInputClass } from "@/components/admin/AdminField";
@@ -24,9 +25,27 @@ const INITIAL = {
 
 const MIN_PHOTOS = 5;
 
-export function AddListingForm({ onDone }) {
-  const { addProperty } = useAdminStore();
-  const [form, setForm] = useState(INITIAL);
+export function AddListingForm({ onDone, item = null }) {
+  const { addProperty, updateProperty } = useAdminStore();
+  const { show } = useToast();
+  const [form, setForm] = useState(
+    item
+      ? {
+          title: item.title ?? "",
+          intent: item.intent,
+          propertyType: item.propertyType,
+          bhk: item.bhk != null ? String(item.bhk) : "",
+          city: item.city ?? "",
+          locality: item.locality ?? "",
+          areaSqft: String(item.areaSqft ?? ""),
+          price: String(item.priceInRupees ?? ""),
+          description: item.description ?? "",
+          contactNumber: item.contactNumber ?? "",
+          amenities: item.amenities ?? [],
+          status: item.status,
+        }
+      : INITIAL
+  );
   const [files, setFiles] = useState([]);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -53,7 +72,7 @@ export function AddListingForm({ onDone }) {
     event.preventDefault();
     setAttempted(true);
     if (Object.values(errors).some(Boolean)) return;
-    if (files.length < MIN_PHOTOS) {
+    if (!item && files.length < MIN_PHOTOS) {
       setError(`Please add at least ${MIN_PHOTOS} photos.`);
       return;
     }
@@ -61,6 +80,24 @@ export function AddListingForm({ onDone }) {
     setServerErrors({});
     setSubmitting(true);
     try {
+      if (item) {
+        // Text fields only: photos and status are left as they are (status has its own select in the table).
+        await updateProperty(item.id, {
+          title: form.title.trim(),
+          intent: form.intent,
+          propertyType: form.propertyType,
+          bhk: form.bhk ? Number(form.bhk) : null,
+          priceInRupees: Number(form.price),
+          areaSqft: Number(form.areaSqft),
+          city: form.city,
+          locality: form.locality.trim(),
+          description: form.description.trim(),
+          contactNumber: form.contactNumber.trim() || undefined,
+          amenities: form.amenities,
+        });
+        onDone();
+        return;
+      }
       const { publishError } = await addProperty({
         title: form.title.trim(),
         intent: form.intent,
@@ -77,14 +114,16 @@ export function AddListingForm({ onDone }) {
         files,
       });
       if (publishError) {
-        window.alert(`The listing was saved as a draft, but publishing it failed: ${publishError}. Publish it from the listings table.`);
+        show(`The listing was saved as a draft, but publishing it failed: ${publishError}. Publish it from the listings table.`, {
+          error: true,
+        });
       }
       onDone();
     } catch (e) {
       const fieldErrors = fieldErrorsFromApiError(e);
       setServerErrors(fieldErrors);
       // Field-level messages show next to their inputs; keep the banner for anything else.
-      setError(Object.keys(fieldErrors).length > 0 ? "" : e?.message || "Could not create the listing. Please try again.");
+      setError(Object.keys(fieldErrors).length > 0 ? "" : e?.message || `Could not ${item ? "save" : "create"} the listing. Please try again.`);
       setSubmitting(false);
     }
   };
@@ -180,12 +219,14 @@ export function AddListingForm({ onDone }) {
             className={adminFieldInputClass}
           />
         </AdminField>
-        <AdminField label="Status">
-          <select value={form.status} onChange={(e) => update({ status: e.target.value })} className={adminFieldInputClass}>
-            <option value="draft">Draft</option>
-            <option value="published">Published</option>
-          </select>
-        </AdminField>
+        {item ? null : (
+          <AdminField label="Status">
+            <select value={form.status} onChange={(e) => update({ status: e.target.value })} className={adminFieldInputClass}>
+              <option value="draft">Draft</option>
+              <option value="published">Published</option>
+            </select>
+          </AdminField>
+        )}
       </div>
 
       <AdminField label="Description">
@@ -207,15 +248,17 @@ export function AddListingForm({ onDone }) {
         />
         {fieldError("contactNumber") ? <p role="alert" className="mt-1 text-xs text-danger">{fieldError("contactNumber")}</p> : null}
       </AdminField>
-      <AdminField label={`Photos (${files.length} selected, minimum ${MIN_PHOTOS})`} required>
-        <input
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={(e) => setFiles(Array.from(e.target.files || []).filter((f) => f.type.startsWith("image/")))}
-          className={adminFieldInputClass}
-        />
-      </AdminField>
+      {item ? null : (
+        <AdminField label={`Photos (${files.length} selected, minimum ${MIN_PHOTOS})`} required>
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={(e) => setFiles(Array.from(e.target.files || []).filter((f) => f.type.startsWith("image/")))}
+            className={adminFieldInputClass}
+          />
+        </AdminField>
+      )}
 
       <AmenityPicker value={form.amenities} onChange={(amenities) => update({ amenities })} />
 
@@ -224,7 +267,7 @@ export function AddListingForm({ onDone }) {
         disabled={submitting}
         className="self-start rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {submitting ? "Uploading and saving…" : "Add listing"}
+        {item ? (submitting ? "Saving…" : "Save changes") : submitting ? "Uploading and saving…" : "Add listing"}
       </button>
     </form>
   );

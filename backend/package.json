@@ -8,7 +8,7 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "lint": "eslint .",
-    "test": "jest --runInBand",
+    "test": "jest --maxWorkers=2",
     "seed": "node scripts/seed.js",
     "db:setup": "node scripts/setup-db.js",
     "backfill:city-lower": "node scripts/backfill-city-lower.js",

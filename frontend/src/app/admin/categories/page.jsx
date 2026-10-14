@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useAdminStore } from "@/lib/admin-store";
-import { attempt } from "@/lib/attempt";
+import { useAttempt } from "@/lib/attempt";
+import { useConfirm } from "@/components/admin/ConfirmDialog";
 import { slugify } from "@/lib/slugify";
 import { AdminField, adminFieldInputClass } from "@/components/admin/AdminField";
 
@@ -11,6 +12,8 @@ const EMPTY = { name: "", slug: "", icon: "" };
 export default function AdminCategoriesPage() {
   const { categories, categoriesLoading, categoriesError, loadCategories, addCategory, updateCategory, deleteCategory } =
     useAdminStore();
+  const attempt = useAttempt();
+  const confirm = useConfirm();
   const [form, setForm] = useState(EMPTY);
   const [editingId, setEditingId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -37,7 +40,13 @@ export default function AdminCategoriesPage() {
   };
 
   const handleDelete = async (category) => {
-    if (!window.confirm(`Delete "${category.name}"? This can't be undone.`)) return;
+    const ok = await confirm({
+      title: "Delete category?",
+      message: `Delete "${category.name}"? This can't be undone.`,
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
     await attempt(() => deleteCategory(category.id));
   };
 

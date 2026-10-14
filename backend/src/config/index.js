@@ -83,6 +83,8 @@ const config = {
     pass: process.env.SMTP_PASS || '',
   },
   mailFrom: process.env.MAIL_FROM || 'HomeNest <no-reply@localhost>',
+  // Cheap under jest so the many register/login calls stay fast; production always uses 10.
+  bcryptRounds: process.env.NODE_ENV === 'test' ? 4 : 10,
   jwtSecret: process.env.JWT_SECRET || '',
   cloudinaryCloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
   cloudinaryApiKey: process.env.CLOUDINARY_API_KEY || '',

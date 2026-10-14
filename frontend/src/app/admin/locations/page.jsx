@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAdminStore } from "@/lib/admin-store";
-import { attempt } from "@/lib/attempt";
+import { useAttempt } from "@/lib/attempt";
 import { Toggle } from "@/components/admin/Toggle";
 import { Pagination } from "@/components/admin/Pagination";
 import { Modal } from "@/components/admin/Modal";
@@ -61,6 +61,7 @@ export default function AdminLocationsPage() {
     setPopularRank,
     minActiveListingsForPopular,
   } = useAdminStore();
+  const attempt = useAttempt();
   const [page, setPage] = useState(1);
   const [facilitiesFor, setFacilitiesFor] = useState(null);
 

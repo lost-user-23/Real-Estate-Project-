@@ -6,11 +6,14 @@ against.
 
 ## Status
 
-Implemented: health check, JWT authentication with account management,
-public read APIs (properties, locations, categories, projects, articles),
-authenticated property submission and owner management, Cloudinary upload
-signatures, listing reports, an owner contact-number endpoint for logged-in
-users, and an admin API. See "API overview" below.
+Implemented: health check, email-verified registration with JWT access
+tokens and rotating refresh tokens, email one-time codes for sensitive account
+changes and password reset, public read APIs (properties, featured listings,
+locations, categories, builders, projects, articles), authenticated property
+submission and owner management, Cloudinary image uploads, listing reports
+(with "my reports"), saved properties, contact messages, an owner
+contact-number endpoint for verified users, and an admin API. See "API
+overview" below and `../docs/api-inventory-and-project-status.md`.
 
 ## Setup
 
@@ -45,10 +48,13 @@ curl http://localhost:4000/health
 - `npm run dev` - start with nodemon (auto-restart).
 - `npm start` - start once, for production/process managers.
 - `npm run lint` - ESLint over the backend source.
-- `npm test` - Jest + Supertest (needs a reachable MongoDB).
-- `npm run db:setup` - create/sync MongoDB indexes for every model.
-- `npm run seed` - import every CSV in the `DataSet/` folder into MongoDB (properties, plus locations and categories derived from them). Pass `-- --replace-seeded` to first delete the old mock/seeded data (ownerless properties and all locations, categories, projects, articles). The longer "Seeding the database" section below predates this and describes the removed mock-data seed.
-- `npm run admin:create` - create an admin account (see `scripts/create-admin.js`).
+- `npm test` - Jest + Supertest (needs a reachable MongoDB; each test file uses its own `homenest_test_*` database).
+- `npm run db:setup` - create/sync MongoDB indexes for every model in the registry.
+- `npm run seed` - import every CSV in the `DataSet/` folder into MongoDB (properties, plus locations, categories and demo builder projects derived from them). See "Seeding the database" below.
+- `npm run backfill:city-lower` - fill `cityLower`/`localityLower` on documents created before those fields existed.
+- `npm run backfill:email-verified` - mark accounts created before email verification as verified.
+- `npm run audit:image-urls` - read-only report of stored image URLs that are not own-Cloudinary URLs.
+- `npm run admin:create` - create or promote an admin account (needs `ADMIN_EMAIL` and `ADMIN_PASSWORD`; optional `ADMIN_NAME`).
 
 ## API overview
 
@@ -58,36 +64,62 @@ Protected routes use the HTTP-only `token` cookie set by login or registration.
 | Area | Routes |
 |---|---|
 | Health | `GET /health` |
-| Auth | `POST /api/auth/register`, `POST /api/auth/login` (10 attempts per 15 minutes per IP), `POST /api/auth/logout`; `GET/PATCH/DELETE /api/auth/me`; `POST /api/auth/change-password`, `PATCH /api/auth/change-email` (delete, change-password and change-email: 10 attempts per 15 minutes per user, current password required) |
-| Properties | `GET /properties`, `GET /properties/:slug` (published only, public); `GET /properties/mine` (owner, any status, includes the owner's `contactNumber`); `GET /properties/:id/contact` (auth, 20 per hour per user, see below); `POST /properties` (created as draft, at least 5 images); `PATCH/DELETE /properties/:id` (owner or admin) |
-| Locations | `GET /locations/popular`, `GET /locations/suggestions`, `GET /locations/:locationId/facilities` |
+| Auth | `POST /api/auth/register` (email only, always `202`), `/verify-email`, `/resend-verification`, `/login`, `/refresh`, `/logout`, `/logout-all`; `GET/PATCH/DELETE /api/auth/me`; `POST /api/auth/request-action-code`, `POST /api/auth/change-password`, `PATCH /api/auth/change-email` (current password plus emailed code); `POST /api/auth/forgot-password`, `/verify-reset-otp`, `/reset-password`. Register, login, verify-email and reset-password: 10 attempts per 15 minutes per IP; account actions: 10 per 15 minutes per user; resend: 5 per hour per IP; forgot-password: 5 per hour per IP |
+| Properties | `GET /properties`, `GET /properties/featured`, `GET /properties/:slug` (published only, public); `GET /properties/mine` (owner, any status, includes the owner's `contactNumber`); `GET /properties/:id/contact` (verified, 20 per hour per user, see below); `POST /properties` (verified, created as draft, 5 to 20 own-Cloudinary images); `PATCH/DELETE /properties/:id` (owner or admin) |
+| Locations | `GET /locations/popular`, `GET /locations/suggestions` (60 per minute per IP), `GET /locations/:locationId/facilities` |
 | Categories | `GET /categories`; admin `POST/PATCH/DELETE` |
-| Projects, articles | Public `GET /projects`, `/projects/new`, `/projects/:id`, `/articles`, `/articles/:slug` |
-| Reports | `POST /reports` (optional auth) |
-| Uploads | `POST /uploads/image` (auth; multipart field `image`, max 5 MB, jpg/jpeg/png/webp; the server picks the Cloudinary folder `<CLOUDINARY_FOLDER>/<userId>`) |
-| Admin (role `admin`) | `/admin/dashboard`, `/admin/properties` (+ `/bulk`), `/admin/locations`, `/admin/facilities`, `/admin/projects`, `/admin/articles`, `/admin/reports` |
+| Builders, projects, articles | Public `GET /builders`, `/builders/:slug`, `/projects`, `/projects/new`, `/projects/:id`, `/articles`, `/articles/:slug` (builders are derived from published projects) |
+| Reports | `POST /reports` (optional auth, 5 per hour per IP), `GET /reports/mine` (auth) |
+| Saved properties | `GET /saved-properties/ids`, `GET /saved-properties`, `POST /saved-properties/:propertyId` (verified), `DELETE /saved-properties/:propertyId` |
+| Contact messages | `POST /contact-messages` (public, 5 per hour per IP, honeypot field `website`) |
+| Uploads | `POST /uploads/image` (verified; multipart field `image`, max 5 MB, jpg/jpeg/png/webp; 10 per 15 minutes and 50 per day per user; the server picks the Cloudinary folder `<CLOUDINARY_FOLDER>/<userId>`) |
+| Admin (role `admin`) | `/admin/dashboard`, `/admin/properties` (+ `/:id`, `/bulk`), `/admin/locations`, `/admin/facilities`, `/admin/projects`, `/admin/articles`, `/admin/reports`, `/admin/contact-messages` |
 
 Authentication is a 15-minute JWT access token (returned in the JSON body and
 sent as `Authorization: Bearer`) plus a 7-day rotating refresh token. The
-refresh token is an HTTP-only cookie scoped to `/api/auth`; only its SHA-256
-hash is stored (`RefreshToken`, with a TTL index). `POST /api/auth/refresh`
-rotates it, `POST /api/auth/logout` revokes it, `POST /api/auth/logout-all`
-revokes every session, and replaying a spent token revokes all of that user's
-sessions. Admin access is the `role` on the user. A password change revokes
-every session and starts a new one. `COOKIE_SAMESITE` configures the cookie's
-SameSite policy (defaults to `strict`). Slugs for new properties come from the title, with a
-random hex suffix added when the slug is already taken. If two
-creates race and the insert still hits a duplicate slug, it is retried with a
-new suffix up to 3 times, then answered with 409. Existing slugs never change.
+refresh token is an HTTP-only cookie named `refreshToken`, scoped to
+`/api/auth`; only its SHA-256 hash is stored (`RefreshToken`, with a TTL
+index). `POST /api/auth/refresh` rotates it, `POST /api/auth/logout` revokes
+the current session, `POST /api/auth/logout-all` revokes every session, and
+replaying a spent token (after a 10-second grace window for two-tab races)
+revokes all of that user's sessions. Each session has an id carried in the
+access token as `sid`, so revoking a session ends its access token at once;
+at most 10 sessions per user are kept. Admin access is the `role` on the user.
+A password change or reset revokes every session (a change starts a new one
+for the caller). `COOKIE_SAMESITE` configures the cookie's SameSite policy
+(defaults to `strict`).
+
+Registration takes only an email (and optional name) and always answers `202`;
+the account and the emailed link (`<APP_URL>/verify-email`, valid 24 hours)
+are handled in the background, and the password is set when the link is used.
+Password changes and email changes need the current password and a 6-digit
+code emailed by `request-action-code` (10 minutes, 5 attempts); a new email
+only takes effect after the link sent to it is used. Password reset is a
+three-step OTP flow. Without `SMTP_HOST`, development prints these emails to
+the console and production refuses to start.
+
+Slugs for new properties come from the title, with a random hex suffix added
+when the slug is already taken. If two creates race and the insert still hits
+a duplicate slug, it is retried with a new suffix up to 3 times, then answered
+with 409. Existing slugs never change.
+
+Listing rules worth knowing: owners cannot change `status`, `verified`,
+`featured`, `featuredRank`, `city`, `intent` or `propertyType` (silently
+ignored). When a non-admin owner changes a verified listing's title, contact
+number or photo set, `verified` is reset to `false`. An admin cannot publish or
+verify a listing that lacks a description or has fewer than 5 photos. At most 8
+listings (`MAX_FEATURED`) can be featured and published at once; going over
+returns `409`.
 
 ### Contact numbers
 
 `contactNumber` is private. Every property response strips it except two:
 
 - `GET /api/v1/properties/:id/contact` returns `{ "contactNumber": "..." }`
-  (or `null` if the owner gave none) to any logged-in user, for published
-  listings only. Drafts, archived and unknown ids are `404`; anonymous callers
-  get `401`; more than 20 lookups per hour by one user get `429`. The response
+  (or `null` if the owner gave none) to any logged-in user with a verified
+  email, for published listings only. Drafts, archived and unknown ids are
+  `404`; anonymous callers get `401`; unverified users get `403`; more than 20
+  lookups per hour by one user get `429`. The response
   is `Cache-Control: private, no-store` and the number is never logged.
 - `GET /api/v1/properties/mine` includes it on the caller's own listings.
 
@@ -141,7 +173,10 @@ place of SQL migrations, per the architecture doc).
 
 ```bash
 cd backend
-npm run seed
+npm run seed                          # all CSVs in ../DataSet
+npm run seed -- Pune_property_details.csv
+npm run seed -- --replace-seeded      # wipe old seeded data first
+npm run seed -- --full-mumbai         # import every Mumbai row
 ```
 
 Required environment variables (see `.env.example`): `MONGODB_URI` and
@@ -151,65 +186,41 @@ works against a local `mongod` with no `.env` changes.
 
 ### What it does
 
-`scripts/seed.js` reads `frontend/src/lib/mockData.js` at run time (via
-`scripts/seedData/loadMockData.js`, which strips the file's `export`
-keywords and evaluates it — the dataset is never hand-copied into the
-backend, so it can't drift from the frontend) and writes it into these
-collections: `users` (one dev admin only), `properties`, `propertyImages`,
-`locations`, `categories`, `projects`, `articles`.
+`scripts/seed.js` reads the CSV files in `DataSet/` (one per city; the Mumbai
+file is a real export, the other twelve are synthetic, 600 rows each, produced
+by `scripts/seedData/generateCityDatasets.js`). Rows are mapped by
+`scripts/seedData/transformDataset.js` and written to:
 
-Conversions applied along the way:
+- `properties` - published, unverified, not featured, `ownerId: null`, with a
+  placeholder `contactNumber`. Upserted by slug (`<title-slug>-<key>`), so
+  reruns update in place.
+- `propertyImages` - five `picsum.photos` placeholder images per listing
+  (these are not Cloudinary URLs, so `npm run audit:image-urls` reports them).
+- `locations` - one city row plus one row per locality, with live listing
+  counts; the 12 busiest localities per run are flagged popular. Upserted on
+  `cityLower` + `localityLower`.
+- `categories` - derived from property type counts; upserted by slug.
+- `projects` - demo projects from `scripts/seedData/builders.js` (five real
+  developer names per city, two projects each; names, prices and possession
+  labels are invented). The builders directory is derived from these.
 
-- `publishedAt` strings become BSON `Date` values.
-- Each property's `image.src`/`image.alt` becomes a separate `PropertyImage`
-  document (`url`, `alt`) linked by `propertyId`; the same mapping applies to
-  the `imageUrl`/`imageAlt` fields on `Location`, `Project`, and `Article`.
-  Raw frontend image objects are never stored in MongoDB.
-- Slugs (`properties.slug`, `articles.slug`), `featuredRank`, `popularRank`,
-  statuses, prices, areas, amenities, and listing counts are carried over
-  unchanged.
-- `contactNumber` and `ownerId` are never invented — mock data has no owner
-  contact numbers, so `properties.contactNumber` is left unset and
-  `ownerId` is `null` (admin-seeded, per the architecture doc).
+By default only every second Mumbai row is imported (the file has about 23,400
+rows); pass `--full-mumbai` to import all of them. Rows with no title, price,
+area or a known property type are skipped and counted in the summary.
 
-All records are validated (intent, propertyType, status enums; required
-slugs; numeric price/area; numeric-or-null ranks) **before** any database
-write happens. If any mock record fails validation, the script prints the
-offending record and exits non-zero without touching MongoDB.
+The seed no longer creates any users. Create an admin with
+`npm run admin:create`.
 
-### Dev admin user
+### Replacing seeded data
 
-The script seeds one admin user (`dev-admin@homenest.local`) with a `passwordHash` set to a random value prefixed `unusable-seed-placeholder:`. That is not a valid hash for any algorithm, so this account cannot log in. To get a working admin, run `npm run admin:create`.
+`--replace-seeded` first deletes the images and properties with no owner
+(`ownerId: null`) and **all** locations, categories, projects and articles,
+including ones created by admins. It never touches user-owned listings. Without
+the flag the seed only upserts and never deletes.
 
-### Rerunning safely
-
-The script only performs upserts keyed by each collection's natural unique
-key (`email`, `slug`, or a `city`+`locality`/`propertyId`+`displayOrder`
-pair) — it never deletes data. Rerunning `npm run seed` updates the same
-seeded documents in place instead of creating duplicates, and never touches
-unrelated documents in the same database.
-
-### Expected summary
-
-A successful run prints one line per collection, e.g.:
-
-```text
-[seed] summary:
-  users           inserted: 0  updated: 1  total: 1
-  properties      inserted: 0  updated: 12  total: 12
-  propertyImages  inserted: 0  updated: 12  total: 12
-  locations       inserted: 0  updated: 11  total: 11
-  categories      inserted: 0  updated: 6  total: 6
-  projects        inserted: 0  updated: 5  total: 5
-  articles        inserted: 0  updated: 4  total: 4
-
-[seed] done.
-```
-
-The first run reports `inserted` counts; later reruns report `updated`
-counts for the same totals. If MongoDB is unreachable, the script prints a
-clear connection error and exits with a non-zero status instead of hanging
-or partially writing data.
+`scripts/seed-featured.js` (run with `node scripts/seed-featured.js`, no npm
+alias) upserts a handful of featured demo listings and refuses to run if it
+would exceed the 8-listing featured limit.
 
 ## Project layout
 
@@ -217,15 +228,15 @@ or partially writing data.
 src/
   server.js       entry point: starts HTTP server, connects Mongo, graceful shutdown
   app.js          Express app: middleware, routes, error handling
-  config/         env var loading + validation, Cloudinary config
+  config/         env var loading + validation, constants, Cloudinary and upload config
   db/             Mongoose connection lifecycle
-  models/         Mongoose schemas for each collection
+  models/         Mongoose schemas, model registry, normalizedLocation plugin
   routes/         Express routers (auth, /api/v1 feature routers, admin)
   controllers/    route handler functions
-  middleware/     auth (protect, restrictTo, optionalAuth), request logging, 404, error handler
-  services/       business logic used by controllers
-  utils/          AppError, asyncHandler, response serializers
-scripts/          DB setup (index sync), seed and create-admin scripts
+  middleware/     auth (protect, restrictTo, optionalAuth, requireVerified), rate limiters, upload, request logging, 404, error handler
+  services/       business logic used by controllers (auth, mail, property, builder, report, Cloudinary)
+  utils/          AppError, asyncHandler, OTP/token helpers, validation, query parsing, response serializers
+scripts/          DB setup (index sync), seed, backfills, audits, create-admin
 tests/            Jest test suites
 ```
 
@@ -238,7 +249,7 @@ See `.env.example`.
   random value (for example `openssl rand -hex 64`).
 - With `NODE_ENV=production` the process refuses to start unless `MONGODB_URI`,
   `JWT_SECRET`, `CORS_ORIGIN`, `TRUST_PROXY_HOPS`, `APP_URL`, `SMTP_HOST`,
-  `MAIL_FROM`, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` and
+  `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` and
   `CLOUDINARY_API_SECRET` are all set. In production `JWT_SECRET` must also be
   at least 32 characters and not a placeholder (values copied from
   `.env.example` are rejected).
@@ -251,8 +262,14 @@ See `.env.example`.
 - `TRUST_PROXY_HOPS` (default `0`) is the number of reverse proxies in front of
   the server. It is passed to Express `trust proxy` as a hop count; anything
   that is not a positive whole number (including `true`) is treated as `0`.
-- `COOKIE_SAMESITE` (default `strict`) configures the SameSite policy for the
-  HTTP-only refresh-token cookie.
+- `COOKIE_SAMESITE` (default `strict`; `lax` or `none` also allowed, anything
+  else is rejected in production) configures the SameSite policy for the
+  HTTP-only refresh-token cookie. It is `Secure` in production.
+- `APP_URL` (default `http://localhost:3000`) is the frontend base URL used in
+  emailed links. `SMTP_HOST`, `SMTP_PORT` (default `587`), `SMTP_USER`,
+  `SMTP_PASS` and `MAIL_FROM` configure email.
+- `ADMIN_EMAIL`, `ADMIN_PASSWORD` (at least 8 characters) and optional
+  `ADMIN_NAME` are read only by `npm run admin:create`.
 - `RATE_LIMIT_MAX` (default `200`) and `RATE_LIMIT_WINDOW_MS` (default
   `900000`, 15 minutes) set the global per-IP limit that sits under the
   stricter per-route limiters.
@@ -266,7 +283,7 @@ See `.env.example`.
   every request appears to come from the proxy and all users share one budget.
   Do not set it higher than the real hop count: clients could then spoof their
   IP through `X-Forwarded-For`.
-- Serve over HTTPS; production auth cookies are marked `Secure` and `HttpOnly`.
+- Serve over HTTPS; the production refresh cookie is marked `Secure` and `HttpOnly`.
 
 ## Architectural decisions made during this setup
 
@@ -277,44 +294,33 @@ level needed to write code. Decisions made here, to be revisited if wrong:
    The frontend is ESM under Next.js, but the backend is an independent
    package; CommonJS avoids extra Jest/ESM interop configuration. Easy to
    switch later since nothing outside `backend/` imports this code.
-2. **Property status enum** uses exactly `draft`/`published`/`archived`, matching
-   the doc's "Current Frontend Contract" section. The doc's "First
-   authenticated endpoints" section separately mentions a future
-   `pending_review` state for user submissions — that's follow-up work and
-   was deliberately left out of the enum for now.
+2. **Property status enum** uses exactly `draft`/`published`/`archived`. User
+   submissions start as `draft` and an admin publishes them; a separate
+   `pending_review` state was deliberately left out.
 3. **Project and Article reuse the same `draft`/`published`/`archived` enum**
    as Property. The doc doesn't enumerate their status values explicitly, but
    the API section says "Only `published` properties, projects, and articles
    are public," implying a shared vocabulary. Factored into
    `src/models/contentStatus.js`.
-4. **`PropertyImage` allows either `storageKey` or `url`** (doc says
-   "storageKey or url"), enforced with a `pre('validate')` check requiring at
-   least one. No storage provider is wired up yet, so both stay plain string
-   fields.
-5. **Location/Category have no `timestamps`**, since the doc's field lists for
-   those two collections don't mention `createdAt`/`updatedAt` (unlike User,
-   Property, Project, Article, Report, which do). `PropertyImage` gets
-   `createdAt` only, per its documented field list.
-6. **Location autocomplete index**: the doc says a "text or prefix-search
-   index... depending on the selected autocomplete strategy" and lists that
-   strategy as unresolved. A plain MongoDB text index on `city`+`locality` was
-   added as the minimal default so the documented index exists; if the
-   frontend's `q=kor`-style prefix search needs different behavior (e.g. a
-   dedicated prefix index or a search service), this should be revisited.
-   No compound indexes were added beyond what's explicitly listed in the doc's
-   "MongoDB Indexes" section, per its own "don't index speculatively"
-   guidance.
-7. **`.env.example` omits `STORAGE_*` variables** that appear in the doc's
-   example env block. The task scope for this pass explicitly excludes file
-   uploads/object storage, and no code reads those variables yet; adding
-   unused config would be premature. They should be added back in the file
-   upload follow-up.
+4. **`PropertyImage` allows either `storageKey` or `url`**, enforced with a
+   `pre('validate')` check requiring at least one. Uploaded images store the
+   Cloudinary `url` and `publicId` (used for cleanup on delete or replace).
+5. **Location/Category/Facility have no `timestamps`**, unlike User, Property,
+   Project, Article, Report, SavedProperty and ContactMessage, which do.
+   `PropertyImage` and `RefreshToken` get `createdAt` only.
+6. **Location autocomplete** uses anchored prefix matching on the lower-cased
+   `cityLower` / `localityLower` fields (single-field indexes), kept in sync by
+   the `normalizedLocation` plugin. Query-level writes (`updateMany`,
+   `findByIdAndUpdate`) skip that plugin, so those call sites set the fields
+   themselves; `npm run backfill:city-lower` repairs older documents.
+7. **Images live in Cloudinary.** The server streams uploads to a per-user
+   folder, and listings may only reference own-Cloudinary URLs.
+   `STORAGE_*` variables from the early design were never used.
 8. **Response body shape for `/health`** (`{ status, uptimeSeconds, timestamp,
-   mongo: { status } }`) is not specified by the doc beyond "simple service
-   status" — chosen to be small and to explicitly avoid leaking the Mongo URI
-   or credentials. The doc's broader "final public API response envelope"
-   question (`{ data, error, meta }` vs. direct arrays) is still open and
-   applies to future `/api/v1` endpoints, not this one.
+   mongo: { status } }`) is small and explicitly avoids leaking the Mongo URI
+   or credentials. Errors use `{ error: { message, details? } }`; successful
+   responses are plain resource objects rather than a `{ data, meta }`
+   envelope.
 9. **DB connection does not block server startup.** `connectToDatabase()` is
    fired without awaiting it in `server.js`, so the HTTP server (and
    `/health`) comes up even when MongoDB is briefly unreachable. This wasn't
@@ -323,24 +329,22 @@ level needed to write code. Decisions made here, to be revisited if wrong:
 10. **Lint/test tooling**: ESLint (flat config, `eslint:recommended`) and
     Jest + Supertest, since the doc doesn't specify either and these are
     the ecosystem defaults for an Express + Mongoose service.
-11. **No `legacyId` field was added to any schema.** The seed script needs a
-    stable key per record so reruns update instead of duplicate, but every
-    collection already had one: `email` (`User`), `slug` (`Property`,
-    `Article`, `Category`), `city`+`locality` (`Location`), or
-    `propertyId`+`displayOrder` (`PropertyImage`). `Project` has no unique
-    field in the schema; the seed script upserts on `name`, which is unique
-    across the 5 mock projects but isn't schema-enforced — worth revisiting
-    if real project data can repeat names. No schema change was needed.
-12. **Seed script uses a self-built `export` → `module.exports` rewrite**
-    (`scripts/seedData/loadMockData.js`) to read
-    `frontend/src/lib/mockData.js` at run time, rather than hand-copying the
-    dataset into the backend. The frontend package has no `"type": "module"`,
-    so neither `require()` nor dynamic `import()` can load that file as-is;
-    adding a transpiler dependency for one file seemed heavier than a ~15
-    line regex-based rewrite. Revisit if `mockData.js` grows imports of its
-    own (this approach assumes the file is self-contained).
+11. **No `legacyId` field was added to any schema.** The seed upserts on
+    natural keys: `slug` (`Property`, `Category`), `cityLower`+`localityLower`
+    (`Location`) and `name`+`cityLower` (`Project`, not schema-enforced).
+12. **There is no Builder model.** Builders are derived from published
+    `Project` documents grouped by `developer`, using a collated
+    (case-insensitive) index so spelling variants count as one builder.
+13. **Refresh-token rotation with session ids** replaced a single long-lived
+    token, so a session can be revoked immediately and a replayed, stolen
+    token revokes all of the account's sessions.
 
 ## Follow-up work
 
-- Email verification before `change-email` takes effect (see the TODO in
-  `auth.controller.js`).
+- Add `ContactMessage` to `src/models/index.js` so `npm run db:setup` syncs
+  its index.
+- Endpoints to list and revoke individual sessions (only logout and
+  logout-everywhere exist today).
+- The password-reset token `jti` is generated once per process in
+  `auth.controller.js`; it is still checked against a per-user hash and
+  consumed once, but generating it per request would be cleaner.

@@ -39,11 +39,14 @@ async function createListing({ ownerId = null, status = 'published', contactNumb
     priceInRupees: 30000,
     city: 'Pune',
     contactNumber,
+    description: 'A complete listing description.',
     status,
     publishedAt: status === 'published' ? new Date() : null,
     ...rest,
   });
-  await PropertyImage.create({ propertyId: property._id, url: 'https://example.com/a.jpg' });
+  await PropertyImage.insertMany(
+    Array.from({ length: 5 }, (_, i) => ({ propertyId: property._id, url: `https://example.com/${i}.jpg`, displayOrder: i }))
+  );
   return property;
 }
 

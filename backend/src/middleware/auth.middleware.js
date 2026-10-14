@@ -1,4 +1,4 @@
-const { verifyToken, isTokenStale } = require("../services/auth.service");
+const { verifyToken, isTokenStale, isSessionAlive } = require("../services/auth.service");
 const User = require("../models/User");
 const AppError = require("../utils/AppError");
 
@@ -29,6 +29,11 @@ async function protect(req, res, next) {
     }
 
     if (isTokenStale(user, decoded)) {
+      return next(AppError.unauthorized());
+    }
+
+    // Logged-out or revoked sessions (and tokens without a sid) are rejected.
+    if (!(await isSessionAlive(user._id, decoded.sid))) {
       return next(AppError.unauthorized());
     }
 

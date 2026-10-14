@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAdminStore } from "@/lib/admin-store";
-import { attempt } from "@/lib/attempt";
+import { useAttempt } from "@/lib/attempt";
+import { useConfirm } from "@/components/admin/ConfirmDialog";
 import { formatDate } from "@/lib/format";
 import { Pagination } from "@/components/admin/Pagination";
 import { StatusPill } from "@/components/admin/StatusPill";
@@ -14,6 +15,8 @@ const PAGE_SIZE = 20;
 export default function AdminArticlesPage() {
   const { articles, articlesMeta, articlesLoading, articlesError, loadArticles, setArticleStatus, deleteArticle } =
     useAdminStore();
+  const attempt = useAttempt();
+  const confirm = useConfirm();
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState(null);
   const [page, setPage] = useState(1);
@@ -30,7 +33,13 @@ export default function AdminArticlesPage() {
   };
 
   const handleDelete = async (article) => {
-    if (!window.confirm(`Delete "${article.title}"? This can't be undone.`)) return;
+    const ok = await confirm({
+      title: "Delete article?",
+      message: `Delete "${article.title}"? This can't be undone.`,
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
     const res = await attempt(() => deleteArticle(article.id));
     if (!res.ok) return;
     if (articles.length <= 1 && page > 1) setPage((p) => p - 1);

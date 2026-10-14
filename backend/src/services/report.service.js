@@ -1,6 +1,7 @@
 const { URL } = require('node:url');
 const Report = require('../models/Report');
 const Property = require('../models/Property');
+const AppError = require('../utils/AppError');
 
 const OBJECT_ID = /^[a-f0-9]{24}$/i;
 const SLUG = /^[a-z0-9-]+$/;
@@ -58,6 +59,20 @@ async function createReport({ listingUrlOrId, reason, details, propertyId, repor
     resolvedId = await resolvePropertyId(listingUrlOrId);
   }
 
+  // Logged-in reporters get one live report per listing; anonymous reports are not deduped.
+  if (reporterId) {
+    const sameListing = [{ listingUrlOrId }];
+    if (resolvedId) sameListing.push({ propertyId: resolvedId });
+    const existing = await Report.exists({
+      reporterId,
+      status: { $in: ['open', 'reviewing'] },
+      $or: sameListing,
+    });
+    if (existing) {
+      throw AppError.conflict('You have already reported this listing. We are still looking into it.');
+    }
+  }
+
   return Report.create({
     listingUrlOrId,
     reason,
@@ -78,6 +93,17 @@ async function loadPropertySummaries(reports) {
     .select('slug title city locality status')
     .lean();
   return new Map(properties.map((p) => [String(p._id), p]));
+}
+
+async function listReportsByReporter(reporterId, { page, limit }) {
+  const filter = { reporterId };
+  const [reports, total] = await Promise.all([
+    Report.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
+    Report.countDocuments(filter),
+  ]);
+  const properties = await loadPropertySummaries(reports);
+
+  return { reports, properties, total, totalPages: Math.max(1, Math.ceil(total / limit)) };
 }
 
 async function listReports({ page, limit, status }) {
@@ -109,6 +135,7 @@ async function updateStatusById(id, status) {
 
 module.exports = {
   createReport,
+  listReportsByReporter,
   listReports,
   findById,
   updateStatusById,

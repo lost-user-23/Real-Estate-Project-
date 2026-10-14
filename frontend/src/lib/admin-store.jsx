@@ -163,10 +163,6 @@ export function AdminStoreProvider({ children }) {
       maxFeaturedListings: MAX_FEATURED_LISTINGS,
 
       // ---- Properties (real API). All of these are async and can throw ApiError. ----
-      toggleVerified: async (id) => {
-        const target = properties.find((p) => p.id === id);
-        if (target) await patchProperty(id, { verified: !target.verified });
-      },
       toggleFeatured: async (id) => {
         const target = properties.find((p) => p.id === id);
         if (!target) return { ok: false, reason: "not_found" };
@@ -183,6 +179,7 @@ export function AdminStoreProvider({ children }) {
       },
       setFeaturedRank: (id, rank) => patchProperty(id, { featuredRank: rank }),
       setPropertyStatus: (id, status) => patchProperty(id, { status }),
+      updateProperty: (id, updates) => patchProperty(id, updates),
       deleteProperty: async (id) => {
         await api.delete(`/api/v1/properties/${id}`);
         setProperties((prev) => prev.filter((p) => p.id !== id));

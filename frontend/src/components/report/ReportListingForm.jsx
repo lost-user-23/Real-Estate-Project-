@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 
@@ -30,44 +31,54 @@ function ReportForm({ searchParams }) {
     propertyId: searchParams.get("propertyId") ?? "",
   }));
   const [form, setForm] = useState(() => ({ ...INITIAL, listingUrl: linked.listing }));
-  const [submitted, setSubmitted] = useState(false);
+  // null until sent; then whether the server tied the report to the reporter's account.
+  const [tracked, setTracked] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [duplicate, setDuplicate] = useState(false);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError("");
+    setDuplicate(false);
     setIsSubmitting(true);
     try {
       const listingUrlOrId = form.listingUrl.trim();
       const keepPropertyId = OBJECT_ID.test(linked.propertyId) && listingUrlOrId === linked.listing.trim();
-      await api.post("/api/v1/reports", {
+      const data = await api.post("/api/v1/reports", {
         listingUrlOrId,
         reason: form.reason,
         details: form.details.trim(),
         ...(keepPropertyId ? { propertyId: linked.propertyId } : {}),
       });
-      setSubmitted(true);
+      setTracked(Boolean(data?.tracked));
     } catch (requestError) {
+      setDuplicate(requestError.status === 409);
       setError(requestError.message || "Your report could not be sent. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  if (submitted) {
+  if (tracked !== null) {
     return (
       <div className="rounded-2xl border border-border bg-surface p-6 text-center">
         <p className="font-semibold">Report sent.</p>
         <p className="mt-1 text-sm text-text-muted">
           Thanks. Our review team will re-check this listing.
+          {tracked ? " You can track this report under My reports in your profile." : ""}
         </p>
+        {tracked ? (
+          <Link href="/profile" className="mt-2 inline-block text-sm font-medium text-primary hover:underline">
+            Go to my profile
+          </Link>
+        ) : null}
         <button
           type="button"
           onClick={() => {
             setForm(INITIAL);
             setLinked({ listing: "", propertyId: "" });
-            setSubmitted(false);
+            setTracked(null);
           }}
           className="mt-4 inline-flex items-center justify-center rounded-full border border-primary px-5 py-2 text-sm font-semibold text-primary hover:bg-primary hover:text-white"
         >
@@ -115,7 +126,14 @@ function ReportForm({ searchParams }) {
           className="w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm outline-none focus:border-primary"
         />
       </label>
-      {error ? (
+      {error && duplicate ? (
+        <p role="alert" className="rounded-xl border border-border bg-bg px-4 py-3 text-sm">
+          {error}{" "}
+          <Link href="/profile" className="font-medium text-primary hover:underline">
+            Check its status in your profile
+          </Link>
+        </p>
+      ) : error ? (
         <p role="alert" className="text-sm text-danger">
           {error}
         </p>

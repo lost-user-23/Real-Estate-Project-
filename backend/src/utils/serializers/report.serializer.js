@@ -26,4 +26,21 @@ function serializeAdminReport(report, properties) {
   return { ...plain, property: serializeProperty(property) };
 }
 
-module.exports = { serializeReport, serializeAdminReport };
+// Reporter-facing view: no reporterId, details or other admin data.
+function serializeMyReport(report, properties) {
+  const plain = toPlain(report);
+  const property = plain.propertyId ? properties.get(String(plain.propertyId)) : null;
+  return {
+    id: String(plain._id),
+    listing: {
+      reference: plain.listingUrlOrId,
+      title: property ? property.title : null,
+      slug: property ? property.slug : null,
+    },
+    reason: plain.reason,
+    status: plain.status,
+    createdAt: plain.createdAt,
+  };
+}
+
+module.exports = { serializeReport, serializeAdminReport, serializeMyReport };

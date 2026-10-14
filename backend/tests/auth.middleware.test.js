@@ -127,7 +127,7 @@ describe('login with an email that does not exist', () => {
     expect(unknownEmail.body).toEqual(wrongPassword.body);
   });
 
-  it('compares against a valid bcrypt hash with cost 10', async () => {
+  it('compares against a valid bcrypt hash with the same cost as real passwords', async () => {
     const compareSpy = jest.spyOn(bcrypt, 'compare');
     await request(app)
       .post('/api/auth/login')
@@ -135,8 +135,8 @@ describe('login with an email that does not exist', () => {
 
     expect(compareSpy).toHaveBeenCalledTimes(1);
     const dummyHash = compareSpy.mock.calls[0][1];
-    expect(dummyHash).toMatch(/^\$2[aby]\$10\$[./A-Za-z0-9]{53}$/);
-    expect(bcrypt.getRounds(dummyHash)).toBe(10);
+    expect(dummyHash).toMatch(/^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/);
+    expect(bcrypt.getRounds(dummyHash)).toBe(config.bcryptRounds);
   });
 
   it('does not accept the dummy hash as a match for any password', async () => {

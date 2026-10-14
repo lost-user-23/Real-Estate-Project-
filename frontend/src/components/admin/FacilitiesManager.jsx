@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAdminStore } from "@/lib/admin-store";
-import { attempt } from "@/lib/attempt";
+import { useAttempt } from "@/lib/attempt";
+import { useConfirm } from "@/components/admin/ConfirmDialog";
 import { AdminField, adminFieldInputClass } from "@/components/admin/AdminField";
 
 // Matches Facility.TYPES on the backend.
@@ -11,6 +12,8 @@ const EMPTY = { name: "", type: "school", address: "", distanceKm: "" };
 
 export function FacilitiesManager({ location }) {
   const { listFacilities, createFacility, updateFacility, deleteFacility } = useAdminStore();
+  const attempt = useAttempt();
+  const confirm = useConfirm();
   const [facilities, setFacilities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -71,7 +74,13 @@ export function FacilitiesManager({ location }) {
   };
 
   const handleDelete = async (facility) => {
-    if (!window.confirm(`Delete "${facility.name}"?`)) return;
+    const ok = await confirm({
+      title: "Delete facility?",
+      message: `Delete "${facility.name}"?`,
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
     const res = await attempt(() => deleteFacility(facility.id));
     if (res.ok) load();
   };

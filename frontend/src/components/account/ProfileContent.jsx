@@ -11,6 +11,7 @@ import {
   DeleteAccountSection,
 } from "@/components/account/AccountSections";
 import { MyListings } from "@/components/account/MyListings";
+import { MyReports } from "@/components/account/MyReports";
 
 // Public-site profile. Logged-out visitors are sent home (with the login
 // dialog if they never had a session this visit); if the session ends while
@@ -41,6 +42,7 @@ export function ProfileContent() {
     <div key={user?.id ?? "session"} className="flex flex-col gap-6">
       <AccountDetailsForm />
       <MyListings />
+      <MyReports />
       <ChangePasswordForm />
       <ChangeEmailForm />
       <DeleteAccountSection />

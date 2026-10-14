@@ -204,7 +204,7 @@ describe('POST /api/auth/change-password', () => {
     expect(newRes.status).toBe(200);
 
     // optionalAuth (used by POST /reports) must treat the stale token as anonymous too.
-    const report = { listingUrlOrId: 'listing-abc', reason: 'Spam listing' };
+    const report = { listingUrlOrId: 'listing-abc', reason: 'Something else' };
     const staleReport = await request(app).post('/api/v1/reports').set(auth(oldToken)).send(report);
     expect(staleReport.status).toBe(201);
     expect(staleReport.body.report.reporterId).toBeNull();

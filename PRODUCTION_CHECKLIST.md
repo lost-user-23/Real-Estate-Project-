@@ -16,15 +16,15 @@ With `NODE_ENV=production` the server refuses to start (clear error naming the v
 | `CORS_ORIGIN` | Exact frontend origin(s), comma-separated. See CORS rules below | Yes |
 | `TRUST_PROXY_HOPS` | Number of reverse proxies in front of the API (usually `1`). Never `true` | Yes |
 | `APP_URL` | Public frontend URL; verification emails link to `<APP_URL>/verify-email` | Yes |
-| `SMTP_HOST` | SMTP server for verification emails | Yes |
+| `SMTP_HOST` | SMTP server for verification links and one-time codes (account verification, password reset, password/email changes) | Yes |
 | `SMTP_PORT` | SMTP port (default `587`; `465` uses TLS) | No |
 | `SMTP_USER` / `SMTP_PASS` | SMTP credentials | Yes (the server refuses to start without them) |
 | `MAIL_FROM` | From address, for example `HomeNest <no-reply@your-domain>` | Yes |
 | `CLOUDINARY_CLOUD_NAME` | Cloudinary account name (image upload) | Yes |
 | `CLOUDINARY_API_KEY` | Cloudinary API key | Yes |
-| `CLOUDINARY_API_SECRET` | Cloudinary API secret, used to sign uploads | Yes |
+| `CLOUDINARY_API_SECRET` | Cloudinary API secret, used by the server to upload and delete images | Yes |
 | `CLOUDINARY_FOLDER` | Upload folder (default `property-images`) | No |
-| `COOKIE_SAMESITE` | `strict` (default), `lax` or `none` for the refresh-token cookie. Use `none` only if frontend and API are on different sites | No |
+| `COOKIE_SAMESITE` | `strict` (default), `lax` or `none` for the refresh-token cookie (an invalid value stops startup in production). Use `none` only if frontend and API are on different sites | No |
 | `RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW_MS` | Global per-IP rate limit (defaults 200 per 15 min) | No |
 
 ## Frontend environment (build time)
@@ -49,7 +49,8 @@ With `NODE_ENV=production` the server refuses to start (clear error naming the v
 
 1. `cd backend && npm run db:setup` builds or syncs indexes. It never drops a collection or deletes documents; it only drops indexes that are no longer defined on a schema.
 2. `npm run backfill:email-verified` marks accounts created before email verification as verified. Only users with no `emailVerified` field are touched, so reruns change nothing.
-3. `npm run admin:create` to create the first admin, if needed.
+3. `ADMIN_EMAIL=... ADMIN_PASSWORD=... npm run admin:create` to create the first admin, if needed (`ADMIN_NAME` is optional; the password must be at least 8 characters). Set these only for the command; they are not server settings.
+4. Optional: `npm run audit:image-urls` lists stored image URLs that are not own-Cloudinary URLs (the seed's placeholder images appear here). Do not seed demo data into production.
 
 Run these with the production environment loaded, so they hit the production database.
 
@@ -63,11 +64,11 @@ Run these with the production environment loaded, so they hit the production dat
 Replace `$API` and `$APP` with the deployed API and frontend origins.
 
 1. **Health**: `curl -i $API/health` returns `200`.
-2. **Login**: log in through the frontend with a verified account. Confirm the auth cookie is `HttpOnly` and `Secure`, and that `/api/auth/me` works afterwards.
+2. **Login**: log in through the frontend with a verified account. Confirm the `refreshToken` cookie is `HttpOnly` and `Secure` (path `/api/auth`), that the session survives a page reload (a `POST /api/auth/refresh` succeeds), and that logging out clears it.
 3. **CORS, allowed origin**: `curl -i -H "Origin: $APP" $API/health` includes `Access-Control-Allow-Origin: <that origin>` and `Access-Control-Allow-Credentials: true`.
 4. **CORS, foreign origin**: `curl -i -H "Origin: http://evil.example" $API/health` has no `Access-Control-Allow-Origin` header.
-5. **Signed Cloudinary upload**: logged in as a verified user, upload an image through the "post property" form. Confirm the image appears in the Cloudinary folder (`CLOUDINARY_FOLDER/<user id>`) and renders on the listing.
-6. **Verification email**: register a new account and confirm the email arrives from `MAIL_FROM` and the link opens `<APP_URL>/verify-email`, then verifies the account.
+5. **Cloudinary upload**: logged in as a verified user, upload images through the "post property" form (it sends each photo to `POST /api/v1/uploads/image`). Confirm the image appears in the Cloudinary folder (`CLOUDINARY_FOLDER/<user id>`) and renders on the listing.
+6. **Verification email**: register a new account and confirm the email arrives from `MAIL_FROM` and the link opens `<APP_URL>/verify-email`, where choosing a password verifies the account and signs you in. Also check that the password-reset code and the change-password code emails arrive.
 7. **Startup guard**: on a staging copy, remove one required variable and confirm the process exits with an error naming it.
 
 ## Analytics and consent

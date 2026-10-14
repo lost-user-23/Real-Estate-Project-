@@ -24,6 +24,12 @@ const refreshTokenSchema = new mongoose.Schema({
         type: Date,
         default: null,
     },
+    // Stable across rotations: every record of one login shares it, and the
+    // access token carries it as `sid`, so revoking the session kills both.
+    sessionId: {
+        type: String,
+        index: true,
+    },
     userAgent: { type: String, default: "" },
     ip: { type: String, default: "" },
 },

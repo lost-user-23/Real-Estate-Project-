@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAdminStore } from "@/lib/admin-store";
-import { attempt } from "@/lib/attempt";
+import { useAttempt } from "@/lib/attempt";
+import { useConfirm } from "@/components/admin/ConfirmDialog";
 import { formatDate, formatPrice } from "@/lib/format";
 import { Pagination } from "@/components/admin/Pagination";
 import { StatusPill } from "@/components/admin/StatusPill";
@@ -14,6 +15,8 @@ const PAGE_SIZE = 20;
 export default function AdminProjectsPage() {
   const { projects, projectsMeta, projectsLoading, projectsError, loadProjects, setProjectStatus, deleteProject } =
     useAdminStore();
+  const attempt = useAttempt();
+  const confirm = useConfirm();
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState(null);
   const [page, setPage] = useState(1);
@@ -30,7 +33,13 @@ export default function AdminProjectsPage() {
   };
 
   const handleDelete = async (project) => {
-    if (!window.confirm(`Delete "${project.name}"? This can't be undone.`)) return;
+    const ok = await confirm({
+      title: "Delete project?",
+      message: `Delete "${project.name}"? This can't be undone.`,
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
     const res = await attempt(() => deleteProject(project.id));
     if (!res.ok) return;
     if (projects.length <= 1 && page > 1) setPage((p) => p - 1);

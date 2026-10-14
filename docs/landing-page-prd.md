@@ -2,7 +2,7 @@
 
 Project: HomeNest real-estate platform (working name)
 Page: Public home page
-Status: Draft v3
+Status: Draft v3 (implemented; see §14 for where the build differs from this brief)
 
 ---
 
@@ -42,7 +42,7 @@ Show that listings are reviewed and information is clear.
 
 No numeric targets are set for these events yet. A pre-launch project has no traffic to baseline against, so any percentage here would be invented. Set targets once there's a few weeks of real sessions to measure against, and treat the events as directional in the meantime.
 
-**Event contract**: every event above also carries `page: "home"`, `viewport: mobile|tablet|desktop`, and a session id, so funnels can be split by device without a separate tracking plan later. Analytics tool (GA4, PostHog, or similar) to be confirmed before build; fire all events through a single `trackEvent()` wrapper, not the vendor SDK directly, so swapping providers doesn't touch component code.
+**Event contract**: every event above also carries `page: "home"`, `viewport: mobile|tablet|desktop`, and a session id, so funnels can be split by device without a separate tracking plan later. The analytics tool is GA4, loaded only after the visitor accepts the consent notice and only when `NEXT_PUBLIC_GA_MEASUREMENT_ID` is set. All events fire through a single `trackEvent()` wrapper (`frontend/src/lib/trackEvent.js`), not the vendor SDK directly, so swapping providers doesn't touch component code. The wrapper adds `page`, `viewport` and a per-tab session id, and strips keys that could carry personal data (keyword, email, phone, name).
 
 Because the two-interaction goal assumes a location is entered (search is not submittable without one, see §5), the natural reading is: select a tab (interaction 1), enter a location (interaction 2), submit. A recent-search chip collapses that to one interaction plus submit.
 
@@ -54,7 +54,7 @@ Because the two-interaction goal assumes a location is entered (search is not su
 |---|---|---|---|---|
 | 1 | Navbar | Navigation | Logo, Buy, Rent, Sell, Commercial, New Projects, Login or Sign up, Post Property button | 1 |
 | 2 | Hero | Start a search | Headline, one line of support text, Buy / Rent / Sell tabs, search bar, recent-searches strip for returning visitors | 2 |
-| 3 | Featured properties | Show real inventory | Up to 8 property cards | 3 |
+| 3 | Featured properties | Show real inventory | Up to 8 property cards (built as a single showcase panel of up to 5, see §14) | 3 |
 | 4 | Popular locations | Quick entry by area | 8 to 12 location tiles with listing counts | 5 |
 | 5 | Property categories | Quick entry by type | Apartments, Villas, Independent Houses, Plots, PG/Hostels, Commercial | 4 |
 | 6 | New projects | Show launches | Up to 4 project cards | 6 |
@@ -62,6 +62,8 @@ Because the two-interaction goal assumes a location is entered (search is not su
 | 8 | Insights | Useful content | 3 latest articles | 7 |
 | 9 | App promotion | Set expectations | Short note that a mobile app is planned | 9 |
 | 10 | Footer | Links and legal | Company, property links, support, contact, legal, social | 1 |
+
+The build also includes a **Sell banner** under the hero and a **Builders promo** between New projects and Why choose us (links to the builders directory). Neither is part of this brief's original scope.
 
 **Recent searches strip (Hero, §2 persona)**: for a returning visitor, show up to 5 recent searches as quick-entry chips, sourced from the search history the platform already persists (last 5, per §9.2). Hidden entirely for a first-time visitor rather than shown empty.
 
@@ -94,9 +96,9 @@ Because the two-interaction goal assumes a location is entered (search is not su
 
 **Budget presets**: defined once in the platform requirements spec, separately for Buy and Rent. This page reads that single source; do not restate the bracket values here, to avoid two lists drifting apart when a preset changes.
 
-**Search submission and required fields**: location is required. The search button stays disabled until a location is chosen, consistent with §3's two-interaction goal. Property type, if left unset, defaults to "All types" rather than blocking submission.
+**Search submission and required fields**: location is required. The search button stays disabled until a location is chosen, consistent with §3's two-interaction goal. Property type, if left unset, defaults to "All types" rather than blocking submission. *As built:* the button is not disabled for an empty location; typed text that was not picked from the suggestions is resolved to the first suggestion, or submitted as a keyword (`q`) search (see §14).
 
-**Results routing**: search submits to `/search` with intent, city, locality, and a numeric price range (min/max), not a preset id, so a shared results link still resolves correctly if the presets are edited later. Exact query-parameter names follow the platform's existing routing spec rather than being redefined here.
+**Results routing**: search submits to `/search` with intent, city, locality, and a numeric price range (min/max), not a preset id, so a shared results link still resolves correctly if the presets are edited later. Exact query-parameter names follow the platform's existing routing spec rather than being redefined here. As built, the parameters are `intent`, `city`, `locality`, `q`, `propertyType`, `bhk`, `minPrice`, `maxPrice`, `sort` and `page`; the hero also offers a BHK select (1, 2, 3, 4+).
 
 ---
 
@@ -174,7 +176,7 @@ Prices come from the API as whole-rupee numbers. The interface formats them (for
 
 **Framework choice**: use Next.js, not React with Vite. The SEO requirement in §11 (server-rendered or pre-rendered, unique meta per page, OG image) is native to Next.js and would otherwise need a separate SSR/prerender solution bolted onto Vite.
 
-**Mock data contract**: define one TypeScript type per API section above (`Property`, `Location`, `Category`, `Project`, `Article`) before writing mock data, so swapping mock data for the real API later is a data-source change, not a shape change. Each type should already include the fields the empty/loading/error states in §11 need (e.g. a listing `status` or `featuredRank`), not just the display fields.
+**Mock data contract**: originally this brief asked for one TypeScript type per API section above before writing mock data. *As built:* the project is plain JSX, mock data has been removed, and every section reads the real API through `frontend/src/lib/dataSource.js`, which normalizes each response into the shape the components use.
 
 **Price formatting edge cases**: values under ₹1L (e.g. rent ₹18,000) render as ₹18,000, not ₹0.18L. The Lakh/Crore formatter needs a threshold, not a blanket conversion.
 
@@ -221,3 +223,32 @@ Prepare mock data for the cards.
 ## 13. Related, out of scope here
 
 Map view, saved-search alerts, an app waitlist, and multi-language support are already tracked in the platform PRD's Future scope section; not restated here to avoid two scope lists drifting apart. An agent/owner "My listings" dashboard entry point is already specified (a Dashboard link in the user menu), so it isn't an open question for this page.
+
+---
+
+## 14. Current implementation status
+
+Reviewed against the code on 2026-10-13. The home page is built in Next.js 16 with Tailwind and reads only live APIs.
+
+**Matches this brief**
+
+- Hero tabs Buy (default) / Rent / Sell, with the Sell panel (CTA, login note, city and type carried into Post Property).
+- Location autocomplete: two characters, 300 ms debounce, up to six suggestions (cities, then localities), the "No matches, try a nearby city" message and full keyboard handling.
+- Numeric min/max price in the search URL, budget presets from one source (`budgetPresets.js`), and recent-search chips (up to five, hidden when empty).
+- Categories, Why choose us (four items), Insights (three latest articles) and the App promotion note.
+- Skeletons while loading, sections hidden when empty, and a retry that re-fetches only the failed section.
+- Events `hero_search_submit`, `post_property_click`, `featured_card_click`, `category_tile_click` and `location_tile_click` through `trackEvent()`, plus `sell_banner_click`, builders-promo clicks and `search_submitted`.
+- Colour tokens `#0E7C7B` and `#F2A541` (near-black text on amber), Plus Jakarta Sans and Inter via `next/font` with `swap`, visible focus outlines, `aria-label` on icon controls, reduced-motion support.
+- Property card: top three amenities by priority, Featured badge with a Verified check, login-gated save that completes after login, and contact numbers fetched only through the authenticated API.
+- Organization and WebSite JSON-LD, `robots.txt` and a sitemap of static routes plus published properties, projects and articles; opt-in analytics consent notice.
+
+**Differs from this brief**
+
+- **Featured properties** are a single showcase (large panel, thumbnail rail, pause button) limited to five listings, not a grid of up to eight. It uses the navbar city and falls back to a nationwide list with a notice. The admin UI still mentions "up to 8", which is the backend limit on how many listings can be featured at once.
+- **Popular locations** have no 8 to 12 cap; the tile count is whatever the API returns after the five-active-listing rule is applied in the client.
+- **Search button** is not disabled without a location (see §5).
+- **Hero background** is a slider of four placeholder images that auto-advances every six seconds with dots and arrows but no pause control (it does stop under `prefers-reduced-motion`). Licensed imagery is still to be sourced.
+- **Skip-to-content link** is not implemented (the `main-content` anchor target exists); dark mode is not implemented, as intended for v1.
+- **Structured data**: Organization and WebSite JSON-LD are emitted site-wide from the root layout, not only on the home page, and property pages have Open Graph and Twitter metadata but no `RealEstateListing` JSON-LD yet. The default Open Graph image is the starter `next.svg`.
+- **Footer** social links point to the generic network home pages, and contact addresses use `@homenest.example` placeholders.
+- **New projects** shows what the API returns (the backend returns the four newest published projects) and filters to the selected city when it can.

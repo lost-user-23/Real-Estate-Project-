@@ -16,3 +16,8 @@ export async function fetchAdminProperties(params = {}){
     const data = await api.get(`/api/v1/admin/properties${qs ? `?${qs}` : ""}`);
     return {properties: data.properties.map(toAdminProperty), meta: data.meta};
 }
+// Any status, with contactNumber; used to pre-fill the admin edit form.
+export async function fetchAdminProperty(id){
+    const data = await api.get(`/api/v1/admin/properties/${id}`);
+    return toAdminProperty(data.property);
+}

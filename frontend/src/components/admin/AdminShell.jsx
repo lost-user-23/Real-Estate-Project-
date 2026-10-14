@@ -6,6 +6,7 @@ import { AdminAuthProvider, useAdminAuth } from "@/lib/admin-auth-context";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { AdminLoginGate } from "@/components/admin/AdminLoginGate";
 import { AdminProfileMenu } from "@/components/admin/AdminProfileMenu";
+import { ConfirmProvider } from "@/components/admin/ConfirmDialog";
 
 function AdminShellInner({ children }) {
   const { isAuthenticated, loading, sessionError, retrySession, logout } = useAdminAuth();
@@ -64,7 +65,9 @@ function AdminShellInner({ children }) {
 export function AdminShell({ children }) {
   return (
     <AdminAuthProvider>
-      <AdminShellInner>{children}</AdminShellInner>
+      <ConfirmProvider>
+        <AdminShellInner>{children}</AdminShellInner>
+      </ConfirmProvider>
     </AdminAuthProvider>
   );
 }

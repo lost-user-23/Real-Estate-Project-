@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAdminStore } from "@/lib/admin-store";
-import { attempt } from "@/lib/attempt";
+import { useAttempt } from "@/lib/attempt";
 import { formatDate } from "@/lib/format";
 import { Pagination } from "@/components/admin/Pagination";
 
@@ -61,6 +61,7 @@ function ListingCell({ report }) {
 
 export default function AdminReportsPage() {
   const { reports, reportsMeta, reportsLoading, reportsError, loadReports, setReportStatus } = useAdminStore();
+  const attempt = useAttempt();
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState("");
   const [savingId, setSavingId] = useState(null);

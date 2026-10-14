@@ -9,6 +9,7 @@ const { connectToDatabase, disconnectFromDatabase } = require('../src/db/connect
 const config = require('../src/config');
 const User = require('../src/models/User');
 const Report = require('../src/models/Report');
+const { REPORT_REASONS } = Report;
 const Property = require('../src/models/Property');
 
 const app = createApp();
@@ -72,7 +73,7 @@ describe('public reports', () => {
   it('creates a report without authentication and leaves reporterId null', async () => {
     const response = await request(app)
       .post('/api/v1/reports')
-      .send({ listingUrlOrId: 'listing-abc', reason: 'Spam listing' });
+      .send({ listingUrlOrId: 'listing-abc', reason: 'Something else' });
 
     expect(response.status).toBe(201);
     expect(response.body.report.status).toBe('open');
@@ -84,10 +85,29 @@ describe('public reports', () => {
     const response = await request(app)
       .post('/api/v1/reports')
       .set('Authorization', `Bearer ${token}`)
-      .send({ listingUrlOrId: 'listing-abc', reason: 'Spam listing' });
+      .send({ listingUrlOrId: 'listing-abc', reason: 'Something else' });
 
     expect(response.status).toBe(201);
     expect(response.body.report.reporterId).toBe(user.id);
+  });
+
+  it('reports tracked: true only when attached to a valid logged-in reporter', async () => {
+    const { token } = await registerUser();
+    const body = { listingUrlOrId: 'listing-abc', reason: 'Something else' };
+
+    const loggedIn = await request(app).post('/api/v1/reports').set('Authorization', `Bearer ${token}`).send(body);
+    const anonymous = await request(app).post('/api/v1/reports').send({ ...body, listingUrlOrId: 'other' });
+    await request(app).post('/api/auth/logout-all').set('Authorization', `Bearer ${token}`);
+    const loggedOut = await request(app)
+      .post('/api/v1/reports')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ...body, listingUrlOrId: 'third' });
+
+    expect(loggedIn.body.tracked).toBe(true);
+    expect(anonymous.body.tracked).toBe(false);
+    expect(loggedOut.status).toBe(201);
+    expect(loggedOut.body.tracked).toBe(false);
+    expect(loggedOut.body.report.reporterId).toBeNull();
   });
 
   it.each([
@@ -99,7 +119,7 @@ describe('public reports', () => {
     const req = request(app).post('/api/v1/reports');
     if (token) req.set('Authorization', `Bearer ${token}`);
 
-    const response = await req.send({ listingUrlOrId: 'listing-abc', reason: 'Spam listing' });
+    const response = await req.send({ listingUrlOrId: 'listing-abc', reason: 'Something else' });
 
     expect(response.status).toBe(201);
     expect(response.body.report.reporterId).toBeNull();
@@ -193,7 +213,7 @@ describe('admin reports', () => {
 
 
 describe('report to listing resolution', () => {
-  const post = (body) => request(app).post('/api/v1/reports').send({ reason: 'Spam listing', ...body });
+  const post = (body) => request(app).post('/api/v1/reports').send({ reason: 'Something else', ...body });
 
   it('keeps a valid propertyId that exists', async () => {
     const property = await createProperty();
@@ -306,11 +326,10 @@ describe('admin reports with property', () => {
 });
 
 describe('report validation caps', () => {
-  const post = (body) => request(app).post('/api/v1/reports').send({ listingUrlOrId: 'x', reason: 'Spam', ...body });
+  const post = (body) => request(app).post('/api/v1/reports').send({ listingUrlOrId: 'x', reason: 'Something else', ...body });
 
   it.each([
     ['listingUrlOrId', 500],
-    ['reason', 200],
     ['details', 2000],
   ])('accepts %s at %i characters and rejects one more', async (field, max) => {
     const ok = await post({ [field]: 'a'.repeat(max) });
@@ -322,6 +341,121 @@ describe('report validation caps', () => {
   });
 });
 
+describe('report reasons', () => {
+  const post = (reason) => request(app).post('/api/v1/reports').send({ listingUrlOrId: 'x', reason });
+
+  it('rejects a reason that is not in the list', async () => {
+    const res = await post('Because I felt like it');
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body)).toContain('reason');
+  });
+
+  it('rejects an overlong reason', async () => {
+    const res = await post('a'.repeat(201));
+    expect(res.status).toBe(400);
+  });
+
+  it.each(REPORT_REASONS)('accepts %s', async (reason) => {
+    expect((await post(reason)).status).toBe(201);
+  });
+});
+
+describe('duplicate report guard', () => {
+  const send = (token, body = {}) => {
+    const req = request(app).post('/api/v1/reports');
+    if (token) req.set('Authorization', `Bearer ${token}`);
+    return req.send({ listingUrlOrId: 'listing-dup', reason: 'Something else', ...body });
+  };
+
+  it('rejects a second live report on the same listing from a logged-in user', async () => {
+    const { token } = await registerUser();
+    expect((await send(token)).status).toBe(201);
+
+    const second = await send(token);
+    expect(second.status).toBe(409);
+    expect(second.body.error.message).toMatch(/already reported/i);
+    expect(await Report.countDocuments()).toBe(1);
+  });
+
+  it('also matches on the resolved property when the text differs', async () => {
+    const { token } = await registerUser();
+    const property = await createProperty();
+    expect((await send(token, { listingUrlOrId: `/property/${property.slug}` })).status).toBe(201);
+    expect((await send(token, { listingUrlOrId: String(property._id) })).status).toBe(409);
+  });
+
+  it('blocks while reviewing, allows again once resolved or rejected', async () => {
+    const { token } = await registerUser();
+    await send(token);
+
+    await Report.updateMany({}, { status: 'reviewing' });
+    expect((await send(token)).status).toBe(409);
+
+    await Report.updateMany({}, { status: 'resolved' });
+    expect((await send(token)).status).toBe(201);
+
+    await Report.updateMany({}, { status: 'rejected' });
+    expect((await send(token)).status).toBe(201);
+  });
+
+  it('does not block other users or other listings', async () => {
+    const a = await registerUser();
+    const b = await registerUser();
+    expect((await send(a.token)).status).toBe(201);
+    expect((await send(b.token)).status).toBe(201);
+    expect((await send(a.token, { listingUrlOrId: 'other-listing' })).status).toBe(201);
+  });
+
+  it('does not dedupe anonymous reports', async () => {
+    expect((await send()).status).toBe(201);
+    expect((await send()).status).toBe(201);
+  });
+});
+
+describe('GET /reports/mine', () => {
+  it('requires authentication', async () => {
+    expect((await request(app).get('/api/v1/reports/mine')).status).toBe(401);
+  });
+
+  it('returns only the callers own reports, newest first, with a safe shape', async () => {
+    const me = await registerUser();
+    const other = await registerUser();
+    const property = await createProperty();
+    const older = await createReport({ reporterId: me.user.id, propertyId: property._id, listingUrlOrId: 'older', details: 'secret' });
+    await Report.updateOne({ _id: older._id }, { createdAt: new Date(Date.now() - 60000) });
+    const newer = await createReport({ reporterId: me.user.id, listingUrlOrId: 'newer' });
+    await createReport({ reporterId: other.user.id, listingUrlOrId: 'not-mine' });
+    await createReport({ listingUrlOrId: 'anonymous' });
+
+    const res = await request(app).get('/api/v1/reports/mine').set('Authorization', `Bearer ${me.token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.reports.map((r) => r.id)).toEqual([String(newer._id), String(older._id)]);
+    expect(res.body.reports[1]).toEqual({
+      id: String(older._id),
+      listing: { reference: 'older', title: 'Report Test Flat', slug: property.slug },
+      reason: 'Fraudulent listing',
+      status: 'open',
+      createdAt: expect.any(String),
+    });
+    expect(res.body.reports[0].listing).toEqual({ reference: 'newer', title: null, slug: null });
+    expect(res.body.meta).toMatchObject({ page: 1, limit: 20, total: 2, totalPages: 1 });
+    expect(JSON.stringify(res.body)).not.toMatch(/secret|reporterId|details/);
+  });
+
+  it('paginates and rejects a bad page', async () => {
+    const me = await registerUser();
+    await createReport({ reporterId: me.user.id });
+    await createReport({ reporterId: me.user.id });
+    const headers = { Authorization: `Bearer ${me.token}` };
+
+    const res = await request(app).get('/api/v1/reports/mine?limit=1&page=2').set(headers);
+    expect(res.body.reports).toHaveLength(1);
+    expect(res.body.meta).toMatchObject({ page: 2, limit: 1, total: 2, totalPages: 2 });
+    expect((await request(app).get('/api/v1/reports/mine?page=0').set(headers)).status).toBe(400);
+  });
+});
+
 describe('report rate limit (limiter active)', () => {
   const originalNodeEnv = process.env.NODE_ENV;
 
@@ -329,12 +463,16 @@ describe('report rate limit (limiter active)', () => {
     process.env.NODE_ENV = originalNodeEnv;
   });
 
-  it('allows 10 reports per hour per IP, then returns 429', async () => {
+  it('allows 5 reports per hour per IP, then returns 429; rejected reports do not count', async () => {
     process.env.NODE_ENV = 'development';
-    const send = () => request(app).post('/api/v1/reports').send({ listingUrlOrId: 'x', reason: 'Spam' });
+    const send = (body = {}) =>
+      request(app).post('/api/v1/reports').send({ listingUrlOrId: 'x', reason: 'Something else', ...body });
+
+    // Invalid submissions do not spend the budget.
+    for (let i = 0; i < 6; i += 1) expect((await send({ reason: 'nope' })).status).toBe(400);
 
     const statuses = [];
-    for (let i = 0; i < 10; i += 1) statuses.push((await send()).status);
+    for (let i = 0; i < 5; i += 1) statuses.push((await send()).status);
     const limited = await send();
 
     expect(statuses.every((status) => status === 201)).toBe(true);

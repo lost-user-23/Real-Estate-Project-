@@ -1,24 +1,32 @@
 "use client";
 
-import { createContext, useCallback, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useRef, useState } from "react";
 
 const ToastContext = createContext(null);
 
 export function ToastProvider({ children }) {
-  const [message, setMessage] = useState(null);
+  const [toast, setToast] = useState(null);
+  const timerRef = useRef(null);
 
-  const show = useCallback((next) => {
-    setMessage(next);
-    window.setTimeout(() => setMessage(null), 2500);
+  // show(message) for plain notices; show(message, { error: true }) stays longer and is styled as an error.
+  const show = useCallback((message, { error = false } = {}) => {
+    window.clearTimeout(timerRef.current);
+    setToast({ message, error });
+    timerRef.current = window.setTimeout(() => setToast(null), error ? 6000 : 2500);
   }, []);
 
   return (
     <ToastContext.Provider value={{ show }}>
       {children}
-      <div aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
-        {message ? (
-          <div className="pointer-events-auto rounded-full bg-text px-5 py-3 text-sm font-medium text-white shadow-lg">
-            {message}
+      <div aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-6 z-70 flex justify-center px-4">
+        {toast ? (
+          <div
+            role={toast.error ? "alert" : undefined}
+            className={`pointer-events-auto max-w-lg rounded-full px-5 py-3 text-sm font-medium text-white shadow-lg ${
+              toast.error ? "bg-danger" : "bg-text"
+            }`}
+          >
+            {toast.message}
           </div>
         ) : null}
       </div>

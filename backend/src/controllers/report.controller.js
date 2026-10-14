@@ -1,8 +1,8 @@
-const { REPORT_STATUSES } = require('../models/Report');
+const { REPORT_STATUSES, REPORT_REASONS } = require('../models/Report');
 const reportService = require('../services/report.service');
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
-const { serializeReport, serializeAdminReport } = require('../utils/serializers/report.serializer');
+const { serializeReport, serializeAdminReport, serializeMyReport } = require('../utils/serializers/report.serializer');
 
 const MAX_LIMIT = 50;
 const DEFAULT_LIMIT = 20;
@@ -27,6 +27,8 @@ function validateCreateFields(body) {
     errors.push('reason must be a non-empty string');
   } else if (body.reason.trim().length > MAX_REASON_LENGTH) {
     errors.push(`reason must be at most ${MAX_REASON_LENGTH} characters`);
+  } else if (!REPORT_REASONS.includes(body.reason.trim())) {
+    errors.push('reason must be one of the listed reasons');
   }
   if (body.details !== undefined && typeof body.details !== 'string') {
     errors.push('details must be a string');
@@ -100,7 +102,18 @@ const createReport = asyncHandler(async (req, res) => {
     reporterId: req.user?._id ?? null,
   });
 
-  res.status(201).json({ report: serializeReport(report) });
+  // tracked: the report is tied to a valid logged-in reporter, so it shows under "My reports".
+  res.status(201).json({ report: serializeReport(report), tracked: Boolean(report.reporterId) });
+});
+
+const listMyReports = asyncHandler(async (req, res) => {
+  const pagination = validateAndBuildPagination(req.query || {});
+  const { reports, properties, total, totalPages } = await reportService.listReportsByReporter(req.user._id, pagination);
+
+  res.status(200).json({
+    reports: reports.map((report) => serializeMyReport(report, properties)),
+    meta: { total, ...pagination, totalPages },
+  });
 });
 
 const listAdminReports = asyncHandler(async (req, res) => {
@@ -136,6 +149,7 @@ const updateAdminReportStatus = asyncHandler(async (req, res) => {
 
 module.exports = {
   createReport,
+  listMyReports,
   listAdminReports,
   getAdminReportById,
   updateAdminReportStatus,

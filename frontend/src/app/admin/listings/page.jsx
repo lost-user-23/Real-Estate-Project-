@@ -1,25 +1,30 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { useAdminStore } from "@/lib/admin-store";
+import { useAttempt } from "@/lib/attempt";
+import { useToast } from "@/lib/toast-context";
+import { useConfirm } from "@/components/admin/ConfirmDialog";
 import { formatPrice } from "@/lib/format";
+import { fetchAdminProperty } from "@/lib/properties";
 import { PROPERTY_TYPE_LABELS } from "@/lib/propertyTypes";
 import { Toggle } from "@/components/admin/Toggle";
 import { Modal } from "@/components/admin/Modal";
-import { AddListingForm } from "@/components/admin/forms/AddListingForm";
+
+// Only rendered inside a modal, so they are split out of the page's first load.
+const AddListingForm = dynamic(
+  () => import("@/components/admin/forms/AddListingForm").then((mod) => mod.AddListingForm),
+  { loading: () => null }
+);
+const ReviewListing = dynamic(
+  () => import("@/components/admin/ReviewListing").then((mod) => mod.ReviewListing),
+  { loading: () => null }
+);
 
 const PAGE_SIZE = 20;
-
-// Runs an async store action. On failure it alerts the message and returns { ok: false }.
-async function attempt(fn) {
-  try {
-    const value = await fn();
-    return { ok: true, value };
-  } catch (e) {
-    window.alert(e?.message || "Something went wrong. Please try again.");
-    return { ok: false };
-  }
-}
+const SEARCH_DEBOUNCE_MS = 300;
+const MAX_KEYWORD_LENGTH = 100;
 
 // Keeps typing local and only saves on blur or Enter, so "12" is one request, not two.
 function RankInput({ property, onSave }) {
@@ -37,8 +42,8 @@ function RankInput({ property, onSave }) {
 
   const commit = async () => {
     const next = draft === "" ? null : Number(draft);
-    // Rank is a positive whole number; empty means unranked (null), never 0.
-    if (next !== null && (!Number.isInteger(next) || next < 1)) {
+    // Rank is a whole number from 0 (the backend sorts 0 first); empty means unranked (null).
+    if (next !== null && (!Number.isInteger(next) || next < 0)) {
       setDraft(saved);
       return;
     }
@@ -50,7 +55,7 @@ function RankInput({ property, onSave }) {
   return (
     <input
       type="number"
-      min={1}
+      min={0}
       disabled={!property.featured}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
@@ -72,7 +77,6 @@ export default function AdminListingsPage() {
     propertiesLoading,
     propertiesError,
     loadProperties,
-    toggleVerified,
     toggleFeatured,
     setFeaturedRank,
     setPropertyStatus,
@@ -83,9 +87,15 @@ export default function AdminListingsPage() {
     bulkDeleteProperties,
     maxFeaturedListings,
   } = useAdminStore();
+  const attempt = useAttempt();
+  const confirm = useConfirm();
+  const { show } = useToast();
 
   const [query, setQuery] = useState("");
+  const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [reviewing, setReviewing] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState("");
@@ -96,38 +106,37 @@ export default function AdminListingsPage() {
       loadProperties({
         page,
         limit: PAGE_SIZE,
+        ...(search ? { q: search } : {}),
         ...(statusFilter ? { status: statusFilter } : {}),
         ...(sort !== "newest" ? { sort } : {}),
       }),
-    [loadProperties, page, statusFilter, sort]
+    [loadProperties, page, search, statusFilter, sort]
   );
 
   useEffect(() => {
     reload();
   }, [reload]);
 
+  // The keyword is sent to the server once typing pauses; a new keyword starts from page 1.
+  useEffect(() => {
+    const next = query.trim();
+    if (next === search) return;
+    const timer = setTimeout(() => {
+      setSearch(next);
+      setPage(1);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [query, search]);
+
   // Selection belongs to the page being viewed, so drop it when the view changes.
-  const [selectionKey, setSelectionKey] = useState(`${page}:${statusFilter}`);
-  if (selectionKey !== `${page}:${statusFilter}`) {
-    setSelectionKey(`${page}:${statusFilter}`);
+  const viewKey = `${page}:${statusFilter}:${search}`;
+  const [selectionKey, setSelectionKey] = useState(viewKey);
+  if (selectionKey !== viewKey) {
+    setSelectionKey(viewKey);
     setSelectedIds([]);
   }
 
-  const featuredCount = useMemo(() => properties.filter((p) => p.featured && p.status === "published").length, [properties]);
-
-  // Search only covers the page currently loaded.
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return properties;
-    return properties.filter(
-      (p) =>
-        (p.title ?? "").toLowerCase().includes(q) ||
-        (p.city ?? "").toLowerCase().includes(q) ||
-        (p.locality ?? "").toLowerCase().includes(q)
-    );
-  }, [properties, query]);
-
-  const filteredIds = useMemo(() => filtered.map((p) => p.id), [filtered]);
+  const filteredIds = useMemo(() => properties.map((p) => p.id), [properties]);
   const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedIds.includes(id));
 
   const toggleSelectAll = () => {
@@ -149,13 +158,25 @@ export default function AdminListingsPage() {
   };
 
   const handleDelete = async (property) => {
-    if (!window.confirm(`Delete "${property.title}"? This can't be undone.`)) return;
+    const ok = await confirm({
+      title: "Delete listing?",
+      message: `Delete "${property.title}"? This can't be undone.`,
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
     const res = await attempt(() => deleteProperty(property.id));
     if (res.ok) afterDelete();
   };
 
   const handleBulkDelete = async () => {
-    if (!window.confirm(`Delete ${selectedIds.length} selected listing(s)? This can't be undone.`)) return;
+    const ok = await confirm({
+      title: "Delete selected listings?",
+      message: `Delete ${selectedIds.length} selected listing(s)? This can't be undone.`,
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
     const res = await attempt(() => bulkDeleteProperties(selectedIds));
     if (!res.ok) return;
     afterDelete(selectedIds.length);
@@ -187,7 +208,7 @@ export default function AdminListingsPage() {
     }
     const result = res.value;
     if (!result.ok && result.reason === "not_published") {
-      window.alert(`${result.count} selected listing(s) aren't published. Publish them first; drafts can't be featured.`);
+      show(`${result.count} selected listing(s) aren't published. Publish them first; drafts can't be featured.`, { error: true });
       return;
     }
     clearSelection();
@@ -196,14 +217,24 @@ export default function AdminListingsPage() {
   const handleToggleFeatured = async (property) => {
     const res = await attempt(() => toggleFeatured(property.id));
     if (res.ok && !res.value.ok && res.value.reason === "not_published") {
-      window.alert("Publish this listing first. Only published listings can be featured on the home page.");
+      show("Publish this listing first. Only published listings can be featured on the home page.", { error: true });
     }
     // On a rejected request (e.g. 409 featured limit) the backend message was alerted;
     // resync so the checkbox matches the real server state.
     if (!res.ok) reload();
   };
 
-  const handleToggleVerified = (property) => attempt(() => toggleVerified(property.id));
+  // The list rows lack the contact number, so the edit form is filled from a detail fetch.
+  const handleEdit = async (property) => {
+    const res = await attempt(() => fetchAdminProperty(property.id));
+    if (res.ok) setEditing(res.value);
+  };
+
+  // Review needs the full photo set and description, which also come from the detail fetch.
+  const handleReview = async (property) => {
+    const res = await attempt(() => fetchAdminProperty(property.id));
+    if (res.ok) setReviewing(res.value);
+  };
 
   const handleStatusChange = async (property, status) => {
     await attempt(() => setPropertyStatus(property.id, status));
@@ -224,7 +255,7 @@ export default function AdminListingsPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Listings</h1>
           <p className="mt-1 text-sm text-text-muted">
-            Verified controls the review badge; Featured controls home page placement and order (up to 8 shown).
+            Verified controls the review badge; Featured controls home page placement and order (up to {maxFeaturedListings} shown; the server enforces the limit).
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -238,8 +269,8 @@ export default function AdminListingsPage() {
             className="rounded-xl border border-border bg-surface px-3 py-2 text-sm"
           >
             <option value="">All statuses</option>
-            <option value="draft">Draft</option>
             <option value="published">Published</option>
+            <option value="draft">Draft</option>
             <option value="archived">Archived</option>
           </select>
           <select
@@ -261,8 +292,9 @@ export default function AdminListingsPage() {
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search this page"
-            aria-label="Search listings on this page"
+            placeholder="Search title, locality, city"
+            aria-label="Search listings"
+            maxLength={MAX_KEYWORD_LENGTH}
             className="w-full max-w-xs rounded-xl border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-primary"
           />
           <button
@@ -306,13 +338,6 @@ export default function AdminListingsPage() {
           </select>
           <button
             type="button"
-            onClick={() => handleBulkSetVerified(true)}
-            className="rounded-full border border-border px-3 py-1 text-xs font-medium hover:bg-surface"
-          >
-            Verify
-          </button>
-          <button
-            type="button"
             onClick={() => handleBulkSetVerified(false)}
             className="rounded-full border border-border px-3 py-1 text-xs font-medium hover:bg-surface"
           >
@@ -321,7 +346,6 @@ export default function AdminListingsPage() {
           <button
             type="button"
             onClick={() => handleBulkSetFeatured(true)}
-            disabled={featuredCount >= maxFeaturedListings}
             className="rounded-full border border-border px-3 py-1 text-xs font-medium hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40"
           >
             Feature
@@ -371,7 +395,7 @@ export default function AdminListingsPage() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((property) => (
+            {properties.map((property) => (
               <tr key={property.id} className="border-b border-border last:border-0">
                 <td className="px-4 py-3">
                   <input
@@ -400,21 +424,21 @@ export default function AdminListingsPage() {
                     className="rounded-lg border border-border bg-surface px-2 py-1 text-xs"
                   >
                     <option value="draft">Draft</option>
-                    <option value="published">Published</option>
+                    <option value="published" disabled={property.status !== "published"}>
+                      Published
+                    </option>
                     <option value="archived">Archived</option>
                   </select>
                 </td>
                 <td className="px-4 py-3">
-                  <Toggle
-                    checked={property.verified}
-                    onChange={() => handleToggleVerified(property)}
-                    label={`Toggle verified for ${property.title}`}
-                  />
+                  <span className={property.verified ? "text-xs font-medium text-success" : "text-xs text-text-muted"}>
+                    {property.verified ? "Verified" : "Not verified"}
+                  </span>
                 </td>
                 <td className="px-4 py-3">
                   <Toggle
                     checked={property.featured}
-                    disabled={!property.featured && featuredCount >= maxFeaturedListings}
+                    
                     onChange={() => handleToggleFeatured(property)}
                     label={`Toggle featured for ${property.title}`}
                   />
@@ -423,13 +447,31 @@ export default function AdminListingsPage() {
                   <RankInput property={property} onSave={handleRankSave} />
                 </td>
                 <td className="px-4 py-3">
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(property)}
-                    className="text-xs font-medium text-danger hover:underline"
-                  >
-                    Delete
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleReview(property)}
+                      aria-label={`Review ${property.title}`}
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      Review
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(property)}
+                      aria-label={`Edit ${property.title}`}
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(property)}
+                      className="text-xs font-medium text-danger hover:underline"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -440,10 +482,10 @@ export default function AdminListingsPage() {
                 </td>
               </tr>
             ) : null}
-            {!propertiesLoading && !propertiesError && filtered.length === 0 ? (
+            {!propertiesLoading && !propertiesError && properties.length === 0 ? (
               <tr>
                 <td colSpan={9} className="px-4 py-8 text-center text-text-muted">
-                  {query.trim() ? <>No listings on this page match &ldquo;{query}&rdquo;.</> : "No listings found."}
+                  {search ? <>No listings match &ldquo;{search}&rdquo;.</> : "No listings found."}
                 </td>
               </tr>
             ) : null}
@@ -487,6 +529,30 @@ export default function AdminListingsPage() {
               setShowAdd(false);
               if (page === 1) reload();
               else setPage(1);
+            }}
+          />
+        </Modal>
+      ) : null}
+
+      {reviewing ? (
+        <Modal wide title="Review listing" onClose={() => setReviewing(null)}>
+          <ReviewListing
+            item={reviewing}
+            onDone={() => {
+              setReviewing(null);
+              reload();
+            }}
+          />
+        </Modal>
+      ) : null}
+
+      {editing ? (
+        <Modal wide title="Edit listing" onClose={() => setEditing(null)}>
+          <AddListingForm
+            item={editing}
+            onDone={() => {
+              setEditing(null);
+              reload();
             }}
           />
         </Modal>

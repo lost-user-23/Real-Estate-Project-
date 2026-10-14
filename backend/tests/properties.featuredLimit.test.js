@@ -1,4 +1,5 @@
 process.env.MONGODB_DB_NAME = 'homenest_test_featured_limit';
+process.env.CLOUDINARY_CLOUD_NAME = 'demo';
 const { tokenFromResponse, registerVerified } = require('./helpers/auth');
 
 const request = require('supertest');
@@ -20,7 +21,8 @@ async function registerAdmin() {
 }
 
 async function createProperty(overrides = {}) {
-  return Property.create({
+  const property = await Property.create({
+    description: 'A complete listing description.',
     ownerId: null,
     slug: `property-${new mongoose.Types.ObjectId()}`,
     title: 'Test Property',
@@ -35,6 +37,11 @@ async function createProperty(overrides = {}) {
     featured: false,
     ...overrides,
   });
+  // Publishing and verifying need a description and at least 5 photos.
+  await PropertyImage.insertMany(
+    Array.from({ length: 5 }, (_, i) => ({ propertyId: property._id, url: `https://example.com/${i}.jpg`, displayOrder: i }))
+  );
+  return property;
 }
 
 // Creates `count` published, already featured listings straight in the database.
@@ -74,7 +81,7 @@ describe('featured limit: PATCH /api/v1/properties/:id', () => {
 
     const rejected = await patch(token, properties[MAX_FEATURED]._id, { featured: true });
     expect(rejected.status).toBe(409);
-    expect(rejected.body.error.message).toBe(`Featured limit reached (${MAX_FEATURED})`);
+    expect(rejected.body.error.message).toContain(`Featured limit reached (${MAX_FEATURED})`);
 
     const stored = await Property.findById(properties[MAX_FEATURED]._id);
     expect(stored.featured).toBe(false);
@@ -141,7 +148,7 @@ describe('featured limit: PATCH /api/v1/admin/properties/bulk', () => {
 
     const response = await bulk(token, batch.map((p) => p._id.toString()), { featured: true });
     expect(response.status).toBe(409);
-    expect(response.body.error.message).toBe(`Featured limit reached (${MAX_FEATURED})`);
+    expect(response.body.error.message).toContain(`Featured limit reached (${MAX_FEATURED})`);
     expect(await featuredCount()).toBe(MAX_FEATURED - 2);
   });
 
@@ -195,7 +202,7 @@ describe('featured limit: publishing a featured draft', () => {
 
     const response = await patch(token, draft._id, { status: 'published', title: 'Changed Title' });
     expect(response.status).toBe(409);
-    expect(response.body.error.message).toBe(`Featured limit reached (${MAX_FEATURED})`);
+    expect(response.body.error.message).toContain(`Featured limit reached (${MAX_FEATURED})`);
 
     const stored = await Property.findById(draft._id);
     expect(stored.status).toBe('draft');
@@ -274,5 +281,86 @@ describe('featured limit: publishing a featured draft', () => {
     expect(response.status).toBe(409);
     expect(await Property.countDocuments({ status: 'draft' })).toBe(2);
     expect(await featuredCount()).toBe(MAX_FEATURED - 1);
+  });
+});
+
+describe('featured limit: other rules', () => {
+  const patch = (token, id, body) =>
+    request(app).patch(`/api/v1/properties/${id}`).set('Authorization', `Bearer ${token}`).send(body);
+
+  async function registerOwner() {
+    const email = `owner-${new mongoose.Types.ObjectId()}@example.com`;
+    const response = await registerVerified(app, { name: 'Featured Owner', email, password: 'password123' });
+    return { token: tokenFromResponse(response), user: response.body.user };
+  }
+
+  it('the rejection message includes the current count and free slots', async () => {
+    const token = await registerAdmin();
+    await seedFeatured(MAX_FEATURED);
+    const target = await createProperty();
+
+    const response = await patch(token, target._id, { featured: true });
+    expect(response.status).toBe(409);
+    expect(response.body.error.message).toContain(`${MAX_FEATURED} featured now, 0 free slots`);
+  });
+
+  it('bulk rejection reports the free slots left', async () => {
+    const token = await registerAdmin();
+    await seedFeatured(MAX_FEATURED - 1);
+    const batch = await Promise.all([createProperty(), createProperty()]);
+
+    const response = await request(app)
+      .patch('/api/v1/admin/properties/bulk')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: batch.map((p) => p._id.toString()), updates: { featured: true } });
+    expect(response.status).toBe(409);
+    expect(response.body.error.message).toContain(`${MAX_FEATURED - 1} featured now, 1 free slot;`);
+    expect(await featuredCount()).toBe(MAX_FEATURED - 1);
+  });
+
+  it('archiving a featured listing frees a slot', async () => {
+    const token = await registerAdmin();
+    const [first] = await seedFeatured(MAX_FEATURED);
+    const waiting = await createProperty();
+
+    expect((await patch(token, waiting._id, { featured: true })).status).toBe(409);
+    expect((await patch(token, first._id, { status: 'archived' })).status).toBe(200);
+    expect((await patch(token, waiting._id, { featured: true })).status).toBe(200);
+  });
+
+  it('creating a listing cannot feature it, even for an admin', async () => {
+    const token = await registerAdmin();
+    await seedFeatured(MAX_FEATURED);
+
+    const response = await request(app)
+      .post('/api/v1/properties')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        title: 'Brand New Listing',
+        intent: 'rent',
+        propertyType: 'apartment',
+        areaSqft: 900,
+        priceInRupees: 20000,
+        city: 'Bengaluru',
+        locality: 'Indiranagar',
+        description: 'A complete listing description.',
+        contactNumber: '9876543210',
+        featured: true,
+        images: Array.from({ length: 5 }, (_, i) => ({ url: `https://res.cloudinary.com/demo/image/upload/v1/property-images/${i}.jpg` })),
+      });
+    expect(response.status).toBe(201);
+    expect((await Property.findOne({ title: 'Brand New Listing' })).featured).toBe(false);
+    expect(await featuredCount()).toBe(MAX_FEATURED);
+  });
+
+  it('a non-admin owner cannot feature their own listing', async () => {
+    const { token, user } = await registerOwner();
+    const own = await createProperty({ ownerId: user.id });
+
+    const response = await patch(token, own._id, { featured: true, title: 'Owner Edited Title' });
+    expect(response.status).toBe(200);
+    const stored = await Property.findById(own._id);
+    expect(stored.featured).toBe(false);
+    expect(stored.title).toBe('Owner Edited Title');
   });
 });

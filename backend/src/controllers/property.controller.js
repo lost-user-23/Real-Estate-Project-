@@ -6,7 +6,7 @@ const { BULK_UPDATABLE_FIELDS } = propertyService;
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
 const { MAX_FEATURED } = require('../config/constants');
-const { parseOptionalCity, parseOptionalText } = require('../utils/queryParams');
+const { parseOptionalCity, parseOptionalText, parseKeyword } = require('../utils/queryParams');
 const { isOwnCloudinaryImageUrl } = require('../services/cloudinaryAssets.service');
 const {
   MIN_PROPERTY_IMAGES,
@@ -21,7 +21,6 @@ const { serializeProperty,serializeProperties } = require('../utils/serializers/
 
 const MAX_LIMIT = 50;
 const DEFAULT_LIMIT = 20;
-const MAX_KEYWORD_LENGTH = 100;
 const MAX_BHK = 20;
 const MAX_PROPERTY_IMAGES = 20;
 const MAX_IMAGE_URL_LENGTH = 2048;
@@ -224,18 +223,8 @@ function parseListFilters(query) {
   const locality = parseOptionalText(query, 'locality', errors);
   if (locality !== undefined) filters.locality = locality;
 
-  if (query.q != null) {
-    const q = typeof query.q === 'string' ? query.q.trim() : null;
-    if (q === null) {
-      errors.push('q must be a string');
-    } else if (q.length === 0) {
-      errors.push('q must not be empty');
-    } else if (q.length > MAX_KEYWORD_LENGTH) {
-      errors.push(`q must be at most ${MAX_KEYWORD_LENGTH} characters`);
-    } else {
-      filters.q = q;
-    }
-  }
+  const q = parseKeyword(query, errors);
+  if (q !== undefined) filters.q = q;
 
   if (query.bhk != null) {
     const parsed = parseBhk(query.bhk);
@@ -355,6 +344,7 @@ const listAdminProperties = asyncHandler(async (req, res) => {
   const query = req.query || {};
   const { page, limit, errors: pageErrors } = parsePagination(query);
   const errors = [...pageErrors];
+  const q = parseKeyword(query, errors);
 
   let status;
   if (query.status != null) {
@@ -379,7 +369,7 @@ const listAdminProperties = asyncHandler(async (req, res) => {
   }
 
   const { properties, total, totalPages } = await propertyService.findProperties({
-    filters: { status, sort, admin: true },
+    filters: { status, sort, q, admin: true },
     page,
     limit,
   });
@@ -388,6 +378,21 @@ const listAdminProperties = asyncHandler(async (req, res) => {
   res.status(200).json({
     properties: serializeProperties(properties, imagesByPropertyId, { includeOwnerFields: true }),
     meta: { total, page, limit, totalPages },
+  });
+});
+
+// Any status, with the contact number, so the admin edit form can be pre-filled.
+const getAdminProperty = asyncHandler(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) {
+    throw AppError.notFound('Property not found');
+  }
+  const property = await propertyService.findByIdWithContact(req.params.id);
+  if (!property) {
+    throw AppError.notFound('Property not found');
+  }
+  const images = await propertyService.getPropertyImages(property._id);
+  res.status(200).json({
+    property: serializeProperty(property, images, { includeContactNumber: true, includeOwnerFields: true }),
   });
 });
 
@@ -585,6 +590,7 @@ module.exports = {
   listMyProperties,
   listFeaturedProperties,
   listAdminProperties,
+  getAdminProperty,
   getPropertyBySlug,
   getPropertyContact,
   updateProperty,

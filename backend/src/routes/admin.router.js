@@ -2,7 +2,7 @@ const express = require('express');
 const {protect, restrictTo} = require('../middleware/auth.middleware');
 const {updateLocation, listAdminLocations} = require('../controllers/location.controller');
 const { createFacility, updateFacility, deleteFacility } = require('../controllers/facility.controller');
-const { bulkUpdateProperties, bulkDeleteProperties, listAdminProperties } = require('../controllers/property.controller');
+const { bulkUpdateProperties, bulkDeleteProperties, listAdminProperties, getAdminProperty } = require('../controllers/property.controller');
 
 const { getDashboard } = require('../controllers/dashboard.controller');
 
@@ -15,6 +15,7 @@ router.post('/facilities', protect, restrictTo('admin'), createFacility);
 router.patch('/facilities/:id', protect, restrictTo('admin'), updateFacility);
 router.delete('/facilities/:id', protect, restrictTo('admin'), deleteFacility);
 router.get('/properties', protect, restrictTo('admin'), listAdminProperties);
+router.get('/properties/:id', protect, restrictTo('admin'), getAdminProperty);
 router.patch('/properties/bulk', protect, restrictTo('admin'), bulkUpdateProperties);
 router.delete('/properties/bulk', protect, restrictTo('admin'), bulkDeleteProperties);
 router.use('/articles', protect, restrictTo('admin'), require('./admin-article.routes'));

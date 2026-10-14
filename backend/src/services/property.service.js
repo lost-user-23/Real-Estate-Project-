@@ -1,9 +1,10 @@
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 const { Property, PropertyImage, SavedProperty } = require('../models');
 const AppError = require('../utils/AppError');
 const { MAX_FEATURED } = require('../config/constants');
 const { normalizeCity } = require('../utils/normalizeCity');
-const { comparablePhone } = require('../utils/propertyValidation');
+const { comparablePhone, MIN_PROPERTY_IMAGES } = require('../utils/propertyValidation');
 const { resolvePublicId, deleteAssetsForImages } = require('./cloudinaryAssets.service');
 
 const EDITABLE_FIELDS = [
@@ -45,9 +46,58 @@ const ADMIN_EXTRA_EDITABLE_FIELDS = ['city', 'intent', 'propertyType'];
 // ones; bulk update is deliberately limited to this set.
 const BULK_UPDATABLE_FIELDS = [...ADMIN_ONLY_FIELDS, ...ADMIN_EXTRA_EDITABLE_FIELDS];
 
-function featuredLimitError() {
-  return AppError.conflict(`Featured limit reached (${MAX_FEATURED})`);
+// Publishing or verifying a listing is an approval: the admin must have
+// something to review, so a description and the minimum photos are required.
+// Shared by the single and bulk update paths.
+function isApproval(fields) {
+  return fields.status === 'published' || fields.verified === true;
 }
+
+function incompleteProblems({ description, imageCount }) {
+  const problems = [];
+  if (typeof description !== 'string' || description.trim().length === 0) problems.push('needs a description');
+  if (imageCount < MIN_PROPERTY_IMAGES) problems.push(`needs at least ${MIN_PROPERTY_IMAGES} photos (has ${imageCount})`);
+  return problems;
+}
+
+// items: [{ title, description, imageCount }]. Throws a 400 listing every incomplete one.
+function assertApprovable(items) {
+  const details = items.flatMap((item) => {
+    const problems = incompleteProblems(item);
+    return problems.length > 0 ? [`"${item.title}" ${problems.join(' and ')}`] : [];
+  });
+  if (details.length > 0) {
+    throw AppError.badRequest('Listings must have a description and enough photos before they can be published or verified', details);
+  }
+}
+
+// `current` is how many published featured listings exist, `needed` how many
+// new slots the request wanted.
+function featuredLimitError(current, needed = 1) {
+  const free = Math.max(0, MAX_FEATURED - current);
+  return AppError.conflict(
+    `Featured limit reached (${MAX_FEATURED}). ${current} featured now, ${free} free slot${free === 1 ? '' : 's'}; this request needs ${needed}.`
+  );
+}
+
+const publishedFeaturedCount = (extraFilter = {}) => Property.countDocuments({ featured: true, status: 'published', ...extraFilter });
+
+// Two concurrent requests can both pass the check before either writes. After
+// the write, recount; if the total is over the limit, put the featured-related
+// fields back from the snapshot taken before the write and reject.
+async function revertIfOverFeaturedLimit(snapshots, needed) {
+  const total = await publishedFeaturedCount();
+  if (total <= MAX_FEATURED) return;
+  await Property.bulkWrite(snapshots.map((s) => ({
+    updateOne: {
+      filter: { _id: s._id },
+      update: { $set: { featured: s.featured, featuredRank: s.featuredRank ?? null, status: s.status, publishedAt: s.publishedAt ?? null } },
+    },
+  })));
+  throw featuredLimitError(await publishedFeaturedCount(), needed);
+}
+
+const FEATURED_SNAPSHOT_FIELDS = '_id featured featuredRank status publishedAt';
 
 function slugify(title) {
   return title
@@ -340,6 +390,11 @@ async function findById(id) {
   return Property.findById(id);
 }
 
+// Contact number included (select:false by default); only for owner/admin routes.
+async function findByIdWithContact(id) {
+  return Property.findById(id).select('+contactNumber');
+}
+
 function isOwnerOrAdmin(property, user) {
   if (user.role === 'admin') return true;
   return property.ownerId && String(property.ownerId) === String(user._id);
@@ -389,10 +444,22 @@ async function updatePropertyById(id, body, actor) {
     property.verified = false;
   }
 
+  // Description and photos as they will be after this save, so one request can
+  // fix them and approve together.
+  if (isAdmin && isApproval(body)) {
+    const sent = (field) => Object.prototype.hasOwnProperty.call(body, field);
+    assertApprovable([{
+      title: sent('title') ? body.title : property.title,
+      description: sent('description') ? body.description : property.description,
+      imageCount: sent('images') ? (body.images ?? []).length : await PropertyImage.countDocuments({ propertyId: property._id }),
+    }]);
+  }
+
   // The limit applies when a listing joins the featured set: it becomes featured,
   // or it is featured and becomes published (a featured draft is not counted
   // until then). Editing an already featured listing, or unfeaturing one, is
   // never blocked. Checked before anything is written.
+  let featuredSnapshot = null;
   if (isAdmin) {
     const has = (field) => Object.prototype.hasOwnProperty.call(body, field);
     const nextFeatured = has('featured') ? body.featured : property.featured;
@@ -401,8 +468,9 @@ async function updatePropertyById(id, body, actor) {
     const becomesPublished = nextFeatured === true && nextStatus === 'published' && property.status !== 'published';
     if (becomesFeatured || becomesPublished) {
       // Same set GET /featured serves: published and featured.
-      const others = await Property.countDocuments({ featured: true, status: 'published', _id: { $ne: property._id } });
-      if (others >= MAX_FEATURED) throw featuredLimitError();
+      const others = await publishedFeaturedCount({ _id: { $ne: property._id } });
+      if (others >= MAX_FEATURED) throw featuredLimitError(others);
+      featuredSnapshot = [property.toObject()];
     }
   }
 
@@ -417,6 +485,7 @@ async function updatePropertyById(id, body, actor) {
   }
 
   await property.save();
+  if (featuredSnapshot) await revertIfOverFeaturedLimit(featuredSnapshot, 1);
 
   const images = Object.prototype.hasOwnProperty.call(body, 'images')
     ? await replacePropertyImages(property._id, body.images, property.ownerId)
@@ -449,12 +518,25 @@ async function bulkUpdatePropertiesByIds(ids, updates) {
     }
   }
 
+  if (isApproval(setFields)) {
+    const [properties, counts] = await Promise.all([
+      Property.find({ _id: { $in: ids } }).select('title description').lean(),
+      PropertyImage.aggregate([
+        { $match: { propertyId: { $in: ids.map((id) => new mongoose.Types.ObjectId(id)) } } },
+        { $group: { _id: '$propertyId', count: { $sum: 1 } } },
+      ]),
+    ]);
+    const countById = new Map(counts.map((row) => [String(row._id), row.count]));
+    assertApprovable(properties.map((p) => ({ ...p, imageCount: countById.get(String(p._id)) ?? 0 })));
+  }
+
   // The limit applies when listings join the featured set: the update features
   // them, or publishes them while they are (or become) featured. Afterwards the
   // total is the published featured listings outside the batch plus the batch
   // members that end up both featured and published.
   const featuring = setFields.featured === true;
   const publishing = setFields.status === 'published';
+  let featuredSnapshot = null;
   if (featuring || (publishing && setFields.featured !== false)) {
     // Duplicate ids in the request must not inflate the total.
     const uniqueIds = [...new Set(ids.map(String))];
@@ -462,11 +544,15 @@ async function bulkUpdatePropertiesByIds(ids, updates) {
     if (!featuring) batchFilter.featured = true;
     if (!publishing) batchFilter.status = 'published';
     const batchEndsPublished = !('status' in setFields) || publishing;
-    const [outside, inBatch] = await Promise.all([
-      Property.countDocuments({ featured: true, status: 'published', _id: { $nin: uniqueIds } }),
+    const [outside, inBatch, currentInBatch] = await Promise.all([
+      publishedFeaturedCount({ _id: { $nin: uniqueIds } }),
       batchEndsPublished ? Property.countDocuments(batchFilter) : 0,
+      publishedFeaturedCount({ _id: { $in: uniqueIds } }),
     ]);
-    if (outside + inBatch > MAX_FEATURED) throw featuredLimitError();
+    if (outside + inBatch > MAX_FEATURED) {
+      throw featuredLimitError(outside + currentInBatch, Math.max(0, inBatch - currentInBatch));
+    }
+    featuredSnapshot = await Property.find({ _id: { $in: uniqueIds } }).select(FEATURED_SNAPSHOT_FIELDS).lean();
   }
 
   // updateMany skips document hooks, so keep cityLower in step by hand.
@@ -479,6 +565,7 @@ async function bulkUpdatePropertiesByIds(ids, updates) {
   if (setFields.status === 'published') {
     await Property.updateMany({ _id: { $in: ids }, publishedAt: null }, { $set: { publishedAt: new Date() } });
   }
+  if (featuredSnapshot) await revertIfOverFeaturedLimit(featuredSnapshot, featuredSnapshot.length);
 
   return { matchedCount: result.matchedCount, modifiedCount: result.modifiedCount };
 }
@@ -521,6 +608,7 @@ module.exports = {
   LIST_SORTS,
   buildListFilter,
   findById,
+  findByIdWithContact,
   updatePropertyById,
   deletePropertyById,
   bulkUpdatePropertiesByIds,

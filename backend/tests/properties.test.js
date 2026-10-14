@@ -630,7 +630,13 @@ describe('PATCH /api/v1/properties/:id', () => {
     const { user: owner } = await registerUser();
     const { token, user: admin } = await registerUser();
     await promoteToAdmin(admin.id);
-    const property = await createProperty({ ownerId: owner.id, status: 'draft', publishedAt: null });
+    const property = await createProperty({
+      ownerId: owner.id,
+      status: 'draft',
+      publishedAt: null,
+      description: 'A complete listing description.',
+    });
+    await PropertyImage.insertMany(validImages.map((image, i) => ({ propertyId: property._id, ...image, displayOrder: i })));
     const path = `/api/v1/properties/${property._id}`;
 
     const published = await request(app)
@@ -1135,5 +1141,225 @@ describe('GET /api/v1/admin/properties', () => {
     expect(response.body.properties).toHaveLength(2);
     expect(response.body.properties.map((p) => p.slug)).toEqual(['admin-page-c', 'admin-page-b']);
     expect(response.body.meta).toMatchObject({ total: 3, page: 1, limit: 2, totalPages: 2 });
+  });
+
+  describe('keyword search (?q=)', () => {
+    async function adminToken() {
+      const { token, user } = await registerUser();
+      await promoteToAdmin(user.id);
+      return token;
+    }
+    const search = (token, query) =>
+      request(app).get('/api/v1/admin/properties').query(query).set('Authorization', `Bearer ${token}`);
+    const slugs = (response) => response.body.properties.map((p) => p.slug).sort();
+
+    it('filters across all statuses by title, locality and city, case-insensitively', async () => {
+      const token = await adminToken();
+      await createProperty({ slug: 'draft-villa', title: 'Garden Villa', status: 'draft', publishedAt: null });
+      await createProperty({ slug: 'archived-baner', title: 'Flat', locality: 'Baner', status: 'archived' });
+      await createProperty({ slug: 'pune-shop', title: 'Shop', city: 'Pune' });
+      await createProperty({ slug: 'other', title: 'Studio' });
+
+      expect(slugs(await search(token, { q: 'VILLA' }))).toEqual(['draft-villa']);
+      expect(slugs(await search(token, { q: 'baner' }))).toEqual(['archived-baner']);
+      expect(slugs(await search(token, { q: 'pune' }))).toEqual(['pune-shop']);
+      expect(slugs(await search(token, { q: '  villa  ' }))).toEqual(['draft-villa']);
+    });
+
+    it('filters before paginating and returns the filtered total', async () => {
+      const token = await adminToken();
+      for (let i = 0; i < 5; i += 1) await createProperty({ slug: `match-${i}`, title: `Lakeview ${i}` });
+      for (let i = 0; i < 4; i += 1) await createProperty({ slug: `noise-${i}`, title: `Other ${i}` });
+
+      const first = await search(token, { q: 'lakeview', page: 1, limit: 2 });
+      expect(first.body.properties).toHaveLength(2);
+      expect(first.body.meta).toMatchObject({ total: 5, page: 1, limit: 2, totalPages: 3 });
+
+      const last = await search(token, { q: 'lakeview', page: 3, limit: 2 });
+      expect(last.body.properties).toHaveLength(1);
+    });
+
+    it('returns an empty page with the filtered total when the page is past the results', async () => {
+      const token = await adminToken();
+      await createProperty({ slug: 'only-match', title: 'Lakeview' });
+      await createProperty({ slug: 'noise', title: 'Other' });
+
+      const response = await search(token, { q: 'lakeview', page: 2, limit: 1 });
+      expect(response.status).toBe(200);
+      expect(response.body.properties).toEqual([]);
+      expect(response.body.meta).toMatchObject({ total: 1, page: 2, totalPages: 1 });
+    });
+
+    it('combines with ?status=', async () => {
+      const token = await adminToken();
+      await createProperty({ slug: 'draft-lake', title: 'Lakeview', status: 'draft', publishedAt: null });
+      await createProperty({ slug: 'live-lake', title: 'Lakeview' });
+
+      const response = await search(token, { q: 'lakeview', status: 'draft' });
+      expect(slugs(response)).toEqual(['draft-lake']);
+      expect(response.body.meta.total).toBe(1);
+    });
+
+    it('treats regex characters as plain text', async () => {
+      const token = await adminToken();
+      await createProperty({ slug: 'plain', title: 'Plain flat' });
+      await createProperty({ slug: 'special', title: 'Flat (A+B) [1]' });
+
+      expect(slugs(await search(token, { q: '.*' }))).toEqual([]);
+      expect(slugs(await search(token, { q: '(A+B)' }))).toEqual(['special']);
+      expect(slugs(await search(token, { q: '[1]' }))).toEqual(['special']);
+      expect((await search(token, { q: '(' })).status).toBe(200);
+    });
+
+    it('rejects an empty, repeated or over-long keyword with 400', async () => {
+      const token = await adminToken();
+      expect((await search(token, { q: '   ' })).status).toBe(400);
+      expect((await search(token, { q: ['a', 'b'] })).status).toBe(400);
+      expect((await search(token, { q: 'a'.repeat(101) })).status).toBe(400);
+      expect((await search(token, { q: 'a'.repeat(100) })).status).toBe(200);
+    });
+  });
+});
+
+describe('GET /api/v1/admin/properties/:id', () => {
+  it('rejects non-admins and anonymous requests', async () => {
+    const { token } = await registerUser();
+    const property = await createProperty();
+    expect((await request(app).get(`/api/v1/admin/properties/${property.id}`)).status).toBe(401);
+    const response = await request(app)
+      .get(`/api/v1/admin/properties/${property.id}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(response.status).toBe(403);
+  });
+
+  it('returns a draft listing with its contact number, status and images', async () => {
+    const { token, user } = await registerUser();
+    await promoteToAdmin(user.id);
+    const property = await createProperty({ status: 'draft', publishedAt: null, contactNumber: '9876543210' });
+    await PropertyImage.create({ propertyId: property._id, url: validImages[0].url, displayOrder: 0 });
+
+    const response = await request(app)
+      .get(`/api/v1/admin/properties/${property.id}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.property).toMatchObject({ status: 'draft', contactNumber: '9876543210' });
+    expect(response.body.property.images).toHaveLength(1);
+  });
+
+  it('returns archived listings too', async () => {
+    const { token, user } = await registerUser();
+    await promoteToAdmin(user.id);
+    const property = await createProperty({ status: 'archived' });
+
+    const response = await request(app)
+      .get(`/api/v1/admin/properties/${property.id}`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.property.status).toBe('archived');
+  });
+
+  it('returns 404 for an unknown or malformed id', async () => {
+    const { token, user } = await registerUser();
+    await promoteToAdmin(user.id);
+    for (const id of [new mongoose.Types.ObjectId().toString(), 'not-an-id']) {
+      const response = await request(app).get(`/api/v1/admin/properties/${id}`).set('Authorization', `Bearer ${token}`);
+      expect(response.status).toBe(404);
+    }
+  });
+});
+
+describe('approval guard (publish / verify needs a description and 5 photos)', () => {
+  async function setup() {
+    const { token, user } = await registerUser();
+    await promoteToAdmin(user.id);
+    return token;
+  }
+  const photos = (property, count) =>
+    PropertyImage.insertMany(Array.from({ length: count }, (_, i) => ({ propertyId: property._id, ...validImages[i % 5], displayOrder: i })));
+  const draft = (overrides = {}) =>
+    createProperty({ status: 'draft', publishedAt: null, verified: false, ...overrides });
+  const patch = (token, id, body) =>
+    request(app).patch(`/api/v1/properties/${id}`).set('Authorization', `Bearer ${token}`).send(body);
+  const bulk = (token, ids, updates) =>
+    request(app).patch('/api/v1/admin/properties/bulk').set('Authorization', `Bearer ${token}`).send({ ids, updates });
+
+  it('rejects publishing or verifying a listing without a description (single)', async () => {
+    const token = await setup();
+    const property = await draft();
+    await photos(property, 5);
+
+    for (const body of [{ status: 'published' }, { verified: true }]) {
+      const response = await patch(token, property.id, body);
+      expect(response.status).toBe(400);
+      expect(response.body.error.details[0]).toMatch(/needs a description/);
+    }
+    const stored = await Property.findById(property.id);
+    expect(stored.status).toBe('draft');
+    expect(stored.verified).toBe(false);
+  });
+
+  it('rejects publishing or verifying a listing with fewer than 5 photos (single)', async () => {
+    const token = await setup();
+    const property = await draft({ description: 'A complete listing description.' });
+    await photos(property, 4);
+
+    const response = await patch(token, property.id, { status: 'published' });
+    expect(response.status).toBe(400);
+    expect(response.body.error.details[0]).toMatch(/at least 5 photos \(has 4\)/);
+    expect((await patch(token, property.id, { verified: true })).status).toBe(400);
+  });
+
+  it('rejects an incomplete listing in a bulk update and changes nothing', async () => {
+    const token = await setup();
+    const complete = await draft({ description: 'A complete listing description.' });
+    await photos(complete, 5);
+    const incomplete = await draft({ description: 'A complete listing description.' });
+    await photos(incomplete, 2);
+
+    for (const updates of [{ status: 'published' }, { verified: true }]) {
+      const response = await bulk(token, [complete.id, incomplete.id], updates);
+      expect(response.status).toBe(400);
+      expect(response.body.error.details).toHaveLength(1);
+    }
+    expect((await Property.findById(complete.id)).status).toBe('draft');
+    expect((await Property.findById(complete.id)).verified).toBe(false);
+  });
+
+  it('accepts a complete listing on both paths', async () => {
+    const token = await setup();
+    const single = await draft({ description: 'A complete listing description.' });
+    await photos(single, 5);
+    const many = await draft({ description: 'A complete listing description.' });
+    await photos(many, 6);
+
+    const one = await patch(token, single.id, { status: 'published', verified: true });
+    expect(one.status).toBe(200);
+    expect(one.body.property).toMatchObject({ status: 'published', verified: true });
+
+    const all = await bulk(token, [many.id], { status: 'published', verified: true });
+    expect(all.status).toBe(200);
+    expect((await Property.findById(many.id)).verified).toBe(true);
+  });
+
+  it('lets one request add the missing description and approve', async () => {
+    const token = await setup();
+    const property = await draft();
+    await photos(property, 5);
+
+    const response = await patch(token, property.id, { description: 'Added in the same request.', status: 'published' });
+    expect(response.status).toBe(200);
+  });
+
+  it('still allows other edits on an incomplete draft, and unverifying / archiving', async () => {
+    const token = await setup();
+    const property = await draft();
+
+    const edit = await patch(token, property.id, { title: 'Renamed listing', priceInRupees: 123456, featured: false });
+    expect(edit.status).toBe(200);
+    expect(edit.body.property.title).toBe('Renamed listing');
+    expect((await patch(token, property.id, { status: 'archived', verified: false })).status).toBe(200);
+    expect((await bulk(token, [property.id], { status: 'draft', city: 'Pune' })).status).toBe(200);
   });
 });

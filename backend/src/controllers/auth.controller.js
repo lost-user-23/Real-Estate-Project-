@@ -22,11 +22,14 @@ const {
   comparePasswords,
   generateToken,
   REFRESH_TOKEN_TTL_MS,
+  newSessionId,
   createRefreshToken,
   consumeRefreshToken,
   revokeRefreshToken,
+  revokeSessionByAccessToken,
   revokeAllRefreshTokens,
 } = require("../services/auth.service");
+const { bearerToken } = require("../middleware/auth.middleware");
 
 const {
   generateActionOtp,
@@ -63,18 +66,19 @@ function clearRefreshCookie(res) {
 
 // Starts a session: a new refresh token goes out as the cookie and a fresh
 // access token is returned for the response body.
-async function startSession(req, res, user) {
-  const refreshToken = await createRefreshToken(user._id, req);
+// A refresh passes its session id so the session stays the same across rotations.
+async function startSession(req, res, user, sessionId = newSessionId()) {
+  const refreshToken = await createRefreshToken(user._id, req, sessionId);
   res.cookie(REFRESH_COOKIE, refreshToken, getCookieOptions());
-  return generateToken(user);
+  return generateToken(user, sessionId);
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^\+?[0-9 ()-]{7,20}$/;
 const MIN_PASSWORD_LENGTH = 8;
 const MAX_NAME_LENGTH = 100;
-// Real bcrypt hash (cost 10) of a throwaway value; only used to equalise timing.
-const DUMMY_HASH = bcrypt.hashSync("timing-equaliser", 10);
+// Real bcrypt hash (same cost as real passwords) of a throwaway value; only used to equalise timing.
+const DUMMY_HASH = bcrypt.hashSync("timing-equaliser", config.bcryptRounds);
 
 function normalizeEmail(email) {
   return typeof email === "string" ? email.trim().toLowerCase() : "";
@@ -309,7 +313,7 @@ async function refresh(req, res, next) {
       throw AppError.unauthorized();
     }
 
-    const { userId, inGrace } = await consumeRefreshToken(presented);
+    const { userId, sessionId, inGrace } = await consumeRefreshToken(presented);
     const user = userId ? await User.findById(userId) : null;
     if (!user) {
       // A lost race between two tabs: the other response is setting the live
@@ -318,18 +322,25 @@ async function refresh(req, res, next) {
       throw AppError.unauthorized();
     }
 
-    const accessToken = await startSession(req, res, user);
+    // Records from before sessions had ids get one on their first rotation.
+    const accessToken = await startSession(req, res, user, sessionId || undefined);
     return res.status(200).json({ user: serializeUser(user), accessToken });
   } catch (err) {
     return next(err);
   }
 }
 
+// Needs no access token (it may have expired): the refresh cookie identifies the
+// session. Only that session ends, and repeating the call is harmless.
 async function logout(req, res, next) {
   try {
     const presented = req.cookies?.[REFRESH_COOKIE];
     if (typeof presented === "string" && presented) {
       await revokeRefreshToken(presented);
+    } else {
+      // No cookie: a valid Bearer token still ends its own session.
+      const accessToken = bearerToken(req);
+      if (accessToken) await revokeSessionByAccessToken(accessToken);
     }
     clearRefreshCookie(res);
     return res.status(200).json({ message: "Logged out" });
@@ -338,8 +349,7 @@ async function logout(req, res, next) {
   }
 }
 
-// Ends every session of the caller. Access tokens already issued stay valid
-// until they expire (at most 15 minutes) but can no longer be renewed.
+// Ends every session of the caller; their access tokens stop working at once.
 async function logoutAll(req, res, next) {
   try {
     await revokeAllRefreshTokens(req.user._id);

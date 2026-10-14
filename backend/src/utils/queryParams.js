@@ -22,4 +22,24 @@ function parseOptionalText(query, key, errors) {
   return query[key];
 }
 
-module.exports = { parseOptionalCity, parseOptionalText };
+const MAX_KEYWORD_LENGTH = 100;
+
+// Optional ?q= keyword search: a single non-empty string of at most
+// MAX_KEYWORD_LENGTH characters. Returns the trimmed value, or undefined when
+// absent; problems are pushed onto `errors`.
+function parseKeyword(query, errors) {
+  if (query.q == null) return undefined;
+  const q = typeof query.q === 'string' ? query.q.trim() : null;
+  if (q === null) {
+    errors.push('q must be a string');
+  } else if (q.length === 0) {
+    errors.push('q must not be empty');
+  } else if (q.length > MAX_KEYWORD_LENGTH) {
+    errors.push(`q must be at most ${MAX_KEYWORD_LENGTH} characters`);
+  } else {
+    return q;
+  }
+  return undefined;
+}
+
+module.exports = { parseOptionalCity, parseOptionalText, parseKeyword };

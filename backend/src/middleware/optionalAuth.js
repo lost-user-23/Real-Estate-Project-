@@ -1,4 +1,4 @@
-const { verifyToken, isTokenStale } = require('../services/auth.service');
+const { verifyToken, isTokenStale, isSessionAlive } = require('../services/auth.service');
 const User = require('../models/User');
 const { bearerToken } = require('./auth.middleware');
 const config = require('../config');
@@ -17,7 +17,8 @@ async function optionalAuth(req, res, next) {
   try {
     const user = await User.findById(decoded.id);
     // A token from before a password change is treated as anonymous.
-    if (user && !isTokenStale(user, decoded)) req.user = user;
+    // A logged-out or revoked session is anonymous too.
+    if (user && !isTokenStale(user, decoded) && (await isSessionAlive(user._id, decoded.sid))) req.user = user;
     return next();
   } catch (error) {
     if (config.env !== 'test') {
