@@ -17,6 +17,7 @@ const STATIC_ROUTES = [
   { path: "/tools", priority: 0.5, changeFrequency: "monthly" },
   { path: "/tools/emi-calculator", priority: 0.6, changeFrequency: "monthly" },
   { path: "/tools/property-value-calculator", priority: 0.6, changeFrequency: "monthly" },
+  { path: "/tools/loans", priority: 0.6, changeFrequency: "monthly" },
   { path: "/about", priority: 0.4, changeFrequency: "yearly" },
   { path: "/careers", priority: 0.2, changeFrequency: "yearly" },
   { path: "/contact", priority: 0.4, changeFrequency: "yearly" },

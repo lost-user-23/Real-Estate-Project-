@@ -168,6 +168,14 @@ export default async function PropertyDetailPage({ params }) {
                 {formatPrice(property.priceInRupees)}
                 {property.intent === "rent" ? <span className="text-base font-normal text-text-muted">/mo</span> : null}
               </p>
+              {property.intent !== "rent" && Number.isFinite(property.priceInRupees) && property.priceInRupees > 0 ? (
+                <Link
+                  href={`/tools/emi-calculator?type=home&amount=${Math.round(property.priceInRupees)}&propertyId=${encodeURIComponent(propertyId)}`}
+                  className="mt-2 inline-block text-sm font-medium text-primary underline underline-offset-2 hover:text-primary-dark"
+                >
+                  Estimate EMI
+                </Link>
+              ) : null}
 
               <dl className="mt-6 grid grid-cols-2 gap-4 rounded-2xl border border-border bg-surface p-5 sm:grid-cols-4">
                 <div>

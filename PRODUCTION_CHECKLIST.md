@@ -14,7 +14,8 @@ With `NODE_ENV=production` the server refuses to start (clear error naming the v
 | `PORT` | HTTP port (default `4000`) | No |
 | `JWT_SECRET` | Signs auth tokens. At least 32 characters, random, not a placeholder (`openssl rand -hex 64`) | Yes |
 | `CORS_ORIGIN` | Exact frontend origin(s), comma-separated. See CORS rules below | Yes |
-| `TRUST_PROXY_HOPS` | Number of reverse proxies in front of the API (usually `1`). Never `true` | Yes |
+| `TRUST_PROXY_HOPS` | Number of reverse proxies in front of the API (usually `1`). Never `true`. Must match the real hop count: too high lets a client forge its IP with its own `X-Forwarded-For` (bypassing the contact and loan-enquiry rate limits); too low makes everyone share the proxy's IP. Verify it on the deployed host (see "Verifying TRUST_PROXY_HOPS" below) | Yes |
+| `LOAN_ENQUIRY_NOTIFY_EMAIL` | Optional internal recipient for new loan-enquiry alerts (reference ID and loan type only). Empty = no alerts | No |
 | `APP_URL` | Public frontend URL; verification emails link to `<APP_URL>/verify-email` | Yes |
 | `SMTP_HOST` | SMTP server for verification links and one-time codes (account verification, password reset, password/email changes) | Yes |
 | `SMTP_PORT` | SMTP port (default `587`; `465` uses TLS) | No |
@@ -79,3 +80,13 @@ Replace `$API` and `$APP` with the deployed API and frontend origins.
 - Events never include the search keyword, emails or phone numbers. `trackEvent` strips those keys even if a caller passes them. The page_view is sent by `AnalyticsLoader` with `page_location` set to the origin plus the path only, so `?q=` and other search parameters never reach GA. In GA4, turn off Enhanced measurement "Page changes based on browser history events" so GA does not send its own page_view with the full URL.
 - The footer "Manage consent" link withdraws consent: it forgets the choice, deletes the GA cookies and reloads, and the banner asks again.
 - Verify: set a test ID in `frontend/.env.local`, restart `npm run dev`, click Accept, and look for `collect?v=2` requests in the Network tab (and the events in GA DebugView). After Decline, or with the ID empty, no `googletagmanager.com` or `collect` request should appear.
+
+## Verifying TRUST_PROXY_HOPS
+
+The hop count cannot be determined from this repository: `vercel.json` routes `/api/*` to the backend service, but how many proxies Vercel puts between the client and Express is a platform detail not recorded here. Verify it on the deployed API instead:
+
+1. Temporarily log or return `req.ip` and `req.ips` from a throwaway route, or inspect the `RateLimit-*` behaviour from two different networks.
+2. Send a request with a forged header, e.g. `curl -H "X-Forwarded-For: 6.6.6.6" https://<site>/api/...`. The IP the app uses must be your real address, not `6.6.6.6`.
+3. Set `TRUST_PROXY_HOPS` to the smallest value where that holds and the IP is not the proxy's. Re-test from a second network to confirm the limiters key on different clients.
+
+The in-memory limiters are per serverless instance, so they remain a speed bump rather than strict abuse prevention.

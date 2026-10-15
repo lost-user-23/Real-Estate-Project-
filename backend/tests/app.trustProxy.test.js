@@ -37,4 +37,21 @@ describe('trust proxy setting', () => {
     const res = await request(probe).get('/ip').set('X-Forwarded-For', '6.6.6.6, 203.0.113.7');
     expect(res.body.ip).toBe('203.0.113.7');
   });
+
+  const ipSeenBy = async (hops, forwardedFor) => {
+    process.env.TRUST_PROXY_HOPS = hops;
+    const probe = express();
+    probe.set('trust proxy', createApp().get('trust proxy'));
+    probe.get('/ip', (req, res) => res.json({ ip: req.ip }));
+    return (await request(probe).get('/ip').set('X-Forwarded-For', forwardedFor)).body.ip;
+  };
+
+  it('with zero hops, X-Forwarded-For is ignored entirely (a client cannot pick its rate-limit key)', async () => {
+    expect(await ipSeenBy('0', '8.8.8.8')).toMatch(/127\.0\.0\.1|::1/);
+  });
+
+  it('with one hop and no real proxy, a client-sent header IS trusted, so the hop count must match the real topology', async () => {
+    // Documents why TRUST_PROXY_HOPS must equal the deployed proxy count.
+    expect(await ipSeenBy('1', '8.8.8.8')).toBe('8.8.8.8');
+  });
 });

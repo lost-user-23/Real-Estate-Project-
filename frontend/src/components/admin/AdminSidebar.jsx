@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: "/admin/categories", label: "Categories" },
   { href: "/admin/reports", label: "Reports" },
   { href: "/admin/messages", label: "Messages" },
+  { href: "/admin/loan-enquiries", label: "Loan enquiries" },
 ];
 
 export function AdminSidebar() {

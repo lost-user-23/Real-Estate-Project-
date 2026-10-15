@@ -1,7 +1,7 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit')
 const AppError = require('../utils/AppError');
-const { getPopularLocations, getLocationSuggestions } = require('../controllers/location.controller');
+const { getPopularLocations, getPopularAreas, getLocationSuggestions } = require('../controllers/location.controller');
 const { getFacilitiesByLocation } = require('../controllers/facility.controller');
 
 const locationSuggestionsLimiter = rateLimit({
@@ -16,6 +16,7 @@ const locationSuggestionsLimiter = rateLimit({
 const router = express.Router();
 
 router.get('/popular', getPopularLocations);
+router.get('/areas', getPopularAreas);
 router.get('/suggestions', locationSuggestionsLimiter, getLocationSuggestions);
 router.get('/:locationId/facilities', getFacilitiesByLocation);
 

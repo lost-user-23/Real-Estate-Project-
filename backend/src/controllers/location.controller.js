@@ -25,6 +25,26 @@ const getPopularLocations = asyncHandler(async (req, res) => {
     res.json({ locations: await serializeWithLiveCounts(locations) });
 });
 
+const AREAS_LIMIT = 6;
+
+// Navbar mega-menu: the localities of one city with the most published
+// listings. Read-only aggregate over Property, so it needs no Location docs.
+const getPopularAreas = asyncHandler(async (req, res) => {
+    const { city } = req.query;
+    if (!city || typeof city !== 'string' || city.trim().length === 0) {
+        throw AppError.badRequest('Query parameter "city" is required');
+    }
+
+    const areas = await Property.aggregate([
+        { $match: { ...buildListFilter({ city }), locality: { $nin: [null, ''] } } },
+        { $group: { _id: { $toLower: '$locality' }, locality: { $first: '$locality' }, count: { $sum: 1 } } },
+        { $sort: { count: -1, _id: 1 } },
+        { $limit: AREAS_LIMIT },
+    ]);
+
+    res.json({ areas: areas.map(({ locality, count }) => ({ locality, activeListingCount: count })) });
+});
+
 function escapeRegExp(value) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -155,4 +175,4 @@ const updateLocation = asyncHandler(async (req, res) => {
     res.json({ location: serializeLocation(location) });
 });
 
-module.exports = {getPopularLocations, getLocationSuggestions, updateLocation, listAdminLocations};
+module.exports = {getPopularLocations, getPopularAreas, getLocationSuggestions, updateLocation, listAdminLocations};

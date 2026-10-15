@@ -1,6 +1,7 @@
 import { Inter, Plus_Jakarta_Sans } from "next/font/google";
 import { Providers } from "@/components/Providers";
 import { AnalyticsLoader } from "@/components/AnalyticsLoader";
+import { AssistantWidget } from "@/components/assistant/AssistantWidget";
 import { ConsentBanner } from "@/components/ConsentBanner";
 import { SITE_URL } from "@/lib/site";
 import "./globals.css";
@@ -63,6 +64,7 @@ export default function RootLayout({ children }) {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
         <Providers>{children}</Providers>
+        <AssistantWidget />
         <ConsentBanner />
         <AnalyticsLoader />
       </body>

@@ -1,4 +1,5 @@
 const { CONTENT_STATUSES } = require('../models/contentStatus');
+const { ARTICLE_TYPES } = require('../models/Article');
 const articleService = require('../services/article.service');
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
@@ -49,6 +50,10 @@ function validateFields(body, { isCreate = false } = {}) {
     errors.push('imageUrl must be a valid Cloudinary image URL');
   }
 
+  if (body.type !== undefined && !ARTICLE_TYPES.includes(body.type)) {
+    errors.push(`type must be one of: ${ARTICLE_TYPES.join(', ')}`);
+  }
+
   if (body.status !== undefined && !CONTENT_STATUSES.includes(body.status)) {
     errors.push(`status must be one of: ${CONTENT_STATUSES.join(', ')}`);
   }
@@ -81,11 +86,21 @@ function validateAndBuildPagination(query) {
   return { page, limit };
 }
 
+function parseTypeFilter(query) {
+  if (query.type === undefined || query.type === '') return undefined;
+  if (!ARTICLE_TYPES.includes(query.type)) {
+    throw AppError.badRequest('Validation failed', [`type must be one of: ${ARTICLE_TYPES.join(', ')}`]);
+  }
+  return query.type;
+}
+
 const listPublicArticles = asyncHandler(async (req, res) => {
   const pagination = validateAndBuildPagination(req.query || {});
+  const type = parseTypeFilter(req.query || {});
   const { articles, total, totalPages } = await articleService.listArticles({
     ...pagination,
     publishedOnly: true,
+    type,
   });
 
   res.status(200).json({
@@ -102,9 +117,11 @@ const getPublicArticleBySlug = asyncHandler(async (req, res) => {
 
 const listAdminArticles = asyncHandler(async (req, res) => {
   const pagination = validateAndBuildPagination(req.query || {});
+  const type = parseTypeFilter(req.query || {});
   const { articles, total, totalPages } = await articleService.listArticles({
     ...pagination,
     publishedOnly: false,
+    type,
   });
 
   res.status(200).json({

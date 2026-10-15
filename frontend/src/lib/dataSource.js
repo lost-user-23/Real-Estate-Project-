@@ -67,6 +67,12 @@ export async function fetchPopularLocations(simulateError = false) {
     }));
 }
 
+// Top localities of one city by published listings (navbar mega-menu).
+export async function fetchPopularAreas(city, signal) {
+  const { areas } = (await api.get(`/api/v1/locations/areas?city=${encodeURIComponent(city)}`, { auth: false, signal })) ?? {};
+  return areas ?? [];
+}
+
 export async function fetchCategories(simulateError = false) {
   if (simulateError) throw new Error("Simulated network error");
 
@@ -81,10 +87,13 @@ export async function fetchNewProjects(simulateError = false) {
   return projects.map(normalizeProject);
 }
 
-export async function fetchInsights(simulateError = false) {
+// `type` is "blog", "news", or empty for both.
+export async function fetchInsights(type = "", simulateError = false, limit = 3) {
   if (simulateError) throw new Error("Simulated network error");
 
-  const { articles } = (await api.get("/api/v1/articles?limit=3", { auth: false })) ?? {};
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (type) params.set("type", type);
+  const { articles } = (await api.get(`/api/v1/articles?${params}`, { auth: false })) ?? {};
   return articles.map(normalizeArticle);
 }
 

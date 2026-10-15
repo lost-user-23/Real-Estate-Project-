@@ -87,6 +87,7 @@ async function sendActionCodeEmail(to, code, actionLabel) {
 }
 
 module.exports = {
+  deliver,
   sendVerificationEmail,
   sendAccountExistsEmail,
   sendPasswordResetEmail,

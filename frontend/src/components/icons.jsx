@@ -163,3 +163,13 @@ export function BuildingIcon(props) {
     </svg>
   );
 }
+
+// Chat bubble with a small roof inside: the Property Finder launcher.
+export function ChatHomeIcon(props) {
+  return (
+    <svg {...base(props)}>
+      <path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.3 8.7 8.7 0 0 1-3.6-.8L3.5 21l1.8-4.8A8.1 8.1 0 0 1 4 11.5C4 6.9 7.8 3.2 12.5 3.2S21 6.9 21 11.5Z" />
+      <path d="m9 12.2 3.5-3 3.5 3M10 11.6v3h5v-3" />
+    </svg>
+  );
+}

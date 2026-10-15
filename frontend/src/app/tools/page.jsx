@@ -2,7 +2,7 @@ import Link from "next/link";
 import { PageShell } from "@/components/layout/PageShell";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Container } from "@/components/ui/Container";
-import { CalculatorIcon, TrendingUpIcon } from "@/components/icons";
+import { BuildingIcon, CalculatorIcon, TrendingUpIcon } from "@/components/icons";
 
 export const metadata = {
   title: "Property tools",
@@ -21,6 +21,12 @@ const TOOLS = [
     icon: TrendingUpIcon,
     title: "Property value estimator",
     description: "Get an indicative value range for a property based on city, type, area, and age.",
+  },
+  {
+    href: "/tools/loans",
+    icon: BuildingIcon,
+    title: "Home & personal loans",
+    description: "See official loan pages from major lenders and request a callback. Information only, not a loan application.",
   },
 ];
 

@@ -1,3 +1,0 @@
-Whole Search not working/disabled
-[DONE] Add a red error for less than 5 images
-Show contact number not working

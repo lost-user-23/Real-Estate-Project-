@@ -3,8 +3,16 @@ const { CONTENT_STATUSES } = require('./contentStatus');
 
 const { Schema } = mongoose;
 
+const ARTICLE_TYPES = ['blog', 'news'];
+
 const articleSchema = new Schema(
   {
+    type: {
+      type: String,
+      enum: ARTICLE_TYPES,
+      default: 'blog',
+      required: true,
+    },
     title: {
       type: String,
       required: true,
@@ -46,7 +54,11 @@ const articleSchema = new Schema(
   { timestamps: true }
 );
 
+articleSchema.index({ type: 1, status: 1, publishedAt: -1 });
 articleSchema.index({ status: 1 });
 articleSchema.index({ publishedAt: -1 });
 
-module.exports = mongoose.model('Article', articleSchema);
+const Article = mongoose.model('Article', articleSchema);
+
+module.exports = Article;
+module.exports.ARTICLE_TYPES = ARTICLE_TYPES;

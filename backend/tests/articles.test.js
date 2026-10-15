@@ -228,3 +228,43 @@ describe('admin articles', () => {
     });
   });
 });
+describe('article types', () => {
+  it('filters public articles by type and treats untyped legacy articles as blogs', async () => {
+    await createArticle({ slug: 'a-blog', type: 'blog' });
+    await createArticle({ slug: 'a-news', type: 'news' });
+    await Article.collection.insertOne({
+      title: 'Legacy',
+      slug: 'legacy-untyped',
+      status: 'published',
+      publishedAt: new Date('2025-01-01T00:00:00.000Z'),
+    });
+
+    const news = await request(app).get('/api/v1/articles?type=news');
+    expect(news.status).toBe(200);
+    expect(news.body.articles.map((a) => a.slug)).toEqual(['a-news']);
+
+    const blogs = await request(app).get('/api/v1/articles?type=blog');
+    expect(blogs.body.articles.map((a) => a.slug).sort()).toEqual(['a-blog', 'legacy-untyped']);
+
+    const bad = await request(app).get('/api/v1/articles?type=podcast');
+    expect(bad.status).toBe(400);
+  });
+
+  it('lets an admin create a news article and rejects invalid types', async () => {
+    const { token, user } = await registerUser();
+    await promoteToAdmin(user._id ?? user.id);
+
+    const created = await request(app)
+      .post('/api/v1/admin/articles')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Repo rate cut', type: 'news', status: 'published' });
+    expect(created.status).toBe(201);
+    expect(created.body.article.type).toBe('news');
+
+    const invalid = await request(app)
+      .post('/api/v1/admin/articles')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Nope', type: 'podcast' });
+    expect(invalid.status).toBe(400);
+  });
+});

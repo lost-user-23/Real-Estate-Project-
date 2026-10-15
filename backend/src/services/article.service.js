@@ -2,7 +2,7 @@ const Article = require('../models/Article');
 const AppError = require('../utils/AppError');
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const EDITABLE_FIELDS = ['title', 'slug', 'excerpt', 'content', 'imageUrl', 'imageAlt', 'status'];
+const EDITABLE_FIELDS = ['type', 'title', 'slug', 'excerpt', 'content', 'imageUrl', 'imageAlt', 'status'];
 
 function slugify(title) {
   return title
@@ -33,6 +33,7 @@ async function createArticle(input) {
 
   const status = input.status || 'draft';
   return Article.create({
+    type: input.type || 'blog',
     title: input.title,
     slug,
     excerpt: input.excerpt ?? '',
@@ -44,8 +45,11 @@ async function createArticle(input) {
   });
 }
 
-async function listArticles({ page, limit, publishedOnly }) {
+async function listArticles({ page, limit, publishedOnly, type }) {
   const filter = publishedOnly ? { status: 'published' } : {};
+  // Articles saved before types existed have no `type` field and count as blogs.
+  if (type === 'blog') filter.type = { $ne: 'news' };
+  else if (type) filter.type = type;
   const skip = (page - 1) * limit;
   const sort = publishedOnly ? { publishedAt: -1 } : { createdAt: -1 };
   const [articles, total] = await Promise.all([

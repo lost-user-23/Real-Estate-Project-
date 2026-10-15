@@ -68,6 +68,7 @@ export default function AdminDashboardPage() {
         <StatCard label="Published projects" value={stat("publishedProjects")} hint="Up to 4 shown, most recent first" />
         <StatCard label="Published insights" value={stat("publishedArticles")} hint="Up to 3 shown, most recent first" />
         <StatCard label="Open reports" value={stat("openReports")} hint="Flagged listings to review" />
+        <StatCard label="New loan enquiries" value={stat("newLoanEnquiries")} hint="Callback requests awaiting follow-up" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

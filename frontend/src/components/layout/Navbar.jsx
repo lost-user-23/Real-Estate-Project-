@@ -8,6 +8,8 @@ import { useLoginPrompt } from "@/lib/login-prompt-context";
 import { Container } from "@/components/ui/Container";
 import { PostPropertyButton } from "@/components/PostPropertyButton";
 import { CitySelector } from "@/components/layout/CitySelector";
+import { NavMegaMenus } from "@/components/layout/NavMegaMenus";
+import { AccountMenu } from "@/components/layout/AccountMenu";
 import { CloseIcon, MenuIcon } from "@/components/icons";
 
 const NAV_LINKS = [
@@ -17,7 +19,11 @@ const NAV_LINKS = [
   { href: "/search?propertyType=commercial", label: "Commercial" },
   { href: "/#new-projects", label: "New Projects" },
   { href: "/tools", label: "Tools" },
+  { href: "/#insights", label: "Insights" },
 ];
+
+// Desktop shows these as dropdowns (NavMegaMenus); mobile keeps them as flat links.
+const MENU_LABELS = ["Buy", "Rent", "Sell"];
 
 const SCROLL_THRESHOLD = 24;
 
@@ -59,8 +65,8 @@ export function Navbar() {
           : "border-b border-border/70 bg-surface/85 shadow-lg shadow-black/5 backdrop-blur-xl"
       }`}
     >
-      <Container className="flex h-16 items-center justify-between gap-4">
-        <div className="flex items-center gap-1">
+      <div className="flex h-16 w-full items-center justify-between gap-4 px-4 sm:px-6 2xl:px-10">
+        <div className="flex shrink-0 items-center gap-1 whitespace-nowrap">
           <Link
             href="/"
             className={`flex items-center gap-2 text-lg font-bold tracking-tight ${
@@ -79,8 +85,10 @@ export function Navbar() {
           <CitySelector transparent={transparent} />
         </div>
 
-        <nav aria-label="Primary" className="hidden items-center gap-6 lg:flex">
-          {NAV_LINKS.map((link) => (
+        <NavMegaMenus transparent={transparent} />
+
+        <nav aria-label="Secondary" className="hidden items-center gap-5 whitespace-nowrap xl:flex">
+          {NAV_LINKS.filter((link) => !MENU_LABELS.includes(link.label)).map((link) => (
             <Link
               key={link.label}
               href={link.href}
@@ -93,43 +101,9 @@ export function Navbar() {
           ))}
         </nav>
 
-        <div className="hidden items-center gap-3 lg:flex">
+        <div className="hidden shrink-0 items-center gap-3 whitespace-nowrap xl:flex">
           {isLoggedIn ? (
-            <>
-              {user?.name ? (
-                <span
-                  className={`flex items-center gap-1.5 text-sm font-medium ${transparent ? "text-white" : "text-text"}`}
-                >
-                  <span className="max-w-32 truncate">{user.name}</span>
-                  {isAdmin ? <AdminBadge /> : null}
-                </span>
-              ) : null}
-              <Link
-                href="/saved"
-                className={`text-sm font-medium transition-colors ${
-                  transparent ? "text-white/90 hover:text-white" : "text-text hover:text-primary"
-                }`}
-              >
-                Saved
-              </Link>
-              <Link
-                href="/profile"
-                className={`text-sm font-medium transition-colors ${
-                  transparent ? "text-white/90 hover:text-white" : "text-text hover:text-primary"
-                }`}
-              >
-                Profile
-              </Link>
-              <button
-                type="button"
-                onClick={logout}
-                className={`text-sm font-medium transition-colors ${
-                  transparent ? "text-white/90 hover:text-white" : "text-text hover:text-primary"
-                }`}
-              >
-                Log out
-              </button>
-            </>
+            <AccountMenu user={user} isAdmin={isAdmin} logout={logout} transparent={transparent} />
           ) : (
             <button
               type="button"
@@ -141,7 +115,7 @@ export function Navbar() {
               Login or Sign up
             </button>
           )}
-          <PostPropertyButton source="navbar" />
+          <PostPropertyButton source="navbar" className="whitespace-nowrap" />
         </div>
 
         <button
@@ -149,16 +123,16 @@ export function Navbar() {
           aria-label={mobileOpen ? "Close menu" : "Open menu"}
           aria-expanded={mobileOpen}
           onClick={() => setMobileOpen((v) => !v)}
-          className={`rounded-lg p-2 lg:hidden ${
+          className={`rounded-lg p-2 xl:hidden ${
             transparent ? "text-white hover:bg-white/10" : "text-text hover:bg-bg"
           }`}
         >
           {mobileOpen ? <CloseIcon className="h-6 w-6" /> : <MenuIcon className="h-6 w-6" />}
         </button>
-      </Container>
+      </div>
 
       {mobileOpen ? (
-        <div className="border-t border-border bg-surface lg:hidden">
+        <div className="border-t border-border bg-surface xl:hidden">
           <Container className="flex flex-col gap-1 py-3">
             {NAV_LINKS.map((link) => (
               <Link

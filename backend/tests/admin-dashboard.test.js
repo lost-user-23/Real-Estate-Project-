@@ -112,6 +112,7 @@ describe('GET /api/v1/admin/dashboard', () => {
       publishedProjects: 0,
       publishedArticles: 0,
       openReports: 0,
+      newLoanEnquiries: 0,
     });
   });
 
@@ -161,6 +162,7 @@ describe('GET /api/v1/admin/dashboard', () => {
       publishedProjects: 2,
       publishedArticles: 1,
       openReports: 2,
+      newLoanEnquiries: 0,
     });
   });
 });

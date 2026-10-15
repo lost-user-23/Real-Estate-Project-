@@ -3,13 +3,14 @@
 import { useState } from "react";
 import { useAdminStore } from "@/lib/admin-store";
 import { AdminField, adminFieldInputClass } from "@/components/admin/AdminField";
+import { ARTICLE_TYPES, ARTICLE_TYPE_LABELS } from "@/lib/articleTypes";
 
-const INITIAL = { title: "", excerpt: "", content: "", status: "draft" };
-
-export function AddArticleForm({ onDone, item = null }) {
+export function AddArticleForm({ onDone, item = null, defaultType = "blog" }) {
   const { addArticle, updateArticle } = useAdminStore();
   const [form, setForm] = useState(
-    item ? { title: item.title, excerpt: item.excerpt ?? "", content: item.content ?? "", status: item.status } : INITIAL
+    item
+      ? { type: item.type ?? "blog", title: item.title, excerpt: item.excerpt ?? "", content: item.content ?? "", status: item.status }
+      : { type: defaultType, title: "", excerpt: "", content: "", status: "draft" }
   );
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -24,9 +25,9 @@ export function AddArticleForm({ onDone, item = null }) {
       // The backend generates the slug and stamps publishedAt when created as published.
       if (item) {
         // Status changes go through the table's status select so publishing stamps publishedAt.
-        await updateArticle(item.id, { title: form.title, excerpt: form.excerpt, content: form.content });
+        await updateArticle(item.id, { type: form.type, title: form.title, excerpt: form.excerpt, content: form.content });
       } else {
-        await addArticle({ title: form.title, excerpt: form.excerpt, content: form.content, status: form.status });
+        await addArticle({ type: form.type, title: form.title, excerpt: form.excerpt, content: form.content, status: form.status });
       }
       onDone();
     } catch (e) {
@@ -38,6 +39,15 @@ export function AddArticleForm({ onDone, item = null }) {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       {error ? <p className="text-sm text-danger">{error}</p> : null}
+      <AdminField label="Type">
+        <select value={form.type} onChange={(e) => update({ type: e.target.value })} className={adminFieldInputClass}>
+          {ARTICLE_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {ARTICLE_TYPE_LABELS[t]}
+            </option>
+          ))}
+        </select>
+      </AdminField>
       <AdminField label="Title" required>
         <input
           required
@@ -77,7 +87,7 @@ export function AddArticleForm({ onDone, item = null }) {
         disabled={submitting}
         className="self-start rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {submitting ? "Saving…" : item ? "Save changes" : "Add article"}
+        {submitting ? "Saving…" : item ? "Save changes" : `Add ${ARTICLE_TYPE_LABELS[form.type].toLowerCase()}`}
       </button>
     </form>
   );

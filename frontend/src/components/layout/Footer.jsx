@@ -27,6 +27,7 @@ const FOOTER_GROUPS = [
     links: [
       { label: "EMI calculator", href: "/tools/emi-calculator" },
       { label: "Property value estimator", href: "/tools/property-value-calculator" },
+      { label: "Home & personal loans", href: "/tools/loans" },
     ],
   },
   {

@@ -43,6 +43,7 @@ export default async function InsightArticlePage({ params }) {
             <Link href="/#insights" className="hover:text-primary">
               Insights
             </Link>{" "}
+            / {article.type === "news" ? "News" : "Blog"}{" "}
             / <span className="text-text">{article.title}</span>
           </nav>
 

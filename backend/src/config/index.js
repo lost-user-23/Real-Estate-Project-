@@ -83,7 +83,16 @@ const config = {
     user: process.env.SMTP_USER || '',
     pass: process.env.SMTP_PASS || '',
   },
+  // Optional internal recipient for new loan-enquiry alerts; unset = no email.
+  loanEnquiryNotifyEmail: (process.env.LOAN_ENQUIRY_NOTIFY_EMAIL || '').trim(),
   mailFrom: process.env.MAIL_FROM || 'HomeNest <no-reply@localhost>',
+  // Optional AI provider for the property-finder assistant. Without a key the
+  // assistant still works, using its built-in rule-based understanding.
+  assistant: {
+    anthropicApiKey: (process.env.ANTHROPIC_API_KEY || '').trim(),
+    model: (process.env.ASSISTANT_AI_MODEL || 'claude-haiku-5-5').trim(),
+    timeoutMs: positiveInt(process.env.ASSISTANT_AI_TIMEOUT_MS, 8000),
+  },
   // Cheap under jest so the many register/login calls stay fast; production always uses 10.
   bcryptRounds: process.env.NODE_ENV === 'test' ? 4 : 10,
   jwtSecret: process.env.JWT_SECRET || '',

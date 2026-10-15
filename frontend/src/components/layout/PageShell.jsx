@@ -1,6 +1,7 @@
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { VerificationBanner } from "@/components/account/VerificationBanner";
+import { NewsPopup } from "@/components/home/NewsPopup";
 
 export function PageShell({ children }) {
   return (
@@ -11,6 +12,7 @@ export function PageShell({ children }) {
         {children}
       </main>
       <Footer />
+      <NewsPopup />
     </>
   );
 }

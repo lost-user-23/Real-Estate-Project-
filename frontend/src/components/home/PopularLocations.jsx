@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { fetchPopularLocations } from "@/lib/dataSource";
@@ -11,7 +11,10 @@ import { SkeletonGrid } from "@/components/ui/SkeletonGrid";
 import { SafeImage } from "@/components/ui/SafeImage";
 import { SectionError } from "@/components/ui/SectionError";
 
+const INITIAL_COUNT = 6;
+
 export function PopularLocations() {
+  const [showAll, setShowAll] = useState(false);
   const searchParams = useSearchParams();
   const simulateError = searchParams.get("debugError") === "locations";
   const fetcher = useCallback(() => fetchPopularLocations(simulateError), [simulateError]);
@@ -25,7 +28,7 @@ export function PopularLocations() {
       {status === "error" && <SectionError onRetry={retry} />}
       {status === "success" && data ? (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {data.map((location) => (
+          {(showAll ? data : data.slice(0, INITIAL_COUNT)).map((location) => (
             <Link
               key={location.id}
               href={`/search?city=${encodeURIComponent(location.city)}`}
@@ -47,6 +50,17 @@ export function PopularLocations() {
               </div>
             </Link>
           ))}
+        </div>
+      ) : null}
+      {status === "success" && data && data.length > INITIAL_COUNT ? (
+        <div className="mt-8 flex justify-center">
+          <button
+            type="button"
+            onClick={() => setShowAll((v) => !v)}
+            className="rounded-full border border-primary px-6 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
+          >
+            {showAll ? "Show less" : `View all (${data.length})`}
+          </button>
         </div>
       ) : null}
     </Section>

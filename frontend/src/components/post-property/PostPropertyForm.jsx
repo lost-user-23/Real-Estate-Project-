@@ -41,6 +41,7 @@ export function PostPropertyForm() {
   const { requestLogin } = useLoginPrompt();
   const [form, setForm] = useState(() => ({
     ...INITIAL_FORM,
+    intent: searchParams.get("intent") === "rent" ? "rent" : INITIAL_FORM.intent,
     city: searchParams.get("city") ?? "",
     propertyType: searchParams.get("propertyType") ?? INITIAL_FORM.propertyType,
   }));
@@ -224,6 +225,7 @@ export function PostPropertyForm() {
 
       {submitError ? <p role="alert" className="text-sm text-danger">{submitError}</p> : null}
 
+      <p className="-mb-3 text-sm font-medium">You&apos;re looking to&hellip;</p>
       <div role="radiogroup" aria-label="Listing intent" className="flex gap-2">
         {["buy", "rent"].map((option) => (
           <button
@@ -232,11 +234,11 @@ export function PostPropertyForm() {
             role="radio"
             aria-checked={form.intent === option}
             onClick={() => update({ intent: option })}
-            className={`rounded-full px-5 py-2 text-sm font-semibold transition-colors ${
-              form.intent === option ? "bg-primary text-white" : "bg-surface text-text-muted border border-border"
+            className={`rounded-lg px-6 py-2 text-sm font-semibold transition-colors ${
+              form.intent === option ? "bg-primary/10 text-primary border border-primary/30" : "bg-surface text-text border border-border"
             }`}
           >
-            {option === "rent" ? "List for rent" : "List for sale"}
+            {option === "rent" ? "Rent" : "Sell"}
           </button>
         ))}
       </div>
