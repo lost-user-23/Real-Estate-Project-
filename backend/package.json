@@ -41,8 +41,7 @@
     "mongoose": "^9.10.1",
     "morgan": "^1.12.1",
     "multer": "^2.4.0",
-    "nodemailer": "^10.0.15",
-    "serverless-http": "^4.0.0"
+    "nodemailer": "^10.0.15"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
