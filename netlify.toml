@@ -1,0 +1,37 @@
+# Netlify hosts the Express API in backend/ as one serverless function.
+# The Next.js frontend is deployed separately on Vercel.
+#
+# Set the environment variables listed in PRODUCTION_CHECKLIST.md in the Netlify
+# UI (Site configuration > Environment variables), never in this file. For the
+# Vercel frontend that means at least:
+#   CORS_ORIGIN=https://<your-app>.vercel.app   (add a custom domain after a comma)
+#   APP_URL=https://<your-app>.vercel.app
+#   COOKIE_SAMESITE=none                         (API and frontend are on different sites)
+#   TRUST_PROXY_HOPS=1
+
+[build]
+  base = "backend"
+  command = "npm install"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[functions]
+  node_bundler = "esbuild"
+  # bcrypt ships a native .node binary and cannot be bundled.
+  external_node_modules = ["bcrypt"]
+  included_files = ["src/**"]
+
+# Public URLs stay /api/... and /health; the function sees them unchanged.
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/health"
+  to = "/.netlify/functions/api/health"
+  status = 200
+  force = true
