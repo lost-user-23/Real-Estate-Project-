@@ -1,4 +1,14 @@
-const BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000').replace(/\/$/, "");
+// On Vercel the backend is a bound service: server-side code reaches it through
+// BACKEND_URL (injected at runtime, not available during builds), while the
+// browser uses same-origin /api/* paths that vercel.json rewrites to it.
+// NEXT_PUBLIC_API_URL still overrides both; localhost:4000 remains the dev default.
+function resolveBaseUrl() {
+    const explicit = process.env.NEXT_PUBLIC_API_URL;
+    if (explicit) return explicit;
+    if (typeof window === "undefined") return process.env.BACKEND_URL || "http://localhost:4000";
+    return process.env.NODE_ENV === "production" ? "" : "http://localhost:4000";
+}
+const BASE_URL = resolveBaseUrl().replace(/\/$/, "");
 const NETWORK_ERROR_MESSAGE = "Could not reach the server. Check your connection and try again.";
 
 export class ApiError extends Error {
